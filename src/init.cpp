@@ -5,11 +5,9 @@
 #include "touch.h"
 #include "AudioOutputI2S.h"
 
-static const uint16_t screenWidth = 320;
-static const uint16_t screenHeight = 240;
 TFT_eSPI my_lcd = TFT_eSPI();
 static lv_display_t *disp;
-static uint8_t buf1[screenWidth * 240 * 2];
+static uint8_t buf1[LCD_W * LCD_H * 2];
 static lv_indev_t *indev;
 es8311_handle_t es8311_handle = nullptr;
 AudioOutputI2S *audio_out;
@@ -24,7 +22,14 @@ void my_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
-    my_lcd.setAddrWindow(area->x1, area->y1, w, h);
+    static bool cleared = false;
+    if(!cleared) {
+        my_lcd.setAddrWindow(0, 0, LCD_W, LCD_H);
+        my_lcd.fillScreen(0x0000);
+        cleared = true;
+    }
+
+    my_lcd.setAddrWindow(area->x1, area->y1 + 16, w, h);
     my_lcd.pushColors((uint16_t *)px_map, w * h, true);
     lv_display_flush_ready(disp);
 }
@@ -35,13 +40,12 @@ void setup_lvgl_display()
     my_lcd.fillScreen(0xFFFF);
     my_lcd.setRotation(3);
 
-    touch_init(my_lcd.width(), my_lcd.height(), my_lcd.getRotation());
-
     lv_init();
     lv_log_register_print_cb(my_lvgl_log_cb);
     lv_tick_set_cb(millis);
-    disp = lv_display_create(my_lcd.width(), my_lcd.height());
+    disp = lv_display_create(my_lcd.width() - 16, my_lcd.height() - 16);
     lv_display_set_flush_cb(disp, my_disp_flush);
+    lv_display_set_antialiasing(disp, false);
 
     lv_display_set_buffers(
         disp,
@@ -68,6 +72,7 @@ void my_touchpad_read(lv_indev_t *indev, lv_indev_data_t *data)
 
 void setup_lvgl_input()
 {
+    touch_init(my_lcd.width(), my_lcd.height(), my_lcd.getRotation());
     indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, my_touchpad_read);
