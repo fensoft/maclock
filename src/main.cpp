@@ -288,6 +288,8 @@ void lvgl_fs_init_littlefs();
 void setup()
 {
     Serial.begin(115200);
+    analogWrite(TFT_BL_VAR, 0);
+
     heap_caps_malloc_extmem_enable(0);
     setup_codec();
     setup_lvgl_display();
@@ -473,5 +475,5 @@ void loop()
         encoder.setCount(0);
     if (encoder.getCount() > 12)
         encoder.setCount(12);
-    analogWrite(TFT_BL, encoder.getCount() * 255 / 12);
+    analogWrite(TFT_BL_VAR, encoder.getCount() * 255 / 12);
 }
