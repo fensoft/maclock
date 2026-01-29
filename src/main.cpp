@@ -5,7 +5,7 @@
 #include "AudioOutputI2S.h"
 #include "AudioGeneratorMP3.h"
 #include "es8311.h"
-#include <ESP32Time.h>
+#include <RTClib.h>
 #include <esp_heap_caps.h>
 #include <ESP32Encoder.h>
 #include <TFT_eSPI.h>
@@ -14,8 +14,10 @@
 #include "freertos/task.h"
 #include "driver/touch_pad.h"
 #include "TouchSensor.h"
+#include <Wire.h>
 
 LV_FONT_DECLARE(lv_font_chicago_8);
+LV_FONT_DECLARE(lv_font_chicago_32);
 LV_FONT_DECLARE(lv_font_chicago_48);
 
 TouchSensor touch(GPIO_TOUCH);
@@ -26,7 +28,7 @@ extern es8311_handle_t es8311_handle;
 AudioGeneratorMP3 *mp3 = NULL;
 extern TFT_eSPI my_lcd;
 extern es8311_handle_t es8311_handle;
-ESP32Time esp32_rtc;
+RTC_DS1307 rtc;
 
 struct InputState
 {
@@ -115,22 +117,23 @@ static void set_image_src(lv_obj_t *img, lv_draw_buf_t *buf, const char *path)
 static void update_clock_labels()
 {
     static int last_sec = -1;
-    int sec = esp32_rtc.getSecond();
+    DateTime now = rtc.now();
+    int sec = now.second();
     if (sec == last_sec)
         return;
     last_sec = sec;
 
     char buf[24];
     snprintf(buf, sizeof(buf), "%02d:%02d:%02d",
-             esp32_rtc.getHour(true), esp32_rtc.getMinute(), sec);
+             now.hour(), now.minute(), sec);
     lv_label_set_text(g_ui.time, buf);
     lv_obj_align(g_ui.time, LV_ALIGN_TOP_MID, 0, 19 + 4);
 
-    int year = esp32_rtc.getYear() % 100;
-    snprintf(buf, sizeof(buf), "%d/%d/%02d",
-             esp32_rtc.getMonth() + 1, esp32_rtc.getDay(), year);
+    int year = now.year();
+    snprintf(buf, sizeof(buf), "%02d/%02d/%04d",
+             now.day(), now.month(), year);
     lv_label_set_text(g_ui.date, buf);
-    lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID, 0, 19 + 4 + 32 + 16);
+    lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID, 0, 19 + 4 + 32 + 16 + 16);
 }
 
 static void init_ui_assets()
@@ -197,7 +200,7 @@ static void init_ui_assets()
 
     g_ui.date = lv_label_create(g_ui.clock);
     lv_label_set_text(g_ui.date, "1/1/00");
-    lv_obj_set_style_text_font(g_ui.date, &lv_font_chicago_48, 0);
+    lv_obj_set_style_text_font(g_ui.date, &lv_font_chicago_32, 0);
     lv_obj_set_style_text_letter_space(g_ui.date, 1, 0);
     lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID, 0, 83);
 
@@ -280,6 +283,27 @@ static void audio_task(void *param)
     }
 }
 
+static void scan_i2c()
+{
+    Serial.println("I2C scan start");
+    uint8_t found = 0;
+    for (uint8_t addr = 1; addr < 127; ++addr)
+    {
+        Wire.beginTransmission(addr);
+        uint8_t err = Wire.endTransmission();
+        if (err == 0)
+        {
+            Serial.print("I2C device @ 0x");
+            if (addr < 16)
+                Serial.print('0');
+            Serial.println(addr, HEX);
+            ++found;
+        }
+    }
+    Serial.print("I2C scan done, devices found: ");
+    Serial.println(found);
+}
+
 void setup_codec();
 void setup_lvgl_display();
 void setup_lvgl_input();
@@ -296,7 +320,8 @@ void setup()
     setup_lvgl_input();
     lvgl_fs_init_littlefs();
     init_ui_assets();
-    esp32_rtc.setTime(28, 48, 23, 26, 8, 2025);
+    Wire.begin(I2C_SDA, I2C_SCL);
+    rtc.begin();
 
     pinMode(GPIO_FLOPPY, INPUT);
     pinMode(GPIO_ALARM, INPUT);
@@ -329,6 +354,7 @@ void setup()
         1,
         nullptr,
         0);
+    scan_i2c();
 }
 
 void loop()
