@@ -73,10 +73,45 @@ static UiImages g_ui = {};
 static bool g_mp3_finished = false;
 static portMUX_TYPE g_mp3_mux = portMUX_INITIALIZER_UNLOCKED;
 static int g_requested_state = 0;
+static lv_obj_t *g_cursor = nullptr;
+static lv_timer_t *g_cursor_timer = nullptr;
 
 void request_state(int state)
 {
     g_requested_state = state;
+}
+
+static void cursor_hide_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    if (g_cursor)
+        lv_obj_add_flag(g_cursor, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void cursor_show_at(const lv_point_t &p)
+{
+    if (!g_cursor)
+        return;
+    const int16_t hot_x = 0;
+    const int16_t hot_y = 0;
+    lv_obj_clear_flag(g_cursor, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_pos(g_cursor, p.x - hot_x, p.y - hot_y);
+    lv_obj_move_foreground(g_cursor);
+    if (!g_cursor_timer)
+        g_cursor_timer = lv_timer_create(cursor_hide_timer_cb, 2000, nullptr);
+    else
+        lv_timer_reset(g_cursor_timer);
+}
+
+static void screen_touch_event(lv_event_t *e)
+{
+    (void)e;
+    lv_indev_t *indev = lv_indev_get_act();
+    if (!indev)
+        return;
+    lv_point_t p;
+    lv_indev_get_point(indev, &p);
+    cursor_show_at(p);
 }
 
 static void hide_all_ui()
@@ -229,6 +264,13 @@ static void init_ui_assets()
     lv_obj_center(g_ui.corners);
 
     datetime_ui_init(scr);
+
+    g_cursor = lv_image_create(scr);
+    lv_image_set_src(g_cursor, "S:/cursor.png");
+    lv_obj_clear_flag(g_cursor, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(g_cursor, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_add_event_cb(scr, screen_touch_event, LV_EVENT_PRESSED, NULL);
 
     hide_all_ui();
 }
