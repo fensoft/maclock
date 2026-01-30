@@ -15,6 +15,7 @@
 #include "driver/touch_pad.h"
 #include "TouchSensor.h"
 #include <Wire.h>
+#include "datetime_ui.h"
 
 LV_FONT_DECLARE(lv_font_chicago_8);
 LV_FONT_DECLARE(lv_font_chicago_32);
@@ -71,6 +72,12 @@ static portMUX_TYPE g_input_state_mux = portMUX_INITIALIZER_UNLOCKED;
 static UiImages g_ui = {};
 static bool g_mp3_finished = false;
 static portMUX_TYPE g_mp3_mux = portMUX_INITIALIZER_UNLOCKED;
+static int g_requested_state = 0;
+
+void request_state(int state)
+{
+    g_requested_state = state;
+}
 
 static void hide_all_ui()
 {
@@ -88,6 +95,7 @@ static void hide_all_ui()
     lv_obj_add_flag(g_ui.date, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
+    datetime_ui_hide();
 }
 
 static void show_ui(lv_obj_t *obj)
@@ -219,6 +227,8 @@ static void init_ui_assets()
     g_ui.corners = lv_image_create(scr);
     set_image_src(g_ui.corners, g_ui.corners_buf, "S:/corners.png");
     lv_obj_center(g_ui.corners);
+
+    datetime_ui_init(scr);
 
     hide_all_ui();
 }
@@ -361,8 +371,26 @@ void loop()
 {
     static int currentState = 1;
     static unsigned long stateStartTime = 0;
+    static int lastState = -1;
     unsigned long now = millis();
     InputState inputs = read_input_state();
+
+    if (g_requested_state != 0)
+    {
+        currentState = g_requested_state;
+        stateStartTime = now;
+        g_requested_state = 0;
+    }
+
+    if (currentState != lastState)
+    {
+        if (currentState == 8)
+        {
+            DateTime current = rtc.now();
+            datetime_ui_enter(current);
+        }
+        lastState = currentState;
+    }
 
     switch (currentState)
     {
@@ -484,6 +512,23 @@ void loop()
             if (inputs.floppy)
                 show_ui(g_ui.icon);
             update_clock_labels();
+            lv_timer_handler();
+        }
+        if (inputs.clock)
+        {
+            currentState = 8;
+            stateStartTime = now;
+        }
+        break;
+    case 8:
+        if (now - stateStartTime >= 0)
+        {
+            hide_all_ui();
+            show_ui(g_ui.background);
+            show_ui(g_ui.white_bar);
+            show_ui(g_ui.black_line);
+            show_ui(g_ui.corners);
+            datetime_ui_show();
             lv_timer_handler();
         }
         break;
