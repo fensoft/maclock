@@ -16,6 +16,8 @@
 #include "TouchSensor.h"
 #include <Wire.h>
 #include "datetime_ui.h"
+#include "touch.h"
+#include "Adafruit_BMP5xx.h"
 
 LV_FONT_DECLARE(lv_font_chicago_8);
 LV_FONT_DECLARE(lv_font_chicago_32);
@@ -30,6 +32,7 @@ AudioGeneratorMP3 *mp3 = NULL;
 extern TFT_eSPI my_lcd;
 extern es8311_handle_t es8311_handle;
 RTC_DS1307 rtc;
+Adafruit_BMP5xx bmp;
 
 struct InputState
 {
@@ -53,6 +56,10 @@ struct UiImages
     lv_obj_t *clock_label;
     lv_obj_t *time;
     lv_obj_t *date;
+    lv_obj_t *temp;
+    lv_obj_t *gauge_icon;
+    lv_obj_t *gauge_line;
+    lv_obj_t *gauge_box;
     lv_obj_t *white_bar;
     lv_obj_t *black_line;
 
@@ -67,9 +74,16 @@ struct UiImages
     lv_draw_buf_t *clock_buf;
 };
 
+struct CalibUi
+{
+    lv_obj_t *label;
+    lv_obj_t *cross;
+};
+
 static InputState g_input_state = {};
 static portMUX_TYPE g_input_state_mux = portMUX_INITIALIZER_UNLOCKED;
 static UiImages g_ui = {};
+static CalibUi g_calib_ui = {};
 static bool g_mp3_finished = false;
 static portMUX_TYPE g_mp3_mux = portMUX_INITIALIZER_UNLOCKED;
 static int g_requested_state = 0;
@@ -114,6 +128,29 @@ static void screen_touch_event(lv_event_t *e)
     cursor_show_at(p);
 }
 
+static void calib_set_cross_pos(const lv_point_t &pt)
+{
+    if (!g_calib_ui.cross)
+        return;
+    lv_obj_t *scr = lv_screen_active();
+    lv_obj_update_layout(g_calib_ui.cross);
+    int w = lv_obj_get_width(g_calib_ui.cross);
+    int h = lv_obj_get_height(g_calib_ui.cross);
+    int sw = lv_obj_get_width(scr);
+    int sh = lv_obj_get_height(scr);
+    int x = pt.x - (w / 2);
+    int y = pt.y - (h / 2);
+    if (x < 0)
+        x = 0;
+    if (y < 0)
+        y = 0;
+    if (x > sw - w)
+        x = sw - w;
+    if (y > sh - h)
+        y = sh - h;
+    lv_obj_set_pos(g_calib_ui.cross, x, y);
+}
+
 static void hide_all_ui()
 {
     lv_obj_add_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
@@ -128,9 +165,17 @@ static void hide_all_ui()
     lv_obj_add_flag(g_ui.clock_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.time, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.date, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(g_ui.temp, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(g_ui.gauge_icon, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(g_ui.gauge_line, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
     datetime_ui_hide();
+    if (g_calib_ui.label)
+        lv_obj_add_flag(g_calib_ui.label, LV_OBJ_FLAG_HIDDEN);
+    if (g_calib_ui.cross)
+        lv_obj_add_flag(g_calib_ui.cross, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void show_ui(lv_obj_t *obj)
@@ -160,6 +205,8 @@ static void set_image_src(lv_obj_t *img, lv_draw_buf_t *buf, const char *path)
 static void update_clock_labels()
 {
     static int last_sec = -1;
+    static int16_t gauge_width = 0;
+    static int16_t gauge_box_w = 0;
     DateTime now = rtc.now();
     int sec = now.second();
     if (sec == last_sec)
@@ -170,13 +217,48 @@ static void update_clock_labels()
     snprintf(buf, sizeof(buf), "%02d:%02d:%02d",
              now.hour(), now.minute(), sec);
     lv_label_set_text(g_ui.time, buf);
-    lv_obj_align(g_ui.time, LV_ALIGN_TOP_MID, 0, 19 + 4);
+    lv_obj_align(g_ui.time, LV_ALIGN_TOP_MID, 0, 14 + 4);
 
     int year = now.year();
     snprintf(buf, sizeof(buf), "%02d/%02d/%04d",
              now.day(), now.month(), year);
     lv_label_set_text(g_ui.date, buf);
-    lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID, 0, 19 + 4 + 32 + 16 + 16);
+    lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID, 0, 14 + 4 + 32 + 16);
+
+    if (!bmp.dataReady())
+    {
+        bmp.performReading();
+        char tbuf[12];
+        snprintf(tbuf, sizeof(tbuf), "%02.1f°C", bmp.temperature);
+        lv_label_set_text(g_ui.temp, tbuf);
+
+        const float p = bmp.pressure;
+        if (p < 1000.0f)
+            lv_image_set_src(g_ui.gauge_icon, "S:/rainy.png");
+        else if (p < 1020.0f)
+            lv_image_set_src(g_ui.gauge_icon, "S:/cloudy.png");
+        else
+            lv_image_set_src(g_ui.gauge_icon, "S:/sunny.png");
+
+        if (gauge_width == 0)
+        {
+            gauge_width = lv_obj_get_width(g_ui.gauge_line);
+            gauge_box_w = lv_obj_get_width(g_ui.gauge_box);
+        }
+
+        const float min_p = 980.0f;
+        const float max_p = 1040.0f;
+        float clamped = p;
+        if (clamped < min_p)
+            clamped = min_p;
+        if (clamped > max_p)
+            clamped = max_p;
+        const float t = (clamped - min_p) / (max_p - min_p);
+        const int16_t max_offset = gauge_width - gauge_box_w;
+        const int16_t x_offset = (int16_t)(max_offset * t);
+        lv_obj_align_to(g_ui.gauge_box, g_ui.gauge_line, LV_ALIGN_LEFT_MID, x_offset, 0);
+        lv_obj_move_foreground(g_ui.gauge_box);
+    }
 }
 
 static void init_ui_assets()
@@ -247,6 +329,32 @@ static void init_ui_assets()
     lv_obj_set_style_text_letter_space(g_ui.date, 1, 0);
     lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID, 0, 83);
 
+    g_ui.temp = lv_label_create(g_ui.clock);
+    lv_label_set_text(g_ui.temp, "00.0°C");
+    lv_obj_set_style_text_font(g_ui.temp, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_letter_space(g_ui.temp, 1, 0);
+    lv_obj_align(g_ui.temp, LV_ALIGN_TOP_LEFT, 12, 118);
+
+    g_ui.gauge_icon = lv_image_create(g_ui.clock);
+    lv_image_set_src(g_ui.gauge_icon, "S:/cloudy.png");
+    lv_obj_align(g_ui.gauge_icon, LV_ALIGN_TOP_RIGHT, -12, 111);
+
+    g_ui.gauge_line = lv_obj_create(g_ui.clock);
+    lv_obj_remove_style_all(g_ui.gauge_line);
+    lv_obj_set_size(g_ui.gauge_line, 180, 2);
+    lv_obj_set_style_bg_color(g_ui.gauge_line, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(g_ui.gauge_line, LV_OPA_COVER, 0);
+    lv_obj_align(g_ui.gauge_line, LV_ALIGN_TOP_RIGHT, -12, 127);
+
+    g_ui.gauge_box = lv_obj_create(g_ui.clock);
+    lv_obj_remove_style_all(g_ui.gauge_box);
+    lv_obj_set_size(g_ui.gauge_box, 10, 10);
+    lv_obj_set_style_border_color(g_ui.gauge_box, lv_color_black(), 0);
+    lv_obj_set_style_border_width(g_ui.gauge_box, 1, 0);
+    lv_obj_set_style_bg_color(g_ui.gauge_box, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(g_ui.gauge_box, LV_OPA_COVER, 0);
+    lv_obj_align(g_ui.gauge_box, LV_ALIGN_TOP_RIGHT, -12, 124);
+
     g_ui.disk_missing_1 = lv_image_create(scr);
     set_image_src(g_ui.disk_missing_1, g_ui.disk_missing_1_buf, "S:/disk_missing_1.png");
     lv_obj_center(g_ui.disk_missing_1);
@@ -264,6 +372,16 @@ static void init_ui_assets()
     lv_obj_center(g_ui.corners);
 
     datetime_ui_init(scr);
+
+    g_calib_ui.label = lv_label_create(scr);
+    lv_label_set_text(g_calib_ui.label, "Touch the crosshair");
+    lv_obj_set_style_text_font(g_calib_ui.label, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_letter_space(g_calib_ui.label, 1, 0);
+    lv_obj_align(g_calib_ui.label, LV_ALIGN_TOP_MID, 0, 24);
+
+    g_calib_ui.cross = lv_label_create(scr);
+    lv_label_set_text(g_calib_ui.cross, "+");
+    lv_obj_set_style_text_font(g_calib_ui.cross, &lv_font_chicago_32, 0);
 
     g_cursor = lv_image_create(scr);
     lv_image_set_src(g_cursor, "S:/cursor.png");
@@ -370,6 +488,8 @@ void setup()
     setup_codec();
     setup_lvgl_display();
     setup_lvgl_input();
+    touch_eeprom_begin();
+    touch_load_calibration();
     lvgl_fs_init_littlefs();
     init_ui_assets();
     Wire.begin(I2C_SDA, I2C_SCL);
@@ -407,6 +527,16 @@ void setup()
         nullptr,
         0);
     scan_i2c();
+    bmp.begin(BMP5XX_ALTERNATIVE_ADDRESS, &Wire);
+    bmp.setTemperatureOversampling(BMP5XX_OVERSAMPLING_16X);
+    bmp.setPressureOversampling(BMP5XX_OVERSAMPLING_16X);
+    bmp.setIIRFilterCoeff(BMP5XX_IIR_FILTER_COEFF_127);
+    bmp.setOutputDataRate(BMP5XX_ODR_120_HZ);
+    bmp.setPowerMode(BMP5XX_POWERMODE_NORMAL);
+    bmp.enablePressure(true);
+
+    if (!digitalRead(GPIO_CLOCK)) // run calibration if clock button set on boot
+        request_state(9);
 }
 
 void loop()
@@ -414,6 +544,11 @@ void loop()
     static int currentState = 1;
     static unsigned long stateStartTime = 0;
     static int lastState = -1;
+    static int calib_step = 0;
+    static bool calib_wait_release = false;
+    static uint16_t calib_raw_x[4] = {};
+    static uint16_t calib_raw_y[4] = {};
+    static lv_point_t calib_targets[4] = {};
     unsigned long now = millis();
     InputState inputs = read_input_state();
 
@@ -431,13 +566,12 @@ void loop()
             DateTime current = rtc.now();
             datetime_ui_enter(current);
         }
-        lastState = currentState;
     }
 
     switch (currentState)
     {
-    case 1:
-        if (now - stateStartTime >= 0) // empty screen
+    case 1: //  empty screen, start sound
+        if (now - stateStartTime >= 0)
         {
             hide_all_ui();
             show_ui(g_ui.background);
@@ -457,8 +591,7 @@ void loop()
             stateStartTime = now;
         }
         break;
-
-    case 2:
+    case 2: // wait for floppy 1
         if (now - stateStartTime >= 1000)
         {
             hide_all_ui();
@@ -475,8 +608,7 @@ void loop()
             stateStartTime = now;
         }
         break;
-
-    case 3:
+    case 3: // wait for floppy 2
         if (now - stateStartTime >= 1000)
         {
             hide_all_ui();
@@ -494,7 +626,7 @@ void loop()
             stateStartTime = now;
         }
         break;
-    case 4:
+    case 4: // floppy inserted, loading...
     {
         hide_all_ui();
         show_ui(g_ui.background);
@@ -511,7 +643,7 @@ void loop()
         currentState++;
         stateStartTime = now;
         break;
-    case 5:
+    case 5: // show boot screen after 3s
         if (now - stateStartTime >= 3000)
         {
             hide_all_ui();
@@ -523,7 +655,7 @@ void loop()
             stateStartTime = now;
         }
         break;
-    case 6:
+    case 6: // wait for end of floppy sound
     {
         bool finished = false;
         portENTER_CRITICAL(&g_mp3_mux);
@@ -537,7 +669,7 @@ void loop()
         }
     }
         break;
-    case 7:
+    case 7: // normal state
         if (now - stateStartTime >= 1000)
         {
             hide_all_ui();
@@ -550,6 +682,10 @@ void loop()
             show_ui(g_ui.clock_label);
             show_ui(g_ui.time);
             show_ui(g_ui.date);
+            show_ui(g_ui.temp);
+            show_ui(g_ui.gauge_icon);
+            show_ui(g_ui.gauge_line);
+            show_ui(g_ui.gauge_box);
             show_ui(g_ui.corners);
             if (inputs.floppy)
                 show_ui(g_ui.icon);
@@ -561,8 +697,13 @@ void loop()
             currentState = 8;
             stateStartTime = now;
         }
+        if (inputs.alarm)
+        {
+            currentState = 9;
+            stateStartTime = now;
+        }
         break;
-    case 8:
+    case 8: // change date/time
         if (now - stateStartTime >= 0)
         {
             hide_all_ui();
@@ -574,7 +715,66 @@ void loop()
             lv_timer_handler();
         }
         break;
+    case 9: // calibration screen
+        if (currentState != lastState)
+        {
+            lv_obj_t *scr = lv_screen_active();
+            int w = lv_obj_get_width(scr);
+            int h = lv_obj_get_height(scr);
+            int margin = 16;
+            calib_targets[0] = {margin, margin};
+            calib_targets[1] = {w - margin, margin};
+            calib_targets[2] = {w - margin, h - margin};
+            calib_targets[3] = {margin, h - margin};
+            calib_step = 0;
+            calib_wait_release = false;
+            lv_label_set_text(g_calib_ui.label, "Touch the crosshair");
+            calib_set_cross_pos(calib_targets[0]);
+        }
+        if (now - stateStartTime >= 0)
+        {
+            hide_all_ui();
+            show_ui(g_ui.background);
+            show_ui(g_ui.corners);
+            show_ui(g_calib_ui.label);
+            show_ui(g_calib_ui.cross);
+            lv_timer_handler();
+        }
+        {
+            uint16_t raw_x = 0;
+            uint16_t raw_y = 0;
+            bool touched = touch_read_raw(raw_x, raw_y);
+            if (touched && !calib_wait_release)
+            {
+                calib_raw_x[calib_step] = raw_x;
+                calib_raw_y[calib_step] = raw_y;
+                calib_wait_release = true;
+            }
+            if (!touched && calib_wait_release)
+            {
+                calib_wait_release = false;
+                calib_step++;
+                if (calib_step < 4)
+                {
+                    calib_set_cross_pos(calib_targets[calib_step]);
+                }
+                else
+                {
+                    uint16_t minx = min(calib_raw_x[0], calib_raw_x[3]);
+                    uint16_t maxx = max(calib_raw_x[1], calib_raw_x[2]);
+                    uint16_t miny = min(calib_raw_y[0], calib_raw_y[1]);
+                    uint16_t maxy = max(calib_raw_y[2], calib_raw_y[3]);
+                    touch_set_calibration(minx, maxx, miny, maxy);
+                    touch_save_calibration();
+                    currentState = 7;
+                    stateStartTime = now;
+                }
+            }
+        }
+        break;
     }
+
+    lastState = currentState;
 
     if (inputs.touch || inputs.alarm || inputs.clock)
     {
