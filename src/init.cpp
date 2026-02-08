@@ -12,13 +12,13 @@ static lv_indev_t *indev;
 es8311_handle_t es8311_handle = nullptr;
 AudioOutputI2S *audio_out;
 
-static void my_lvgl_log_cb(lv_log_level_t level, const char *msg)
+static void lvgl_log_cb(lv_log_level_t level, const char *msg)
 {
   Serial.print("[LVGL] ");
   Serial.print(msg);
 }
 
-void my_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
+void lvgl_to_TFT_eSPI(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
@@ -41,10 +41,10 @@ void setup_lvgl_display()
     my_lcd.setRotation(3);
 
     lv_init();
-    lv_log_register_print_cb(my_lvgl_log_cb);
+    lv_log_register_print_cb(lvgl_log_cb);
     lv_tick_set_cb(millis);
     disp = lv_display_create(my_lcd.width() - 16, my_lcd.height() - 16);
-    lv_display_set_flush_cb(disp, my_disp_flush);
+    lv_display_set_flush_cb(disp, lvgl_to_TFT_eSPI);
     lv_display_set_antialiasing(disp, false);
 
     lv_display_set_buffers(
@@ -56,7 +56,7 @@ void setup_lvgl_display()
     );
 }
 
-void my_touchpad_read(lv_indev_t *indev, lv_indev_data_t *data)
+void lvgl_touchpad_read(lv_indev_t *indev, lv_indev_data_t *data)
 {
     if (touch_touched())
     {
@@ -75,7 +75,7 @@ void setup_lvgl_input()
     touch_init(my_lcd.width(), my_lcd.height(), my_lcd.getRotation());
     indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
-    lv_indev_set_read_cb(indev, my_touchpad_read);
+    lv_indev_set_read_cb(indev, lvgl_touchpad_read);
 }
 
 void lvgl_fs_init_littlefs()
