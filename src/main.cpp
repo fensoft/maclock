@@ -43,7 +43,7 @@ struct InputState
     bool touch;
 };
 
-static constexpr size_t k_plugin_max = 6;
+static constexpr size_t k_plugin_max = 5;
 
 struct UiImages
 {
@@ -77,6 +77,7 @@ struct UiImages
     lv_draw_buf_t *icon_buf;
     lv_draw_buf_t *clock_buf;
     lv_draw_buf_t *plugin_buf;
+    lv_draw_buf_t *plugin_missing_buf;
 };
 
 struct CalibUi
@@ -94,6 +95,11 @@ static portMUX_TYPE g_mp3_mux = portMUX_INITIALIZER_UNLOCKED;
 static int g_requested_state = 0;
 static lv_obj_t *g_cursor = nullptr;
 static lv_timer_t *g_cursor_timer = nullptr;
+
+void setup_codec();
+void setup_lvgl_display();
+void setup_lvgl_input();
+void lvgl_fs_init_littlefs();
 
 void request_state(int state)
 {
@@ -204,6 +210,82 @@ static lv_draw_buf_t *load_png_once(const char *path)
     return dup;
 }
 
+static void replace_black_with_red(lv_draw_buf_t *buf)
+{
+    if (!buf)
+        return;
+
+    const lv_color_format_t cf = (lv_color_format_t)buf->header.cf;
+    const uint32_t w = buf->header.w;
+    const uint32_t h = buf->header.h;
+
+    if (LV_COLOR_FORMAT_IS_INDEXED(cf))
+    {
+        const uint32_t palette_size = LV_COLOR_INDEXED_PALETTE_SIZE(cf);
+        lv_color32_t *palette = (lv_color32_t *)buf->data;
+        for (uint32_t i = 0; i < palette_size; ++i)
+        {
+            const lv_color32_t c = palette[i];
+            if (c.red <= 8 && c.green <= 8 && c.blue <= 8 && c.alpha > 0)
+                lv_draw_buf_set_palette(buf, (uint8_t)i, lv_color32_make(255, 0, 0, c.alpha));
+        }
+        return;
+    }
+
+    if (cf == LV_COLOR_FORMAT_RGB565)
+    {
+        const uint16_t red_565 = (uint16_t)0xF800;
+        uint8_t *row = buf->data;
+        const uint32_t stride = buf->header.stride;
+        for (uint32_t y = 0; y < h; ++y)
+        {
+            uint16_t *px = (uint16_t *)row;
+            for (uint32_t x = 0; x < w; ++x)
+            {
+                if (px[x] == 0x0000)
+                    px[x] = red_565;
+            }
+            row += stride;
+        }
+        return;
+    }
+
+    if (cf == LV_COLOR_FORMAT_ARGB8888 || cf == LV_COLOR_FORMAT_XRGB8888 || cf == LV_COLOR_FORMAT_ARGB8888_PREMULTIPLIED)
+    {
+        uint8_t *row = buf->data;
+        const uint32_t stride = buf->header.stride;
+        for (uint32_t y = 0; y < h; ++y)
+        {
+            uint8_t *px = row;
+            for (uint32_t x = 0; x < w; ++x)
+            {
+                uint8_t *b = &px[x * 4 + 0];
+                uint8_t *g = &px[x * 4 + 1];
+                uint8_t *r = &px[x * 4 + 2];
+                uint8_t *a = &px[x * 4 + 3];
+                if (*r <= 8 && *g <= 8 && *b <= 8 && *a > 0)
+                {
+                    *b = 0;
+                    *g = 0;
+                    *r = (cf == LV_COLOR_FORMAT_ARGB8888_PREMULTIPLIED) ? *a : 255;
+                }
+            }
+            row += stride;
+        }
+    }
+}
+
+static lv_draw_buf_t *make_plugin_missing_buf(lv_draw_buf_t *src)
+{
+    if (!src)
+        return NULL;
+    lv_draw_buf_t *dup = lv_draw_buf_dup(src);
+    if (!dup)
+        return NULL;
+    replace_black_with_red(dup);
+    return dup;
+}
+
 static void set_image_src(lv_obj_t *img, lv_draw_buf_t *buf, const char *path)
 {
     if (buf)
@@ -290,6 +372,7 @@ static void init_ui_assets()
     g_ui.icon_buf = load_png_once("S:/icon.png");
     g_ui.clock_buf = load_png_once("S:/empty.png");
     g_ui.plugin_buf = load_png_once("S:/plugin.png");
+    g_ui.plugin_missing_buf = make_plugin_missing_buf(g_ui.plugin_buf);
 
     set_image_src(g_ui.background, g_ui.background_buf, "S:/background.png");
     lv_obj_center(g_ui.background);
@@ -475,37 +558,11 @@ static void audio_task(void *param)
     }
 }
 
-static void scan_i2c()
-{
-    Serial.println("I2C scan start");
-    uint8_t found = 0;
-    for (uint8_t addr = 1; addr < 127; ++addr)
-    {
-        Wire.beginTransmission(addr);
-        uint8_t err = Wire.endTransmission();
-        if (err == 0)
-        {
-            Serial.print("I2C device @ 0x");
-            if (addr < 16)
-                Serial.print('0');
-            Serial.println(addr, HEX);
-            ++found;
-        }
-    }
-    Serial.print("I2C scan done, devices found: ");
-    Serial.println(found);
-}
-
 static bool i2c_device_present(uint8_t addr)
 {
     Wire.beginTransmission(addr);
     return Wire.endTransmission() == 0;
 }
-
-void setup_codec();
-void setup_lvgl_display();
-void setup_lvgl_input();
-void lvgl_fs_init_littlefs();
 
 void setup()
 {
@@ -554,7 +611,6 @@ void setup()
         1,
         nullptr,
         0);
-    scan_i2c();
     bmp.begin(BMP5XX_ALTERNATIVE_ADDRESS, &Wire);
     bmp.setTemperatureOversampling(BMP5XX_OVERSAMPLING_16X);
     bmp.setPressureOversampling(BMP5XX_OVERSAMPLING_16X);
@@ -668,7 +724,7 @@ void loop()
     case 5: // show boot screen + detected i2c plugins
         if (currentState != lastState)
         {
-            static const uint8_t k_addrs[k_plugin_max] = {0x18, 0x38, 0x47, 0x50, 0x68, 0x7E};
+            static const uint8_t k_addrs[k_plugin_max] = {0x18, 0x38, 0x47, 0x50, 0x68};
             const int16_t margin_x = 8;
             const int16_t margin_y = 8;
             const int16_t spacing = 4;
@@ -678,12 +734,13 @@ void loop()
             plugin_next_reveal = now + (unsigned long)random(100, 301);
             for (size_t i = 0; i < k_plugin_max; ++i)
             {
-                if (i2c_device_present(k_addrs[i]) && plugin_count < k_plugin_max)
+                const uint8_t addr = k_addrs[i];
+                if (i2c_device_present(addr) && plugin_count < k_plugin_max)
                 {
                     char fs_path[32];
                     char lv_path[36];
-                    snprintf(fs_path, sizeof(fs_path), "/plugin_0x%02X.png", k_addrs[i]);
-                    snprintf(lv_path, sizeof(lv_path), "S:/plugin_0x%02X.png", k_addrs[i]);
+                    snprintf(fs_path, sizeof(fs_path), "/plugin_0x%02X.png", addr);
+                    snprintf(lv_path, sizeof(lv_path), "S:/plugin_0x%02X.png", addr);
                     if (littlefs_exists(fs_path))
                         lv_image_set_src(g_ui.plugin_icons[plugin_count], lv_path);
                     else
@@ -692,6 +749,46 @@ void loop()
                                  margin_x + (int16_t)plugin_count * (icon_size + spacing),
                                  -margin_y);
                     plugin_count++;
+                }
+                else
+                {
+                    char fs_path[32];
+                    char lv_path[36];
+                    snprintf(fs_path, sizeof(fs_path), "/plugin_0x%02X.png", addr);
+                    snprintf(lv_path, sizeof(lv_path), "S:/plugin_0x%02X.png", addr);
+                    if (littlefs_exists(fs_path))
+                    {
+                        lv_draw_buf_t *missing = make_plugin_missing_buf(load_png_once(lv_path));
+                        set_image_src(g_ui.plugin_icons[plugin_count], missing, lv_path);
+                    }
+                    else
+                    {
+                        set_image_src(g_ui.plugin_icons[plugin_count], g_ui.plugin_missing_buf, "S:/plugin.png");
+                    }
+                    lv_obj_align(g_ui.plugin_icons[plugin_count], LV_ALIGN_BOTTOM_LEFT,
+                                 margin_x + (int16_t)plugin_count * (icon_size + spacing),
+                                 -margin_y);
+                    hide_all_ui();
+                    show_ui(g_ui.background);
+                    show_ui(g_ui.boot);
+                    for (size_t j = 0; j < plugin_count; ++j)
+                    {
+                        Serial.println(j);
+                        show_ui(g_ui.plugin_icons[j]);
+                    }
+                    show_ui(g_ui.plugin_icons[plugin_count]);
+                    lv_timer_handler();
+                    bool blink_on = true;
+                    for (;;)
+                    {
+                        if (blink_on)
+                            show_ui(g_ui.plugin_icons[plugin_count]);
+                        else
+                            lv_obj_add_flag(g_ui.plugin_icons[plugin_count], LV_OBJ_FLAG_HIDDEN);
+                        blink_on = !blink_on;
+                        lv_timer_handler();
+                        vTaskDelay(pdMS_TO_TICKS(500));
+                    }
                 }
             }
             for (size_t i = plugin_count; i < k_plugin_max; ++i)
