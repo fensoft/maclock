@@ -15,6 +15,7 @@
 #include "driver/touch_pad.h"
 #include "TouchSensor.h"
 #include <Wire.h>
+#include <LittleFS.h>
 #include "datetime_ui.h"
 #include "touch.h"
 #include "Adafruit_BMP5xx.h"
@@ -42,6 +43,8 @@ struct InputState
     bool touch;
 };
 
+static constexpr size_t k_plugin_max = 6;
+
 struct UiImages
 {
     lv_obj_t *background;
@@ -62,6 +65,7 @@ struct UiImages
     lv_obj_t *gauge_box;
     lv_obj_t *white_bar;
     lv_obj_t *black_line;
+    lv_obj_t *plugin_icons[k_plugin_max];
 
     lv_draw_buf_t *background_buf;
     lv_draw_buf_t *corners_buf;
@@ -72,6 +76,7 @@ struct UiImages
     lv_draw_buf_t *menu_right_buf;
     lv_draw_buf_t *icon_buf;
     lv_draw_buf_t *clock_buf;
+    lv_draw_buf_t *plugin_buf;
 };
 
 struct CalibUi
@@ -171,6 +176,11 @@ static void hide_all_ui()
     lv_obj_add_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
+    for (size_t i = 0; i < k_plugin_max; ++i)
+    {
+        if (g_ui.plugin_icons[i])
+            lv_obj_add_flag(g_ui.plugin_icons[i], LV_OBJ_FLAG_HIDDEN);
+    }
     datetime_ui_hide();
     if (g_calib_ui.label)
         lv_obj_add_flag(g_calib_ui.label, LV_OBJ_FLAG_HIDDEN);
@@ -200,6 +210,11 @@ static void set_image_src(lv_obj_t *img, lv_draw_buf_t *buf, const char *path)
         lv_image_set_src(img, (const lv_image_dsc_t *)buf);
     else
         lv_image_set_src(img, path);
+}
+
+static bool littlefs_exists(const char *path)
+{
+    return LittleFS.exists(path);
 }
 
 static void update_clock_labels()
@@ -274,6 +289,7 @@ static void init_ui_assets()
     g_ui.menu_right_buf = load_png_once("S:/menu_right.png");
     g_ui.icon_buf = load_png_once("S:/icon.png");
     g_ui.clock_buf = load_png_once("S:/empty.png");
+    g_ui.plugin_buf = load_png_once("S:/plugin.png");
 
     set_image_src(g_ui.background, g_ui.background_buf, "S:/background.png");
     lv_obj_center(g_ui.background);
@@ -366,6 +382,12 @@ static void init_ui_assets()
     g_ui.boot = lv_image_create(scr);
     set_image_src(g_ui.boot, g_ui.boot_buf, "S:/boot.png");
     lv_obj_center(g_ui.boot);
+
+    for (size_t i = 0; i < k_plugin_max; ++i)
+    {
+        g_ui.plugin_icons[i] = lv_image_create(scr);
+        set_image_src(g_ui.plugin_icons[i], g_ui.plugin_buf, "S:/plugin.png");
+    }
 
     g_ui.corners = lv_image_create(scr);
     set_image_src(g_ui.corners, g_ui.corners_buf, "S:/corners.png");
@@ -474,6 +496,12 @@ static void scan_i2c()
     Serial.println(found);
 }
 
+static bool i2c_device_present(uint8_t addr)
+{
+    Wire.beginTransmission(addr);
+    return Wire.endTransmission() == 0;
+}
+
 void setup_codec();
 void setup_lvgl_display();
 void setup_lvgl_input();
@@ -544,6 +572,9 @@ void loop()
     static int currentState = 1;
     static unsigned long stateStartTime = 0;
     static int lastState = -1;
+    static uint8_t plugin_count = 0;
+    static uint8_t plugin_reveal = 0;
+    static unsigned long plugin_next_reveal = 0;
     static int calib_step = 0;
     static bool calib_wait_release = false;
     static uint16_t calib_raw_x[4] = {};
@@ -557,15 +588,6 @@ void loop()
         currentState = g_requested_state;
         stateStartTime = now;
         g_requested_state = 0;
-    }
-
-    if (currentState != lastState)
-    {
-        if (currentState == 8)
-        {
-            DateTime current = rtc.now();
-            datetime_ui_enter(current);
-        }
     }
 
     switch (currentState)
@@ -587,7 +609,7 @@ void loop()
                 portEXIT_CRITICAL(&g_mp3_mux);
             }
 
-            currentState++;
+            g_requested_state = currentState + 1;
             stateStartTime = now;
         }
         break;
@@ -599,7 +621,7 @@ void loop()
             show_ui(g_ui.disk_missing_1);
             show_ui(g_ui.corners);
             lv_timer_handler();
-            currentState++;
+            g_requested_state = currentState + 1;
             stateStartTime = now;
         }
         if (inputs.floppy)
@@ -622,7 +644,7 @@ void loop()
         }
         if (inputs.floppy)
         {
-            currentState++;
+            g_requested_state = currentState + 1;
             stateStartTime = now;
         }
         break;
@@ -640,18 +662,59 @@ void loop()
         g_mp3_finished = false;
         portEXIT_CRITICAL(&g_mp3_mux);
     }
-        currentState++;
+        g_requested_state = currentState + 1;
         stateStartTime = now;
         break;
-    case 5: // show boot screen after 3s
-        if (now - stateStartTime >= 3000)
+    case 5: // show boot screen + detected i2c plugins
+        if (currentState != lastState)
+        {
+            static const uint8_t k_addrs[k_plugin_max] = {0x18, 0x38, 0x47, 0x50, 0x68, 0x7E};
+            const int16_t margin_x = 8;
+            const int16_t margin_y = 8;
+            const int16_t spacing = 4;
+            const int16_t icon_size = 32;
+            plugin_count = 0;
+            plugin_reveal = 0;
+            plugin_next_reveal = now + (unsigned long)random(100, 301);
+            for (size_t i = 0; i < k_plugin_max; ++i)
+            {
+                if (i2c_device_present(k_addrs[i]) && plugin_count < k_plugin_max)
+                {
+                    char fs_path[32];
+                    char lv_path[36];
+                    snprintf(fs_path, sizeof(fs_path), "/plugin_0x%02X.png", k_addrs[i]);
+                    snprintf(lv_path, sizeof(lv_path), "S:/plugin_0x%02X.png", k_addrs[i]);
+                    if (littlefs_exists(fs_path))
+                        lv_image_set_src(g_ui.plugin_icons[plugin_count], lv_path);
+                    else
+                        set_image_src(g_ui.plugin_icons[plugin_count], g_ui.plugin_buf, "S:/plugin.png");
+                    lv_obj_align(g_ui.plugin_icons[plugin_count], LV_ALIGN_BOTTOM_LEFT,
+                                 margin_x + (int16_t)plugin_count * (icon_size + spacing),
+                                 -margin_y);
+                    plugin_count++;
+                }
+            }
+            for (size_t i = plugin_count; i < k_plugin_max; ++i)
+                lv_obj_add_flag(g_ui.plugin_icons[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        if (now - stateStartTime >= 0)
         {
             hide_all_ui();
             show_ui(g_ui.background);
             show_ui(g_ui.boot);
+            if (plugin_reveal < plugin_count && now >= plugin_next_reveal)
+            {
+                plugin_reveal++;
+                plugin_next_reveal = now + (unsigned long)random(200, 600);
+            }
+            for (size_t i = 0; i < plugin_reveal; ++i)
+                show_ui(g_ui.plugin_icons[i]);
             show_ui(g_ui.corners);
             lv_timer_handler();
-            currentState++;
+        }
+        if (now - stateStartTime >= 1500 && plugin_reveal == plugin_count)
+        {
+            g_requested_state = currentState + 1;
             stateStartTime = now;
         }
         break;
@@ -664,7 +727,7 @@ void loop()
         portEXIT_CRITICAL(&g_mp3_mux);
         if (finished)
         {
-            currentState++;
+            g_requested_state = currentState + 1;
             stateStartTime = now;
         }
     }
@@ -704,6 +767,11 @@ void loop()
         }
         break;
     case 8: // change date/time
+        if (currentState != lastState)
+        {
+            DateTime current = rtc.now();
+            datetime_ui_enter(current);
+        }
         if (now - stateStartTime >= 0)
         {
             hide_all_ui();
