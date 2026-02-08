@@ -636,6 +636,7 @@ void loop()
     static uint16_t calib_raw_x[4] = {};
     static uint16_t calib_raw_y[4] = {};
     static lv_point_t calib_targets[4] = {};
+
     unsigned long now = millis();
     InputState inputs = read_input_state();
 
@@ -664,12 +665,25 @@ void loop()
                 g_mp3_finished = false;
                 portEXIT_CRITICAL(&g_mp3_mux);
             }
-
             g_requested_state = currentState + 1;
             stateStartTime = now;
         }
         break;
-    case 2: // wait for floppy 1
+    case 2: // wait for end of startup sound
+    {
+        bool finished = false;
+        portENTER_CRITICAL(&g_mp3_mux);
+        finished = g_mp3_finished;
+        g_mp3_finished = false;
+        portEXIT_CRITICAL(&g_mp3_mux);
+        if (finished)
+        {
+            g_requested_state = currentState + 1;
+            stateStartTime = now;
+        }
+    }
+    break;
+    case 3: // wait for floppy 1
         if (now - stateStartTime >= 1000)
         {
             hide_all_ui();
@@ -686,7 +700,7 @@ void loop()
             stateStartTime = now;
         }
         break;
-    case 3: // wait for floppy 2
+    case 4: // wait for floppy 2
         if (now - stateStartTime >= 1000)
         {
             hide_all_ui();
@@ -704,7 +718,7 @@ void loop()
             stateStartTime = now;
         }
         break;
-    case 4: // floppy inserted, loading...
+    case 5: // floppy inserted, loading...
     {
         hide_all_ui();
         show_ui(g_ui.background);
@@ -721,7 +735,7 @@ void loop()
         g_requested_state = currentState + 1;
         stateStartTime = now;
         break;
-    case 5: // show boot screen + detected i2c plugins
+    case 6: // show boot screen + detected i2c plugins
         if (currentState != lastState)
         {
             static const uint8_t k_addrs[k_plugin_max] = {0x18, 0x38, 0x47, 0x50, 0x68};
@@ -815,7 +829,7 @@ void loop()
             stateStartTime = now;
         }
         break;
-    case 6: // wait for end of floppy sound
+    case 7: // wait for end of floppy sound
     {
         bool finished = false;
         portENTER_CRITICAL(&g_mp3_mux);
@@ -828,8 +842,8 @@ void loop()
             stateStartTime = now;
         }
     }
-        break;
-    case 7: // normal state
+    break;
+    case 8: // normal state
         if (now - stateStartTime >= 1000)
         {
             hide_all_ui();
@@ -854,16 +868,16 @@ void loop()
         }
         if (inputs.clock)
         {
-            currentState = 8;
+            currentState = 9;
             stateStartTime = now;
         }
         if (inputs.alarm)
         {
-            currentState = 9;
+            currentState = 10;
             stateStartTime = now;
         }
         break;
-    case 8: // change date/time
+    case 9: // change date/time
         if (currentState != lastState)
         {
             DateTime current = rtc.now();
@@ -880,7 +894,7 @@ void loop()
             lv_timer_handler();
         }
         break;
-    case 9: // calibration screen
+    case 10: // calibration screen
         if (currentState != lastState)
         {
             lv_obj_t *scr = lv_screen_active();
@@ -931,7 +945,7 @@ void loop()
                     uint16_t maxy = max(calib_raw_y[2], calib_raw_y[3]);
                     touch_set_calibration(minx, maxx, miny, maxy);
                     touch_save_calibration();
-                    currentState = 7;
+                    currentState = 8;
                     stateStartTime = now;
                 }
             }
