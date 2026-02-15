@@ -86,6 +86,20 @@ struct CalibUi
     lv_obj_t *cross;
 };
 
+enum UiState
+{
+    UI_STATE_EMPTY_SCREEN = 1,
+    UI_STATE_WAIT_STARTUP_SOUND = 2,
+    UI_STATE_WAIT_FLOPPY_1 = 3,
+    UI_STATE_WAIT_FLOPPY_2 = 4,
+    UI_STATE_FLOPPY_INSERTED = 5,
+    UI_STATE_BOOT_PLUGINS = 6,
+    UI_STATE_WAIT_FLOPPY_SOUND = 7,
+    UI_STATE_NORMAL = 8,
+    UI_STATE_SET_DATETIME = 9,
+    UI_STATE_CALIBRATION = 10
+};
+
 static InputState g_input_state = {};
 static portMUX_TYPE g_input_state_mux = portMUX_INITIALIZER_UNLOCKED;
 static UiImages g_ui = {};
@@ -95,6 +109,7 @@ static portMUX_TYPE g_mp3_mux = portMUX_INITIALIZER_UNLOCKED;
 static int g_requested_state = 0;
 static lv_obj_t *g_cursor = nullptr;
 static lv_timer_t *g_cursor_timer = nullptr;
+static constexpr uint8_t k_nvram_addr_encoder = 0;
 
 void setup_codec();
 void setup_lvgl_display();
@@ -192,11 +207,6 @@ static void hide_all_ui()
         lv_obj_add_flag(g_calib_ui.label, LV_OBJ_FLAG_HIDDEN);
     if (g_calib_ui.cross)
         lv_obj_add_flag(g_calib_ui.cross, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void show_ui(lv_obj_t *obj)
-{
-    lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
 }
 
 static lv_draw_buf_t *load_png_once(const char *path)
@@ -503,7 +513,7 @@ static InputState read_input_state()
     InputState snapshot;
     portENTER_CRITICAL(&g_input_state_mux);
     snapshot = g_input_state;
-    g_input_state = {};
+    g_input_state.alarm = g_input_state.clock = g_input_state.touch = false;
     portEXIT_CRITICAL(&g_input_state_mux);
     return snapshot;
 }
@@ -521,8 +531,7 @@ static void input_task(void *param)
         bool clock = !digitalRead(GPIO_CLOCK);
         bool touched = touch.update();
         portENTER_CRITICAL(&g_input_state_mux);
-        if (floppy)
-            g_input_state.floppy = true;
+        g_input_state.floppy = floppy;
         if (alarm && !last_alarm)
             g_input_state.alarm = true;
         if (clock && !last_clock)
@@ -587,7 +596,11 @@ void setup()
     pinMode(GPIO_ENCODER2, INPUT_PULLUP);
     ESP32Encoder::useInternalWeakPullResistors = puType::up;
     encoder.attachHalfQuad(GPIO_ENCODER1, GPIO_ENCODER2);
-    encoder.setCount(25);
+    {
+        uint8_t saved = rtc.readnvram(k_nvram_addr_encoder);
+        int start_count = (saved <= 12) ? saved : 6;
+        encoder.setCount(start_count);
+    }
 
     touch.begin();
     pinMode(GPIO_CHARGING, INPUT_PULLDOWN);
@@ -620,12 +633,12 @@ void setup()
     bmp.enablePressure(true);
 
     if (!digitalRead(GPIO_CLOCK)) // run calibration if clock button set on boot
-        request_state(9);
+        request_state(UI_STATE_CALIBRATION);
 }
 
 void loop()
 {
-    static int currentState = 1;
+    static int currentState = UI_STATE_EMPTY_SCREEN;
     static unsigned long stateStartTime = 0;
     static int lastState = -1;
     static uint8_t plugin_count = 0;
@@ -636,6 +649,9 @@ void loop()
     static uint16_t calib_raw_x[4] = {};
     static uint16_t calib_raw_y[4] = {};
     static lv_point_t calib_targets[4] = {};
+    static int last_saved_encoder = -1;
+    static unsigned long last_encoder_save_ms = 0;
+    static unsigned long full_brightness_until = 0;
 
     unsigned long now = millis();
     InputState inputs = read_input_state();
@@ -649,12 +665,12 @@ void loop()
 
     switch (currentState)
     {
-    case 1: //  empty screen, start sound
+    case UI_STATE_EMPTY_SCREEN: //  empty screen, start sound
         if (now - stateStartTime >= 0)
         {
             hide_all_ui();
-            show_ui(g_ui.background);
-            show_ui(g_ui.corners);
+            lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
             lv_timer_handler();
             if (!mp3 || !mp3->isRunning())
             {
@@ -669,7 +685,7 @@ void loop()
             stateStartTime = now;
         }
         break;
-    case 2: // wait for end of startup sound
+    case UI_STATE_WAIT_STARTUP_SOUND: // wait for end of startup sound
     {
         bool finished = false;
         portENTER_CRITICAL(&g_mp3_mux);
@@ -683,13 +699,13 @@ void loop()
         }
     }
     break;
-    case 3: // wait for floppy 1
+    case UI_STATE_WAIT_FLOPPY_1: // wait for floppy 1
         if (now - stateStartTime >= 1000)
         {
             hide_all_ui();
-            show_ui(g_ui.background);
-            show_ui(g_ui.disk_missing_1);
-            show_ui(g_ui.corners);
+            lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.disk_missing_1, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
             lv_timer_handler();
             g_requested_state = currentState + 1;
             stateStartTime = now;
@@ -700,13 +716,13 @@ void loop()
             stateStartTime = now;
         }
         break;
-    case 4: // wait for floppy 2
+    case UI_STATE_WAIT_FLOPPY_2: // wait for floppy 2
         if (now - stateStartTime >= 1000)
         {
             hide_all_ui();
-            show_ui(g_ui.background);
-            show_ui(g_ui.disk_missing_2);
-            show_ui(g_ui.corners);
+            lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.disk_missing_2, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
             lv_timer_handler();
 
             currentState--;
@@ -718,11 +734,11 @@ void loop()
             stateStartTime = now;
         }
         break;
-    case 5: // floppy inserted, loading...
+    case UI_STATE_FLOPPY_INSERTED: // floppy inserted, loading...
     {
         hide_all_ui();
-        show_ui(g_ui.background);
-        show_ui(g_ui.corners);
+        lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
         lv_timer_handler();
         file = new AudioFileSourceLittleFS("/floppy.mp3");
         mp3 = new AudioGeneratorMP3();
@@ -735,7 +751,7 @@ void loop()
         g_requested_state = currentState + 1;
         stateStartTime = now;
         break;
-    case 6: // show boot screen + detected i2c plugins
+    case UI_STATE_BOOT_PLUGINS: // show boot screen + detected i2c plugins
         if (currentState != lastState)
         {
             static const uint8_t k_addrs[k_plugin_max] = {0x18, 0x38, 0x47, 0x50, 0x68};
@@ -783,20 +799,19 @@ void loop()
                                  margin_x + (int16_t)plugin_count * (icon_size + spacing),
                                  -margin_y);
                     hide_all_ui();
-                    show_ui(g_ui.background);
-                    show_ui(g_ui.boot);
+                    lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+                    lv_obj_clear_flag(g_ui.boot, LV_OBJ_FLAG_HIDDEN);
                     for (size_t j = 0; j < plugin_count; ++j)
                     {
-                        Serial.println(j);
-                        show_ui(g_ui.plugin_icons[j]);
+                        lv_obj_clear_flag(g_ui.plugin_icons[j], LV_OBJ_FLAG_HIDDEN);
                     }
-                    show_ui(g_ui.plugin_icons[plugin_count]);
+                    lv_obj_clear_flag(g_ui.plugin_icons[plugin_count], LV_OBJ_FLAG_HIDDEN);
                     lv_timer_handler();
                     bool blink_on = true;
                     for (;;)
                     {
                         if (blink_on)
-                            show_ui(g_ui.plugin_icons[plugin_count]);
+                            lv_obj_clear_flag(g_ui.plugin_icons[plugin_count], LV_OBJ_FLAG_HIDDEN);
                         else
                             lv_obj_add_flag(g_ui.plugin_icons[plugin_count], LV_OBJ_FLAG_HIDDEN);
                         blink_on = !blink_on;
@@ -811,16 +826,16 @@ void loop()
         if (now - stateStartTime >= 0)
         {
             hide_all_ui();
-            show_ui(g_ui.background);
-            show_ui(g_ui.boot);
+            lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.boot, LV_OBJ_FLAG_HIDDEN);
             if (plugin_reveal < plugin_count && now >= plugin_next_reveal)
             {
                 plugin_reveal++;
                 plugin_next_reveal = now + (unsigned long)random(200, 600);
             }
             for (size_t i = 0; i < plugin_reveal; ++i)
-                show_ui(g_ui.plugin_icons[i]);
-            show_ui(g_ui.corners);
+                lv_obj_clear_flag(g_ui.plugin_icons[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
             lv_timer_handler();
         }
         if (now - stateStartTime >= 1500 && plugin_reveal == plugin_count)
@@ -829,7 +844,7 @@ void loop()
             stateStartTime = now;
         }
         break;
-    case 7: // wait for end of floppy sound
+    case UI_STATE_WAIT_FLOPPY_SOUND: // wait for end of floppy sound
     {
         bool finished = false;
         portENTER_CRITICAL(&g_mp3_mux);
@@ -843,41 +858,46 @@ void loop()
         }
     }
     break;
-    case 8: // normal state
-        if (now - stateStartTime >= 1000)
+    case UI_STATE_NORMAL: // normal state
+    {
+        static unsigned long lastClockUpdate = 0;
+        if (currentState != lastState)
         {
             hide_all_ui();
-            show_ui(g_ui.background);
-            show_ui(g_ui.white_bar);
-            show_ui(g_ui.black_line);
-            show_ui(g_ui.menu);
-            show_ui(g_ui.menu_right);
-            show_ui(g_ui.clock);
-            show_ui(g_ui.clock_label);
-            show_ui(g_ui.time);
-            show_ui(g_ui.date);
-            show_ui(g_ui.temp);
-            show_ui(g_ui.gauge_icon);
-            show_ui(g_ui.gauge_line);
-            show_ui(g_ui.gauge_box);
-            show_ui(g_ui.corners);
+            lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.menu, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.menu_right, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.clock, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.clock_label, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.time, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.date, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.temp, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.gauge_icon, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.gauge_line, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
+            lv_timer_handler();
+        }
+        if (!lastClockUpdate || now - lastClockUpdate >= 100)
+        {
             if (inputs.floppy)
-                show_ui(g_ui.icon);
+                lv_obj_clear_flag(g_ui.icon, LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_add_flag(g_ui.icon, LV_OBJ_FLAG_HIDDEN);
             update_clock_labels();
             lv_timer_handler();
+            lastClockUpdate = now;
         }
         if (inputs.clock)
         {
-            currentState = 9;
-            stateStartTime = now;
-        }
-        if (inputs.alarm)
-        {
-            currentState = 10;
+            g_requested_state = UI_STATE_SET_DATETIME;
             stateStartTime = now;
         }
         break;
-    case 9: // change date/time
+    }
+    case UI_STATE_SET_DATETIME: // change date/time
         if (currentState != lastState)
         {
             DateTime current = rtc.now();
@@ -886,15 +906,15 @@ void loop()
         if (now - stateStartTime >= 0)
         {
             hide_all_ui();
-            show_ui(g_ui.background);
-            show_ui(g_ui.white_bar);
-            show_ui(g_ui.black_line);
-            show_ui(g_ui.corners);
+            lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
             datetime_ui_show();
             lv_timer_handler();
         }
         break;
-    case 10: // calibration screen
+    case UI_STATE_CALIBRATION: // calibration screen
         if (currentState != lastState)
         {
             lv_obj_t *scr = lv_screen_active();
@@ -913,10 +933,10 @@ void loop()
         if (now - stateStartTime >= 0)
         {
             hide_all_ui();
-            show_ui(g_ui.background);
-            show_ui(g_ui.corners);
-            show_ui(g_calib_ui.label);
-            show_ui(g_calib_ui.cross);
+            lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_calib_ui.label, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_calib_ui.cross, LV_OBJ_FLAG_HIDDEN);
             lv_timer_handler();
         }
         {
@@ -945,7 +965,7 @@ void loop()
                     uint16_t maxy = max(calib_raw_y[2], calib_raw_y[3]);
                     touch_set_calibration(minx, maxx, miny, maxy);
                     touch_save_calibration();
-                    currentState = 8;
+                    g_requested_state = UI_STATE_NORMAL;
                     stateStartTime = now;
                 }
             }
@@ -955,17 +975,26 @@ void loop()
 
     lastState = currentState;
 
-    if (inputs.touch || inputs.alarm || inputs.clock)
-    {
-        Serial.print(inputs.touch);
-        Serial.print(inputs.floppy);
-        Serial.print(inputs.alarm);
-        Serial.println(inputs.clock);
-    }
+    if (inputs.touch)
+        full_brightness_until = now + 10000;
 
-    if (encoder.getCount() < 0)
-        encoder.setCount(0);
-    if (encoder.getCount() > 12)
-        encoder.setCount(12);
-    analogWrite(TFT_BL_VAR, encoder.getCount() * 255 / 12);
+    int enc = encoder.getCount();
+    if (enc < 0)
+        enc = 0;
+    if (enc > 12)
+        enc = 12;
+    if (enc != encoder.getCount())
+        encoder.setCount(enc);
+    if (now < full_brightness_until)
+        analogWrite(TFT_BL_VAR, 255);
+    else
+        analogWrite(TFT_BL_VAR, enc * 255 / 12);
+
+    if (enc != last_saved_encoder && (now - last_encoder_save_ms) >= 500)
+    {
+        rtc.writenvram(k_nvram_addr_encoder, (uint8_t)enc);
+        last_saved_encoder = enc;
+        last_encoder_save_ms = now;
+    }
 }
+
