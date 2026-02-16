@@ -573,12 +573,27 @@ static bool i2c_device_present(uint8_t addr)
     return Wire.endTransmission() == 0;
 }
 
+extern void basilisk_setup(void);
+#include "ESP32-BasiliskII/src/basilisk/include/boot_gui.h"
+
 void setup()
 {
     Serial.begin(115200);
     analogWrite(TFT_BL_VAR, 0);
 
     heap_caps_malloc_extmem_enable(0);
+    LittleFS.begin();
+    my_lcd.init();
+
+    my_lcd.setAddrWindow(0, 0, LCD_W, LCD_H);
+    my_lcd.fillScreen(0x0000);
+    my_lcd.setRotation(3);
+    analogWrite(TFT_BL_VAR, 255);
+    BootGUI_SetRAMSizeMB(4);
+    BootGUI_SetDiskPath("/boot.dsk");
+    basilisk_setup();
+    while(1);
+
     setup_codec();
     setup_lvgl_display();
     setup_lvgl_input();

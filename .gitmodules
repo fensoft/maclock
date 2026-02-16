@@ -1,0 +1,3 @@
+[submodule "src/ESP32-BasiliskII"]
+	path = src/ESP32-BasiliskII
+	url = git@github.com:fensoft/ESP32-BasiliskII.git

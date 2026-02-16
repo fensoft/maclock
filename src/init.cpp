@@ -36,10 +36,6 @@ void lvgl_to_TFT_eSPI(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map
 
 void setup_lvgl_display()
 {
-    my_lcd.init();
-    my_lcd.fillScreen(0xFFFF);
-    my_lcd.setRotation(3);
-
     lv_init();
     lv_log_register_print_cb(lvgl_log_cb);
     lv_tick_set_cb(millis);
@@ -80,7 +76,6 @@ void setup_lvgl_input()
 
 void lvgl_fs_init_littlefs()
 {
-    LittleFS.begin();
     static lv_fs_drv_t drv;
     lv_fs_drv_init(&drv);
 
