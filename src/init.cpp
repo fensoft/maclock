@@ -25,7 +25,7 @@ void lvgl_to_TFT_eSPI(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map
     static bool cleared = false;
     if(!cleared) {
         my_lcd.setAddrWindow(0, 0, LCD_W, LCD_H);
-        my_lcd.fillScreen(0x0000);
+        my_lcd.fillScreen(TFT_BLACK);
         cleared = true;
     }
 

@@ -6,7 +6,7 @@
 #include <FS.h>
 #include <LittleFS.h>
 
-#include "M5Stack.h"
+#include <TFT_eSPI.h>
 
 #include "ArduinoAPI.h"
 
@@ -14,6 +14,8 @@
 #include "CNFGGLOB.h"
 #include "CNFGRAPI.h"
 #include "MYOSGLUE.h"
+
+extern TFT_eSPI my_lcd;
 
 int vMacMouseX = 0;
 int vMacMouseY = 0;
@@ -108,8 +110,8 @@ void RenderTask(void *Param)
                         const int pitch_bytes = (vmac_width + 7) / 8;
                         const uint16_t color_border = 0x0000;
 
-                        M5.Lcd.startWrite();
-                        M5.Lcd.setWindow(0, 0, out_width - 1, out_height - 1);
+                        my_lcd.startWrite();
+                        my_lcd.setAddrWindow(0, 0, out_width, out_height);
 
                         for (int y = 0; y < out_height; ++y)
                         {
@@ -121,7 +123,7 @@ void RenderTask(void *Param)
                                 {
                                     *dst++ = color_border;
                                 }
-                                M5.Lcd.writePixels(line_buffer, out_width);
+                                my_lcd.pushColors(line_buffer, (uint32_t)out_width, true);
                                 continue;
                             }
 
@@ -159,10 +161,10 @@ void RenderTask(void *Param)
                                 *dst++ = color_border;
                             }
 
-                            M5.Lcd.writePixels(line_buffer, out_width);
+                            my_lcd.pushColors(line_buffer, (uint32_t)out_width, true);
                         }
 
-                        M5.Lcd.endWrite();
+                        my_lcd.endWrite();
                     }
                 }
             }
@@ -174,8 +176,6 @@ void RenderTask(void *Param)
 
 void minivmac(void)
 {
-    M5.Lcd.setRotation(3);
-    M5.Lcd.clear(TFT_LIGHTGREY);
     RenderTaskEventHandle = xEventGroupCreate();
     RenderTaskLock = xSemaphoreCreateMutex();
     SPIBusLock = xSemaphoreCreateMutex();
@@ -198,24 +198,24 @@ void ArduinoAPI_GetDisplayDimensions(int *OutWidthPtr, int *OutHeightPtr)
 {
     if (OutWidthPtr)
     {
-        *OutWidthPtr = (int)M5.Lcd.width();
+        *OutWidthPtr = (int)my_lcd.width();
     }
     if (OutHeightPtr)
     {
-        *OutHeightPtr = (int)M5.Lcd.height();
+        *OutHeightPtr = (int)my_lcd.height();
     }
 }
 
 void ArduinoAPI_SetAddressWindow(int x0, int y0, int x1, int y1)
 {
-    M5.Lcd.setAddrWindow(x0, y0, (x1 - x0), (y1 - y0));
+    my_lcd.setAddrWindow(x0, y0, (x1 - x0), (y1 - y0));
 }
 
 void ArduinoAPI_WritePixels(const uint16_t *Pixels, size_t Count)
 {
-    M5.Lcd.startWrite();
-    M5.Lcd.writePixels((uint16_t *)Pixels, Count);
-    M5.Lcd.endWrite();
+    my_lcd.startWrite();
+    my_lcd.pushColors((uint16_t *)Pixels, (uint32_t)Count, true);
+    my_lcd.endWrite();
 }
 
 void ArduinoAPI_GetMouseDelta(int *OutXDeltaPtr, int *OutYDeltaPtr)
@@ -406,7 +406,6 @@ void ArduinoAPI_free(void *Memory)
 
 void ArduinoAPI_CheckForEvents(void)
 {
-    M5.update();
     // Mouse.Update( );
 }
 

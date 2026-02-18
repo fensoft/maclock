@@ -582,9 +582,10 @@ void setup()
     heap_caps_malloc_extmem_enable(0);
     LittleFS.begin();
     my_lcd.init();
+    touch_load_calibration();
 
     my_lcd.setAddrWindow(0, 0, LCD_W, LCD_H);
-    my_lcd.fillScreen(0x0000);
+    my_lcd.fillScreen(TFT_BLACK);
     my_lcd.setRotation(3);
 
     analogWrite(TFT_BL_VAR, 255);
@@ -594,7 +595,6 @@ void setup()
     setup_lvgl_display();
     setup_lvgl_input();
     touch_eeprom_begin();
-    touch_load_calibration();
     lvgl_fs_init_littlefs();
     init_ui_assets();
     Wire.begin(I2C_SDA, I2C_SCL);
