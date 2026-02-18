@@ -115,6 +115,7 @@ void setup_codec();
 void setup_lvgl_display();
 void setup_lvgl_input();
 void lvgl_fs_init_littlefs();
+void minivmac();
 
 void request_state(int state)
 {
@@ -579,6 +580,16 @@ void setup()
     analogWrite(TFT_BL_VAR, 0);
 
     heap_caps_malloc_extmem_enable(0);
+    LittleFS.begin();
+    my_lcd.init();
+
+    my_lcd.setAddrWindow(0, 0, LCD_W, LCD_H);
+    my_lcd.fillScreen(0x0000);
+    my_lcd.setRotation(3);
+
+    analogWrite(TFT_BL_VAR, 255);
+    minivmac();
+
     setup_codec();
     setup_lvgl_display();
     setup_lvgl_input();

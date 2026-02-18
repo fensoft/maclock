@@ -5,3 +5,8 @@
 .vscode/ipch
 .DS_Store
 docs/
+old/
+src/minivmac/
+minivmac-*.src.tgz
+data/vMac.ROM
+data/disk1.dsk

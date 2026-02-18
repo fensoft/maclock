@@ -1,0 +1,8 @@
+--- src/minivmac/src/ASCEMDEV.c
++++ src/minivmac/src/ASCEMDEV.c
+@@ -61,3 +61,5 @@
+ #ifdef ASC_interrupt_PulseNtfy
+ IMPORTPROC ASC_interrupt_PulseNtfy(void);
++#else
++#define ASC_interrupt_PulseNtfy() do { } while (0)
+ #endif
