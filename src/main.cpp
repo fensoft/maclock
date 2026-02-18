@@ -582,11 +582,15 @@ void setup()
     heap_caps_malloc_extmem_enable(0);
     LittleFS.begin();
     my_lcd.init();
+    touch_eeprom_begin();
     touch_load_calibration();
+    touch.begin();
 
     my_lcd.setAddrWindow(0, 0, LCD_W, LCD_H);
     my_lcd.fillScreen(TFT_BLACK);
     my_lcd.setRotation(3);
+
+    touch_init(my_lcd.width(), my_lcd.height(), my_lcd.getRotation());
 
     analogWrite(TFT_BL_VAR, 255);
     minivmac();
@@ -594,7 +598,6 @@ void setup()
     setup_codec();
     setup_lvgl_display();
     setup_lvgl_input();
-    touch_eeprom_begin();
     lvgl_fs_init_littlefs();
     init_ui_assets();
     Wire.begin(I2C_SDA, I2C_SCL);
@@ -613,7 +616,6 @@ void setup()
         encoder.setCount(start_count);
     }
 
-    touch.begin();
     pinMode(GPIO_CHARGING, INPUT_PULLDOWN);
     pinMode(GPIO_BAT_EN, OUTPUT);
     digitalWrite(GPIO_BAT_EN, 1);

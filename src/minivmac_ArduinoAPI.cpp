@@ -15,6 +15,8 @@
 #include "CNFGRAPI.h"
 #include "MYOSGLUE.h"
 
+#include "mouse.h"
+
 extern TFT_eSPI my_lcd;
 
 int vMacMouseX = 0;
@@ -37,9 +39,6 @@ void RenderTask(void *Param)
 {
     while (true)
     {
-        // x = vMacMouseX - ( DisplayWidth * 1 ) / 2;
-        // y = vMacMouseY - ( DisplayHeight * 1 ) / 2;
-
         xEventGroupWaitBits(RenderTaskEventHandle, DrawScreenEvent, pdTRUE, pdTRUE, portMAX_DELAY);
 
         if (xSemaphoreTake(SPIBusLock, pdMS_TO_TICKS(5)) == pdTRUE)
@@ -182,7 +181,7 @@ void minivmac(void)
 
     xTaskCreatePinnedToCore(RenderTask, "RenderTask", 4096, NULL, 0, &RenderTaskHandle, 0);
 
-    // Mouse.Init( );
+    Mouse.Init();
 
     minivmac_main(0, NULL);
 
@@ -223,7 +222,7 @@ void ArduinoAPI_GetMouseDelta(int *OutXDeltaPtr, int *OutYDeltaPtr)
     float x = 0.0f;
     float y = 0.0f;
 
-    // Mouse.Read( x, y );
+    Mouse.Read(x, y);
 
     *OutXDeltaPtr = (int)x;
     *OutYDeltaPtr = (int)y;
@@ -237,8 +236,7 @@ void ArduinoAPI_GiveEmulatedMouseToArduino(int *EmMouseX, int *EmMouseY)
 
 int ArduinoAPI_GetMouseButton(void)
 {
-    return 0;
-    // return ( int ) Mouse.ReadButton( );
+    return (int)Mouse.ReadButton();
 }
 
 uint64_t ArduinoAPI_GetTimeMS(void)
@@ -406,7 +404,7 @@ void ArduinoAPI_free(void *Memory)
 
 void ArduinoAPI_CheckForEvents(void)
 {
-    // Mouse.Update( );
+    Mouse.Update( );
 }
 
 void ArduinoAPI_ScreenChanged(int Top, int Left, int Bottom, int Right)

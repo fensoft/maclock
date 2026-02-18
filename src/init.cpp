@@ -68,7 +68,6 @@ void lvgl_touchpad_read(lv_indev_t *indev, lv_indev_data_t *data)
 
 void setup_lvgl_input()
 {
-    touch_init(my_lcd.width(), my_lcd.height(), my_lcd.getRotation());
     indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, lvgl_touchpad_read);
