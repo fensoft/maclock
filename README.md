@@ -37,3 +37,11 @@ Join our community: [Discord Server](https://discord.gg/89etSPMFym)
 In PlatformIO:
 - `PlatformIO: Upload` (firmware)
 - `PlatformIO: Upload Filesystem Image` (LittleFS)
+
+## Adding Software
+
+1. In Infinite Mac, open [System 7.0 at 320x240](https://infinitemac.org/1991/System%207.0?screenSize=320x240) and copy what you want to "Saved HD" drive".
+2. In Infinite Mac settings, export the saved HD image.
+3. Download a blank disk image from the [MinivMac blanks page](https://www.gryphel.com/c/minivmac/extras/blanks/).
+4. Open the blank disk image in [MinivMac](https://www.gryphel.com/c/minivmac/download.html), then open the exported Infinite Mac disk image.
+5. Copy your software from the Infinite Mac disk to the blank disk, then use the blank disk image in this project as diskX.dsk.

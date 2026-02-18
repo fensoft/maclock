@@ -184,13 +184,6 @@ void minivmac(void)
     Mouse.Init();
 
     minivmac_main(0, NULL);
-
-    Serial.println("If we got here, something bad happened.");
-
-    while (true)
-    {
-        delay(100);
-    }
 }
 
 void ArduinoAPI_GetDisplayDimensions(int *OutWidthPtr, int *OutHeightPtr)
