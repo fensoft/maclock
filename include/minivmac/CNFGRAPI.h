@@ -15,11 +15,10 @@
 #include <string.h>
 #include <unistd.h>
 
-#define RomFileName "vMac.ROM"
-#define kCheckSumRom_Size 0x00020000
-#define kRomCheckSum1 0x4D1EEEE1
-#define kRomCheckSum2 0x4D1EEAE1
-#define kRomCheckSum3 0x4D1F8172
+#define RomFileName "MacII.ROM"
+#define kCheckSumRom_Size 0x00040000
+#define kRomCheckSum1 0x9779D2C4
+#define kRomCheckSum2 0x97221136
 #define RomStartCheckSum 1
 #define EnableDragDrop 0
 #define SaveDialogEnable 1
@@ -79,4 +78,4 @@
 #define kMaintainerName "unknown"
 #define kStrHomePage "(unknown)"
 
-#define kBldOpts "-br 37 -t lx86 -sound 0 -ta 0 -mem 1M -min-extn"
+#define kBldOpts "-br 37 -t lx86 -m II -sound 0 -ta 0 -mem 4M -min-extn"

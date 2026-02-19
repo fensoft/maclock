@@ -64,6 +64,12 @@ typedef ui5b ui5r;
 typedef si5b si5r;
 #define si5beqr 1
 
+typedef signed long long si6r;
+typedef signed long long si6b;
+typedef unsigned long long ui6r;
+typedef unsigned long long ui6b;
+#define LIT64(a) a##ULL
+
 /* capabilities provided by platform specific code */
 
 #define MySoundEnabled 0
@@ -85,7 +91,7 @@ typedef si5b si5r;
 #define vMacScreenWidth (320-16)
 #define vMacScreenDepth 0
 
-#define kROM_Size 0x00020000
+#define kROM_Size 0x00040000
 
 #define IncludePbufs 1
 #define NumPbufs 4
