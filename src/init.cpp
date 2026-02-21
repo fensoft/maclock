@@ -25,7 +25,7 @@ void lvgl_to_TFT_eSPI(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map
     static bool cleared = false;
     if(!cleared) {
         my_lcd.setAddrWindow(0, 0, LCD_W, LCD_H);
-        my_lcd.fillScreen(0x0000);
+        my_lcd.fillScreen(TFT_BLACK);
         cleared = true;
     }
 
@@ -36,10 +36,6 @@ void lvgl_to_TFT_eSPI(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map
 
 void setup_lvgl_display()
 {
-    my_lcd.init();
-    my_lcd.fillScreen(0xFFFF);
-    my_lcd.setRotation(3);
-
     lv_init();
     lv_log_register_print_cb(lvgl_log_cb);
     lv_tick_set_cb(millis);
@@ -72,7 +68,6 @@ void lvgl_touchpad_read(lv_indev_t *indev, lv_indev_data_t *data)
 
 void setup_lvgl_input()
 {
-    touch_init(my_lcd.width(), my_lcd.height(), my_lcd.getRotation());
     indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, lvgl_touchpad_read);
@@ -80,7 +75,6 @@ void setup_lvgl_input()
 
 void lvgl_fs_init_littlefs()
 {
-    LittleFS.begin();
     static lv_fs_drv_t drv;
     lv_fs_drv_init(&drv);
 

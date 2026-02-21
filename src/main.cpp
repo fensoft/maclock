@@ -115,6 +115,7 @@ void setup_codec();
 void setup_lvgl_display();
 void setup_lvgl_input();
 void lvgl_fs_init_littlefs();
+void minivmac();
 
 void request_state(int state)
 {
@@ -579,17 +580,33 @@ void setup()
     analogWrite(TFT_BL_VAR, 0);
 
     heap_caps_malloc_extmem_enable(0);
+    LittleFS.begin();
+    my_lcd.init();
+    touch_eeprom_begin();
+    touch_load_calibration();
+    touch.begin();
+
+    my_lcd.setAddrWindow(0, 0, LCD_W, LCD_H);
+    my_lcd.fillScreen(TFT_BLACK);
+    my_lcd.setRotation(3);
+
+    touch_init(my_lcd.width(), my_lcd.height(), my_lcd.getRotation());
+
+    pinMode(GPIO_FLOPPY, INPUT);
+
+    if (!digitalRead(GPIO_FLOPPY)) {
+        analogWrite(TFT_BL_VAR, 255);
+        minivmac();
+    }
+
     setup_codec();
     setup_lvgl_display();
     setup_lvgl_input();
-    touch_eeprom_begin();
-    touch_load_calibration();
     lvgl_fs_init_littlefs();
     init_ui_assets();
     Wire.begin(I2C_SDA, I2C_SCL);
     rtc.begin();
 
-    pinMode(GPIO_FLOPPY, INPUT);
     pinMode(GPIO_ALARM, INPUT);
     pinMode(GPIO_CLOCK, INPUT);
     pinMode(GPIO_ENCODER1, INPUT_PULLUP);
@@ -602,7 +619,6 @@ void setup()
         encoder.setCount(start_count);
     }
 
-    touch.begin();
     pinMode(GPIO_CHARGING, INPUT_PULLDOWN);
     pinMode(GPIO_BAT_EN, OUTPUT);
     digitalWrite(GPIO_BAT_EN, 1);
