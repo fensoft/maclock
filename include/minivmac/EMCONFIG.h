@@ -28,7 +28,7 @@
 #define kAutoSlowTime 34
 
 #define kRAMa_Size 0x00200000
-#define kRAMb_Size 0x00080000
+#define kRAMb_Size 0x00200000
 
 #define IncludeVidMem 1
 #define kVidMemRAM_Size 0x00004000

@@ -592,8 +592,12 @@ void setup()
 
     touch_init(my_lcd.width(), my_lcd.height(), my_lcd.getRotation());
 
-    analogWrite(TFT_BL_VAR, 255);
-    minivmac();
+    pinMode(GPIO_FLOPPY, INPUT);
+
+    if (!digitalRead(GPIO_FLOPPY)) {
+        analogWrite(TFT_BL_VAR, 255);
+        minivmac();
+    }
 
     setup_codec();
     setup_lvgl_display();
@@ -603,7 +607,6 @@ void setup()
     Wire.begin(I2C_SDA, I2C_SCL);
     rtc.begin();
 
-    pinMode(GPIO_FLOPPY, INPUT);
     pinMode(GPIO_ALARM, INPUT);
     pinMode(GPIO_CLOCK, INPUT);
     pinMode(GPIO_ENCODER1, INPUT_PULLUP);
