@@ -21,6 +21,7 @@
 #include "Adafruit_BMP5xx.h"
 #include "Adafruit_HTU21DF.h"
 #include <Preferences.h>
+#include "brightness.h"
 
 LV_FONT_DECLARE(lv_font_chicago_8);
 LV_FONT_DECLARE(lv_font_chicago_32);
@@ -114,7 +115,14 @@ struct BootOptionsUi
 {
     lv_obj_t *panel;
     lv_obj_t *brightness_options;
-    lv_obj_t *floppy_options;
+    lv_obj_t *remember_selection;
+    lv_obj_t *rtc_status;
+};
+
+struct DiagnosticsUi
+{
+    lv_obj_t *panel;
+    lv_obj_t *status;
 };
 
 enum BootBrightness
@@ -137,7 +145,8 @@ enum UiState
     UI_STATE_SET_DATETIME = 9,
     UI_STATE_CALIBRATION = 10,
     UI_STATE_BOOT_OPTIONS = 11,
-    UI_STATE_EMULATOR = 12
+    UI_STATE_EMULATOR = 12,
+    UI_STATE_DIAGNOSTICS = 13
 };
 
 static InputState g_input_state = {};
@@ -145,6 +154,7 @@ static portMUX_TYPE g_input_state_mux = portMUX_INITIALIZER_UNLOCKED;
 static UiImages g_ui = {};
 static CalibUi g_calib_ui = {};
 static BootOptionsUi g_boot_options_ui = {};
+static DiagnosticsUi g_diagnostics_ui = {};
 static bool g_mp3_finished = false;
 static portMUX_TYPE g_mp3_mux = portMUX_INITIALIZER_UNLOCKED;
 static int g_requested_state = 0;
@@ -159,6 +169,7 @@ void setup_lvgl_display();
 void setup_lvgl_input();
 void lvgl_fs_init_littlefs();
 void minivmac();
+static void update_diagnostics_ui();
 
 void request_state(int state)
 {
@@ -196,6 +207,42 @@ void rtc_adjust_datetime(const DateTime &date_time)
     default:
         break;
     }
+}
+
+static bool format_rtc_health(char *text, size_t text_size)
+{
+    if (g_rtc_type == RTC_TYPE_NONE)
+    {
+        snprintf(text, text_size, "RTC: not detected");
+        return false;
+    }
+
+    if (g_rtc_type == RTC_TYPE_DS1307 && !rtc_ds1307.isrunning())
+    {
+        snprintf(text, text_size, "RTC: DS1307 stopped - check battery");
+        return false;
+    }
+    if (g_rtc_type == RTC_TYPE_DS3231 && rtc_ds3231.lostPower())
+    {
+        snprintf(text, text_size, "RTC: DS3231 lost power - check battery");
+        return false;
+    }
+
+    const DateTime current = rtc_now();
+    if (!current.isValid())
+    {
+        snprintf(text, text_size, "RTC: invalid date");
+        return false;
+    }
+    if (current.year() < 2024)
+    {
+        snprintf(text, text_size, "RTC: date not set (%04d)", current.year());
+        return false;
+    }
+
+    snprintf(text, text_size, "RTC: %s OK",
+             g_rtc_type == RTC_TYPE_DS1307 ? "DS1307" : "DS3231");
+    return true;
 }
 
 static void cursor_hide_timer_cb(lv_timer_t *timer)
@@ -261,16 +308,16 @@ static void apply_boot_brightness(BootBrightness choice, bool save_choice)
         preferences.putUChar("boot_brightness", (uint8_t)choice);
 
     int brightness = preferences.getUChar("brightness", 6);
-    if (brightness > 12)
+    if (brightness > kBrightnessMax)
         brightness = 6;
     if (choice == BOOT_BRIGHTNESS_LOWEST)
         brightness = 1;
     else if (choice == BOOT_BRIGHTNESS_HIGHEST)
-        brightness = 12;
+        brightness = kBrightnessMax;
 
     encoder.setCount(brightness);
     g_last_saved_encoder = brightness;
-    analogWrite(TFT_BL_VAR, brightness * 255 / 12);
+    analogWrite(TFT_BL_VAR, brightness_to_pwm(brightness));
 }
 
 static void boot_brightness_event(lv_event_t *event)
@@ -281,22 +328,45 @@ static void boot_brightness_event(lv_event_t *event)
         apply_boot_brightness((BootBrightness)selected, true);
 }
 
-static void boot_floppy_event(lv_event_t *event)
+static bool boot_remember_selection()
 {
-    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
-    const uint32_t selected = lv_buttonmatrix_get_selected_button(options);
-    if (selected > 1)
-        return;
-    g_boot_floppy_emulator = selected == 0;
-    preferences.putBool("floppy_emulator", g_boot_floppy_emulator);
+    return g_boot_options_ui.remember_selection &&
+           lv_obj_has_state(g_boot_options_ui.remember_selection,
+                            LV_STATE_CHECKED);
 }
 
-static void boot_options_continue_event(lv_event_t *event)
+static void remember_boot_mode(bool emulator)
+{
+    if (!boot_remember_selection())
+        return;
+    g_boot_floppy_emulator = emulator;
+    preferences.putBool("floppy_emulator", emulator);
+}
+
+static void boot_start_clock_event(lv_event_t *event)
 {
     (void)event;
-    request_state(g_boot_floppy_emulator
-                      ? UI_STATE_EMULATOR
-                      : UI_STATE_EMPTY_SCREEN);
+    remember_boot_mode(false);
+    request_state(UI_STATE_EMPTY_SCREEN);
+}
+
+static void boot_start_emulator_event(lv_event_t *event)
+{
+    (void)event;
+    remember_boot_mode(true);
+    request_state(UI_STATE_EMULATOR);
+}
+
+static void boot_diagnostics_event(lv_event_t *event)
+{
+    (void)event;
+    request_state(UI_STATE_DIAGNOSTICS);
+}
+
+static void diagnostics_back_event(lv_event_t *event)
+{
+    (void)event;
+    request_state(UI_STATE_BOOT_OPTIONS);
 }
 
 static void boot_options_continue_visual_event(lv_event_t *event)
@@ -330,10 +400,37 @@ static void style_boot_options_matrix(lv_obj_t *matrix)
     lv_obj_set_style_text_color(matrix, lv_color_white(), checked_items);
 }
 
+static lv_obj_t *create_action_button(lv_obj_t *parent,
+                                      const char *text,
+                                      lv_event_cb_t callback)
+{
+    lv_obj_t *button = lv_btn_create(parent);
+    lv_obj_set_style_bg_color(button, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(button, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(button, lv_color_black(), 0);
+    lv_obj_set_style_border_width(button, 2, 0);
+    lv_obj_set_style_radius(button, 0, 0);
+    lv_obj_set_style_bg_color(button, lv_color_black(), LV_STATE_PRESSED);
+
+    lv_obj_t *label = lv_label_create(button);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_color(label, lv_color_black(), 0);
+    lv_obj_center(label);
+
+    lv_obj_add_event_cb(button, boot_options_continue_visual_event,
+                        LV_EVENT_PRESSED, label);
+    lv_obj_add_event_cb(button, boot_options_continue_visual_event,
+                        LV_EVENT_RELEASED, label);
+    lv_obj_add_event_cb(button, boot_options_continue_visual_event,
+                        LV_EVENT_PRESS_LOST, label);
+    lv_obj_add_event_cb(button, callback, LV_EVENT_CLICKED, nullptr);
+    return button;
+}
+
 static void init_boot_options_ui(lv_obj_t *screen)
 {
     static const char *brightness_map[] = {"Latest", "Lowest", "Highest", ""};
-    static const char *floppy_map[] = {"Emulator", "Clock", ""};
 
     g_boot_options_ui.panel = lv_obj_create(screen);
     lv_obj_set_size(g_boot_options_ui.panel, 286, 202);
@@ -353,54 +450,53 @@ static void init_boot_options_ui(lv_obj_t *screen)
     lv_obj_t *brightness_label = lv_label_create(g_boot_options_ui.panel);
     lv_label_set_text(brightness_label, "Brightness");
     lv_obj_set_style_text_font(brightness_label, &lv_font_chicago_8, 0);
-    lv_obj_align(brightness_label, LV_ALIGN_TOP_LEFT, 0, 22);
+    lv_obj_align(brightness_label, LV_ALIGN_TOP_LEFT, 0, 18);
 
     g_boot_options_ui.brightness_options = lv_buttonmatrix_create(g_boot_options_ui.panel);
     lv_buttonmatrix_set_map(g_boot_options_ui.brightness_options, brightness_map);
     lv_buttonmatrix_set_button_ctrl_all(g_boot_options_ui.brightness_options, LV_BUTTONMATRIX_CTRL_CHECKABLE);
     lv_buttonmatrix_set_one_checked(g_boot_options_ui.brightness_options, true);
-    lv_obj_set_size(g_boot_options_ui.brightness_options, lv_pct(100), 34);
-    lv_obj_align(g_boot_options_ui.brightness_options, LV_ALIGN_TOP_MID, 0, 36);
+    lv_obj_set_size(g_boot_options_ui.brightness_options, lv_pct(100), 28);
+    lv_obj_align(g_boot_options_ui.brightness_options, LV_ALIGN_TOP_MID, 0, 31);
     style_boot_options_matrix(g_boot_options_ui.brightness_options);
     lv_obj_add_event_cb(g_boot_options_ui.brightness_options, boot_brightness_event,
                         LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *floppy_label = lv_label_create(g_boot_options_ui.panel);
-    lv_label_set_text(floppy_label, "Boot mode");
-    lv_obj_set_style_text_font(floppy_label, &lv_font_chicago_8, 0);
-    lv_obj_align(floppy_label, LV_ALIGN_TOP_LEFT, 0, 76);
+    g_boot_options_ui.remember_selection =
+        lv_checkbox_create(g_boot_options_ui.panel);
+    lv_checkbox_set_text(g_boot_options_ui.remember_selection,
+                         "Remember selection");
+    lv_obj_set_style_text_font(g_boot_options_ui.remember_selection,
+                               &lv_font_chicago_8, 0);
+    lv_obj_align(g_boot_options_ui.remember_selection,
+                 LV_ALIGN_TOP_LEFT, 0, 65);
 
-    g_boot_options_ui.floppy_options = lv_buttonmatrix_create(g_boot_options_ui.panel);
-    lv_buttonmatrix_set_map(g_boot_options_ui.floppy_options, floppy_map);
-    lv_buttonmatrix_set_button_ctrl_all(g_boot_options_ui.floppy_options, LV_BUTTONMATRIX_CTRL_CHECKABLE);
-    lv_buttonmatrix_set_one_checked(g_boot_options_ui.floppy_options, true);
-    lv_obj_set_size(g_boot_options_ui.floppy_options, lv_pct(100), 34);
-    lv_obj_align(g_boot_options_ui.floppy_options, LV_ALIGN_TOP_MID, 0, 90);
-    style_boot_options_matrix(g_boot_options_ui.floppy_options);
-    lv_obj_add_event_cb(g_boot_options_ui.floppy_options, boot_floppy_event,
-                        LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_t *clock_button =
+        create_action_button(g_boot_options_ui.panel, "Start Clock",
+                             boot_start_clock_event);
+    lv_obj_set_size(clock_button, 128, 28);
+    lv_obj_align(clock_button, LV_ALIGN_TOP_LEFT, 0, 87);
 
-    lv_obj_t *continue_button = lv_btn_create(g_boot_options_ui.panel);
-    lv_obj_set_size(continue_button, 100, 28);
-    lv_obj_align(continue_button, LV_ALIGN_TOP_MID, 0, 130);
-    lv_obj_set_style_bg_color(continue_button, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(continue_button, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(continue_button, lv_color_black(), 0);
-    lv_obj_set_style_border_width(continue_button, 2, 0);
-    lv_obj_set_style_radius(continue_button, 0, 0);
-    lv_obj_set_style_bg_color(continue_button, lv_color_black(), LV_STATE_PRESSED);
-    lv_obj_t *continue_label = lv_label_create(continue_button);
-    lv_label_set_text(continue_label, "Continue");
-    lv_obj_set_style_text_font(continue_label, &lv_font_chicago_8, 0);
-    lv_obj_set_style_text_color(continue_label, lv_color_black(), 0);
-    lv_obj_center(continue_label);
-    lv_obj_add_event_cb(continue_button, boot_options_continue_visual_event,
-                        LV_EVENT_PRESSED, continue_label);
-    lv_obj_add_event_cb(continue_button, boot_options_continue_visual_event,
-                        LV_EVENT_RELEASED, continue_label);
-    lv_obj_add_event_cb(continue_button, boot_options_continue_visual_event,
-                        LV_EVENT_PRESS_LOST, continue_label);
-    lv_obj_add_event_cb(continue_button, boot_options_continue_event, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t *emulator_button =
+        create_action_button(g_boot_options_ui.panel, "Start Emulator",
+                             boot_start_emulator_event);
+    lv_obj_set_size(emulator_button, 128, 28);
+    lv_obj_align(emulator_button, LV_ALIGN_TOP_RIGHT, 0, 87);
+
+    lv_obj_t *diagnostics_button =
+        create_action_button(g_boot_options_ui.panel, "Diagnostics",
+                             boot_diagnostics_event);
+    lv_obj_set_size(diagnostics_button, 104, 25);
+    lv_obj_align(diagnostics_button, LV_ALIGN_TOP_MID, 0, 121);
+
+    g_boot_options_ui.rtc_status = lv_label_create(g_boot_options_ui.panel);
+    lv_label_set_text(g_boot_options_ui.rtc_status, "RTC: checking...");
+    lv_obj_set_width(g_boot_options_ui.rtc_status, lv_pct(100));
+    lv_obj_set_style_text_font(g_boot_options_ui.rtc_status,
+                               &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_align(g_boot_options_ui.rtc_status,
+                                LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(g_boot_options_ui.rtc_status, LV_ALIGN_TOP_MID, 0, 151);
 
     lv_obj_t *calibration_label = lv_label_create(g_boot_options_ui.panel);
     lv_label_set_text(calibration_label, "Press again for screen calibration");
@@ -417,12 +513,53 @@ static void show_boot_options_ui()
     lv_buttonmatrix_set_button_ctrl(g_boot_options_ui.brightness_options,
                                     (uint32_t)g_boot_brightness,
                                     LV_BUTTONMATRIX_CTRL_CHECKED);
-    lv_buttonmatrix_clear_button_ctrl_all(g_boot_options_ui.floppy_options,
-                                          LV_BUTTONMATRIX_CTRL_CHECKED);
-    lv_buttonmatrix_set_button_ctrl(g_boot_options_ui.floppy_options,
-                                    g_boot_floppy_emulator ? 0 : 1,
-                                    LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_obj_add_state(g_boot_options_ui.remember_selection, LV_STATE_CHECKED);
+
+    char rtc_status[64];
+    if (format_rtc_health(rtc_status, sizeof(rtc_status)))
+    {
+        lv_obj_add_flag(g_boot_options_ui.rtc_status, LV_OBJ_FLAG_HIDDEN);
+    }
+    else
+    {
+        lv_label_set_text(g_boot_options_ui.rtc_status, rtc_status);
+        lv_obj_clear_flag(g_boot_options_ui.rtc_status, LV_OBJ_FLAG_HIDDEN);
+    }
     lv_obj_clear_flag(g_boot_options_ui.panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void init_diagnostics_ui(lv_obj_t *screen)
+{
+    g_diagnostics_ui.panel = lv_obj_create(screen);
+    lv_obj_set_size(g_diagnostics_ui.panel, 286, 202);
+    lv_obj_center(g_diagnostics_ui.panel);
+    lv_obj_set_style_bg_color(g_diagnostics_ui.panel, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(g_diagnostics_ui.panel, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(g_diagnostics_ui.panel, lv_color_black(), 0);
+    lv_obj_set_style_border_width(g_diagnostics_ui.panel, 2, 0);
+    lv_obj_set_style_radius(g_diagnostics_ui.panel, 0, 0);
+    lv_obj_set_style_pad_all(g_diagnostics_ui.panel, 8, 0);
+
+    lv_obj_t *title = lv_label_create(g_diagnostics_ui.panel);
+    lv_label_set_text(title, "Hardware Diagnostics");
+    lv_obj_set_style_text_font(title, &lv_font_chicago_8, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+
+    g_diagnostics_ui.status = lv_label_create(g_diagnostics_ui.panel);
+    lv_label_set_text(g_diagnostics_ui.status, "Checking hardware...");
+    lv_obj_set_width(g_diagnostics_ui.status, lv_pct(100));
+    lv_obj_set_style_text_font(g_diagnostics_ui.status,
+                               &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_line_space(g_diagnostics_ui.status, 2, 0);
+    lv_obj_align(g_diagnostics_ui.status, LV_ALIGN_TOP_LEFT, 0, 20);
+
+    lv_obj_t *back_button =
+        create_action_button(g_diagnostics_ui.panel, "Back",
+                             diagnostics_back_event);
+    lv_obj_set_size(back_button, 80, 26);
+    lv_obj_align(back_button, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    lv_obj_add_flag(g_diagnostics_ui.panel, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void hide_all_ui()
@@ -447,6 +584,8 @@ static void hide_all_ui()
     lv_obj_add_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
     if (g_boot_options_ui.panel)
         lv_obj_add_flag(g_boot_options_ui.panel, LV_OBJ_FLAG_HIDDEN);
+    if (g_diagnostics_ui.panel)
+        lv_obj_add_flag(g_diagnostics_ui.panel, LV_OBJ_FLAG_HIDDEN);
     for (size_t i = 0; i < k_plugin_max; ++i)
     {
         if (g_ui.plugin_icons[i])
@@ -816,6 +955,7 @@ static void init_ui_assets()
     lv_obj_add_event_cb(scr, screen_touch_event, LV_EVENT_PRESSED, NULL);
 
     init_boot_options_ui(scr);
+    init_diagnostics_ui(scr);
 
     hide_all_ui();
 }
@@ -957,6 +1097,56 @@ static bool setup_rtc()
     return false;
 }
 
+static void update_diagnostics_ui()
+{
+    static constexpr uint8_t addresses[] = {0x18, 0x38, 0x40, 0x47, 0x68};
+    char i2c_devices[32] = {};
+    size_t i2c_length = 0;
+    for (uint8_t address : addresses)
+    {
+        if (!i2c_device_present(address))
+            continue;
+        const int written = snprintf(i2c_devices + i2c_length,
+                                     sizeof(i2c_devices) - i2c_length,
+                                     "%s%02X",
+                                     i2c_length ? " " : "",
+                                     address);
+        if (written <= 0)
+            break;
+        i2c_length += (size_t)written;
+        if (i2c_length >= sizeof(i2c_devices))
+        {
+            i2c_length = sizeof(i2c_devices) - 1;
+            break;
+        }
+    }
+    if (i2c_length == 0)
+        snprintf(i2c_devices, sizeof(i2c_devices), "none");
+
+    char rtc_status[64];
+    format_rtc_health(rtc_status, sizeof(rtc_status));
+
+    char status[320];
+    snprintf(status, sizeof(status),
+             "Clock  : %s\n"
+             "Alarm  : %s\n"
+             "Floppy : %s\n"
+             "Encoder: %lld/%u\n"
+             "Touch  : %s\n"
+             "Charging: %s\n"
+             "I2C    : %s\n"
+             "%s",
+             digitalRead(GPIO_CLOCK) == LOW ? "pressed" : "released",
+             digitalRead(GPIO_ALARM) == LOW ? "pressed" : "released",
+             digitalRead(GPIO_FLOPPY) == LOW ? "inserted" : "empty",
+             (long long)encoder.getCount(), (unsigned)kBrightnessMax,
+             touch.touched() ? "pressed" : "released",
+             digitalRead(GPIO_CHARGING) == HIGH ? "yes" : "no",
+             i2c_devices,
+             rtc_status);
+    lv_label_set_text(g_diagnostics_ui.status, status);
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -993,9 +1183,11 @@ void setup()
     apply_boot_brightness(g_boot_brightness, false);
 
     const bool boot_options_requested = !digitalRead(GPIO_CLOCK);
+    bool emulator_returned_to_menu = false;
 
     if (!boot_options_requested && g_boot_floppy_emulator) {
         minivmac();
+        emulator_returned_to_menu = true;
     }
 
     setup_codec();
@@ -1005,6 +1197,11 @@ void setup()
     init_ui_assets();
     Wire.begin(I2C_SDA, I2C_SCL);
     setup_rtc();
+    {
+        char rtc_status[64];
+        format_rtc_health(rtc_status, sizeof(rtc_status));
+        Serial.println(rtc_status);
+    }
 
     pinMode(GPIO_CHARGING, INPUT_PULLDOWN);
     pinMode(GPIO_BAT_EN, OUTPUT);
@@ -1029,7 +1226,7 @@ void setup()
         0);
     setup_weather_sensor();
 
-    if (boot_options_requested)
+    if (boot_options_requested || emulator_returned_to_menu)
         request_state(UI_STATE_BOOT_OPTIONS);
 }
 
@@ -1258,8 +1455,15 @@ void loop()
     case UI_STATE_NORMAL: // normal state
     {
         static unsigned long lastClockUpdate = 0;
+        static unsigned long dual_key_hold_start = 0;
+        static bool dual_key_handled = false;
+        static bool clock_press_pending = false;
+        static constexpr unsigned long kDualKeyHoldMs = 2000;
         if (currentState != lastState)
         {
+            dual_key_hold_start = 0;
+            dual_key_handled = false;
+            clock_press_pending = false;
             hide_all_ui();
             lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
@@ -1287,8 +1491,37 @@ void loop()
             lv_timer_handler();
             lastClockUpdate = now;
         }
-        if (inputs.clock)
+
+        const bool clock_button_down = digitalRead(GPIO_CLOCK) == LOW;
+        const bool alarm_button_down = digitalRead(GPIO_ALARM) == LOW;
+        if (clock_button_down && alarm_button_down)
         {
+            if (!dual_key_hold_start)
+                dual_key_hold_start = now;
+            else if (!dual_key_handled &&
+                     now - dual_key_hold_start >= kDualKeyHoldMs)
+            {
+                dual_key_handled = true;
+                clock_press_pending = false;
+                g_requested_state = UI_STATE_BOOT_OPTIONS;
+                stateStartTime = now;
+            }
+        }
+        else
+        {
+            dual_key_hold_start = 0;
+            if (!clock_button_down && !alarm_button_down)
+                dual_key_handled = false;
+        }
+
+        if (inputs.clock && !dual_key_handled)
+            clock_press_pending = true;
+
+        if (dual_key_handled)
+            clock_press_pending = false;
+        else if (clock_press_pending && !clock_button_down)
+        {
+            clock_press_pending = false;
             g_requested_state = UI_STATE_SET_DATETIME;
             stateStartTime = now;
         }
@@ -1334,9 +1567,29 @@ void loop()
         break;
     case UI_STATE_EMULATOR:
         minivmac();
-        g_requested_state = UI_STATE_EMPTY_SCREEN;
+        g_requested_state = UI_STATE_BOOT_OPTIONS;
         stateStartTime = now;
         break;
+    case UI_STATE_DIAGNOSTICS:
+    {
+        static unsigned long last_diagnostics_update = 0;
+        if (currentState != lastState)
+        {
+            hide_all_ui();
+            lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_diagnostics_ui.panel, LV_OBJ_FLAG_HIDDEN);
+            last_diagnostics_update = 0;
+        }
+        if (!last_diagnostics_update ||
+            now - last_diagnostics_update >= 250)
+        {
+            update_diagnostics_ui();
+            lv_timer_handler();
+            last_diagnostics_update = now;
+        }
+        break;
+    }
     case UI_STATE_CALIBRATION: // calibration screen
         if (currentState != lastState)
         {
@@ -1404,14 +1657,14 @@ void loop()
     int enc = encoder.getCount();
     if (enc < 0)
         enc = 0;
-    if (enc > 12)
-        enc = 12;
+    if (enc > kBrightnessMax)
+        enc = kBrightnessMax;
     if (enc != encoder.getCount())
         encoder.setCount(enc);
     if (now < full_brightness_until)
         analogWrite(TFT_BL_VAR, 255);
     else
-        analogWrite(TFT_BL_VAR, enc * 255 / 12);
+        analogWrite(TFT_BL_VAR, brightness_to_pwm(enc));
 
     if (enc != g_last_saved_encoder && (now - last_encoder_save_ms) >= 500)
     {

@@ -33,42 +33,43 @@ disassembly, wiring, firmware preparation, and flashing.
 | Rotary encoder | Adjust brightness from off to maximum | Adjust brightness from off to maximum |
 | Clock button | Open the date/time editor | Enter key |
 | Alarm button | Reserved; no software action yet | Escape key |
-| Floppy switch | Advance startup and show the floppy icon | Select emulator boot when active at power-on |
+| Clock + Alarm, held for 2 seconds | Open Boot Options | Safely exit to Boot Options |
+| Floppy switch | Advance startup and show the floppy icon | No emulator action |
 | Display touchscreen | Operate menus and show the pointer | Move the Macintosh pointer using relative motion |
 | Discrete touch sensor (red wire) | Force full brightness for 10 seconds | Macintosh mouse button |
 
-Brightness and boot choices are saved and restored after power loss. Touchscreen
-calibration is also stored persistently.
+Brightness uses perceptual steps, so the lower levels change more gradually.
+Brightness, the optional default boot mode, and touchscreen calibration are
+stored persistently.
 
 ### Choosing The Boot Mode
 
-The saved **Boot with floppy** option and the physical floppy switch determine
-which software starts.
-
-- **Emulator**: if the floppy switch is active during power-on, Maclock starts
-  Mini vMac immediately.
-- **Clock**: Maclock always starts the clock interface, even when the floppy
-  switch is active.
-- If the switch is not active at power-on, Maclock starts the clock interface
-  with either setting.
+Maclock can start either the clock or Mini vMac, regardless of the physical
+floppy-switch position. The saved default determines which mode starts at
+power-on.
 
 To open the boot-options screen:
 
-1. Turn Maclock off.
-2. Hold the **Clock** button.
-3. Turn Maclock on while continuing to hold the button.
-4. Release the button when **Boot Options** appears.
+1. From the normal clock screen, hold **Clock** and **Alarm** together for two
+   seconds; or
+2. Turn Maclock off, hold **Clock**, turn Maclock on, and release the button
+   when **Boot Options** appears.
 
 The screen provides these choices:
 
 - **Brightness / Latest** restores the last encoder brightness.
 - **Brightness / Lowest** starts at the lowest visible setting.
 - **Brightness / Highest** starts at full brightness.
-- **Boot with floppy / Emulator** enables the power-on Mini vMac shortcut.
-- **Boot with floppy / Clock** keeps the device in clock mode.
+- **Start Clock** runs the normal Macintosh-style clock startup.
+- **Start Emulator** launches Mini vMac immediately.
+- **Remember selection** saves the selected start mode as the next power-on
+  default.
+- **Diagnostics** opens a live hardware test screen for both buttons, the
+  floppy switch, encoder, touch sensor, charging input, known I²C devices, and
+  RTC health.
 
-Selections are saved as they are changed. Tap **Continue** to run the normal
-clock startup.
+The brightness choice is saved as it is changed. The boot mode is saved only
+when **Remember selection** is checked.
 
 ### Calibrating The Touchscreen
 
@@ -151,7 +152,11 @@ after two seconds.
 
 Supported RTCs are DS1307 and DS3231 at I²C address `0x68`. Without a working
 RTC, the firmware falls back to `01/01/2000 00:00:00`, and the startup plugin
-diagnostic will not complete.
+diagnostic will not complete. Boot Options and Diagnostics also warn when a
+DS1307 is stopped, a DS3231 reports lost power, the date is invalid, or the
+year is earlier than 2024. A healthy RTC does not add a status line to Boot
+Options. If the date returns to 2000 after unplugging Maclock, check or replace
+the RTC backup battery, then set the date again.
 
 ### Using Mini vMac
 
@@ -172,21 +177,19 @@ Maclock stops looking for disks at the first missing number and supports up to
 six mounted images. For example, `disk1.dsk` and `disk3.dsk` without
 `disk2.dsk` will mount only `disk1.dsk`.
 
-To start the emulator:
-
-1. Select **Boot with floppy / Emulator** in Boot Options.
-2. Turn Maclock off.
-3. Activate the floppy switch.
-4. Turn Maclock on.
+To start the emulator, open Boot Options and tap **Start Emulator**. To make it
+the normal power-on mode, leave **Remember selection** checked when starting
+it. The physical floppy switch can be either active or inactive.
 
 Move a finger on the display to move the Macintosh pointer. Use the discrete
 red-wire touch sensor as the mouse button. In the emulator, the **Clock** button
 acts as **Enter**, the **Alarm** button acts as **Escape**, and the rotary
-encoder adjusts and saves the display brightness.
+encoder adjusts and saves the display brightness. A control reminder is shown
+over the emulated screen for four seconds after startup.
 
-Emulator sound is currently disabled. There is no software command to return
-from Mini vMac to the clock; power-cycle Maclock and leave the floppy switch
-inactive, or select **Clock** from Boot Options.
+Hold **Clock** and **Alarm** together for two seconds to safely eject and close
+the mounted disk images, stop Mini vMac, and return to Boot Options. Emulator
+sound is currently disabled.
 
 Disk images are opened read/write when possible, so changes made inside the
 emulated Macintosh persist in LittleFS. Keep backup copies of important disk
@@ -233,8 +236,8 @@ Repeat the four-point calibration from Boot Options.
 
 Confirm all of the following:
 
-- **Boot with floppy** is set to **Emulator**.
-- The floppy switch is already active when power is applied.
+- Start it from **Boot Options**, or save Emulator as the default using
+  **Remember selection**.
 - `vMac.ROM` and `disk1.dsk` were included in the uploaded LittleFS image.
 - The ROM is a compatible 128 KiB Macintosh Plus ROM.
 

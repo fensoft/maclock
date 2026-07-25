@@ -9,8 +9,8 @@ Maclock is ESP32-S3 firmware for replacing a Maclock's original screen with a
 
 - A normal LVGL clock interface with startup animation, MP3 effects, RTC and
   weather data, touch calibration, and persistent brightness/boot settings.
-- A Mini vMac emulator that boots directly when the floppy switch is active at
-  power-on and the saved boot option selects the emulator.
+- A Mini vMac emulator that can launch from Boot Options or directly at
+  power-on when the saved default selects the emulator.
 
 Main stack:
 
@@ -27,13 +27,17 @@ Main stack:
 
 - It initializes NVS preferences, LittleFS, the TFT, and touch first.
 - Holding the clock button at boot requests the boot-options UI.
-- Otherwise, an active floppy switch calls `minivmac()` immediately when the
-  saved `floppy_emulator` preference is enabled. Mini vMac runs synchronously
-  and normally never returns, so the LVGL clock stack is not initialized.
+- Otherwise, the saved `floppy_emulator` preference calls `minivmac()`
+  immediately, independently of the physical floppy switch.
+- Mini vMac runs synchronously. Its Clock+Alarm safe-exit chord returns from
+  the call, after which the LVGL clock stack is initialized and Boot Options
+  opens.
 - The normal path initializes the ES8311 codec, LVGL, LittleFS's LVGL driver,
   UI assets, RTC, encoder, input/audio tasks, and weather sensor.
-- The Arduino `loop()` then runs the UI state machine and is the only owner of
-  LVGL calls.
+- The Arduino `loop()` then runs the UI state machine, can call `minivmac()`
+  again from Boot Options, and remains the only owner of LVGL calls.
+- In the normal clock state, holding Clock+Alarm for two seconds opens Boot
+  Options; a Clock-only press opens date/time editing on release.
 
 Do not try to run the clock UI and Mini vMac concurrently unless the user
 explicitly asks for an architectural change. They share the display, touch,
@@ -191,11 +195,12 @@ pio device monitor -b 115200
 - `LittleFS.begin()` currently mounts without formatting or explicit failure
   handling. Do not add automatic formatting casually; it could erase disks.
 - The boot-time `minivmac()` call occurs before codec/LVGL initialization and
-  blocks in the emulator main loop.
+  blocks in the emulator main loop until safe exit.
 - Mini vMac sound is disabled in `include/minivmac/CNFGGLOB.h`; normal-mode MP3
   sound still uses the ES8311.
-- The alarm edge and some battery signals/assets are present but not currently
-  consumed by the UI. Do not infer behavior from their names alone.
+- The alarm edge has no Clock-only action, but the normal state polls the Alarm
+  level as half of its Boot Options chord. Mini vMac polls Alarm directly as
+  Escape and as half of its safe-exit chord.
 - The RTC fallback value is `2000-01-01 00:00:00` when no supported RTC is
   active.
 - BMP5xx is preferred over HTU2x when both are present. The displayed gauge is
@@ -206,7 +211,8 @@ pio device monitor -b 115200
 
 ## Things To Preserve
 
-- The mutually exclusive normal-clock and emulator boot paths.
+- Mutually exclusive display ownership while either the clock UI or emulator
+  is active.
 - The 304x224 logical display inside the 320x240 physical frame.
 - LittleFS path compatibility for both LVGL and Mini vMac.
 - The generated/upstream boundary for Mini vMac.

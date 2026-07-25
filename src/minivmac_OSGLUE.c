@@ -823,6 +823,14 @@ GLOBALOSGLUPROC MinivMacAPI_UpdateKey( uint8_t Key, uint8_t Down ) {
 	Keyboard_UpdateKeyMap2( Key, Down );
 }
 
+IMPORTPROC Sony_EjectAllDisks(void);
+
+GLOBALOSGLUPROC MinivMacAPI_RequestSafeExit(void)
+{
+	Sony_EjectAllDisks();
+	ForceMacOff = trueblnr;
+}
+
 LOCALPROC DisableKeyRepeat(void)
 {
 	/*
@@ -2070,6 +2078,7 @@ int minivmac_main(int argc, char **argv)
 {
 	my_argc = argc;
 	my_argv = argv;
+	ForceMacOff = falseblnr;
 
 	ZapOSGLUVars();
 

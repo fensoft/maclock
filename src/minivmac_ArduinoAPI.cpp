@@ -11,6 +11,7 @@
 #include <TFT_eSPI.h>
 
 #include "ArduinoAPI.h"
+#include "brightness.h"
 
 #include "SYSDEPNS.h"
 #include "CNFGGLOB.h"
@@ -38,9 +39,12 @@ SemaphoreHandle_t SPIBusLock = NULL;
 TaskHandle_t RenderTaskHandle = NULL;
 
 volatile const uint8_t *EmScreenPtr = NULL;
+static volatile bool RenderTaskShouldStop = false;
+static volatile uint32_t EmulatorOverlayUntilMs = 0;
 
 static constexpr uint8_t kMacKeyEnter = 0x4C;
 static constexpr uint8_t kMacKeyEscape = 0x35;
+static constexpr uint32_t kSafeExitHoldMs = 2000;
 
 struct EmulatorButton
 {
@@ -52,6 +56,8 @@ static EmulatorButton EmulatorAlarmButton = {};
 static int EmulatorAppliedBrightness = -1;
 static int EmulatorSavedBrightness = -1;
 static uint32_t EmulatorBrightnessSaveMs = 0;
+static uint32_t EmulatorExitHoldStartMs = 0;
+static bool EmulatorExitRequested = false;
 
 static void EmulatorButtonBegin(EmulatorButton &button, bool pressed)
 {
@@ -74,8 +80,8 @@ static int EmulatorReadBrightness()
     int brightness = (int)encoder.getCount();
     if (brightness < 0)
         brightness = 0;
-    if (brightness > 12)
-        brightness = 12;
+    if (brightness > kBrightnessMax)
+        brightness = kBrightnessMax;
     if (brightness != encoder.getCount())
         encoder.setCount(brightness);
     return brightness;
@@ -90,23 +96,45 @@ static void EmulatorInputsBegin()
     EmulatorAppliedBrightness = brightness;
     EmulatorSavedBrightness = brightness;
     EmulatorBrightnessSaveMs = millis();
-    analogWrite(TFT_BL_VAR, brightness * 255 / 12);
+    EmulatorExitHoldStartMs = 0;
+    EmulatorExitRequested = false;
+    analogWrite(TFT_BL_VAR, brightness_to_pwm(brightness));
 }
 
 static void EmulatorInputsUpdate()
 {
     const uint32_t now = millis();
-    EmulatorButtonUpdate(EmulatorClockButton,
-                         !digitalRead(GPIO_CLOCK),
-                         kMacKeyEnter);
-    EmulatorButtonUpdate(EmulatorAlarmButton,
-                         !digitalRead(GPIO_ALARM),
-                         kMacKeyEscape);
+    const bool clock_pressed = !digitalRead(GPIO_CLOCK);
+    const bool alarm_pressed = !digitalRead(GPIO_ALARM);
+
+    if (clock_pressed && alarm_pressed)
+    {
+        if (EmulatorExitHoldStartMs == 0)
+            EmulatorExitHoldStartMs = now;
+        else if (!EmulatorExitRequested &&
+                 (uint32_t)(now - EmulatorExitHoldStartMs) >= kSafeExitHoldMs)
+        {
+            EmulatorButtonUpdate(EmulatorClockButton, false, kMacKeyEnter);
+            EmulatorButtonUpdate(EmulatorAlarmButton, false, kMacKeyEscape);
+            EmulatorExitRequested = true;
+            MinivMacAPI_RequestSafeExit();
+        }
+    }
+    else
+    {
+        EmulatorExitHoldStartMs = 0;
+        EmulatorButtonUpdate(EmulatorClockButton,
+                             clock_pressed,
+                             kMacKeyEnter);
+        EmulatorButtonUpdate(EmulatorAlarmButton,
+                             alarm_pressed,
+                             kMacKeyEscape);
+    }
 
     const int brightness = EmulatorReadBrightness();
     if (brightness != EmulatorAppliedBrightness)
     {
-        analogWrite(TFT_BL_VAR, brightness * 255 / 12);
+        analogWrite(TFT_BL_VAR, brightness_to_pwm(brightness));
         EmulatorAppliedBrightness = brightness;
     }
     if (brightness != EmulatorSavedBrightness &&
@@ -118,11 +146,40 @@ static void EmulatorInputsUpdate()
     }
 }
 
+static void DrawEmulatorStartupOverlay()
+{
+    static constexpr int x = 8;
+    static constexpr int y = 174;
+    static constexpr int width = 288;
+    static constexpr int height = 58;
+
+    my_lcd.fillRect(x, y, width, height, TFT_WHITE);
+    my_lcd.drawRect(x, y, width, height, TFT_BLACK);
+    my_lcd.setTextColor(TFT_BLACK, TFT_WHITE);
+    my_lcd.setTextSize(1);
+    my_lcd.drawString("Clock: Enter   Alarm: Escape", x + 7, y + 7, 1);
+    my_lcd.drawString("Hold both 2s: Boot Options", x + 7, y + 23, 1);
+    my_lcd.drawString("Rotary: Brightness", x + 7, y + 39, 1);
+}
+
 void RenderTask(void *Param)
 {
     while (true)
     {
-        xEventGroupWaitBits(RenderTaskEventHandle, DrawScreenEvent, pdTRUE, pdTRUE, portMAX_DELAY);
+        TickType_t wait_ticks = portMAX_DELAY;
+        const int32_t overlay_remaining =
+            (int32_t)(EmulatorOverlayUntilMs - millis());
+        if (overlay_remaining > 0)
+        {
+            wait_ticks = pdMS_TO_TICKS((uint32_t)overlay_remaining);
+            if (wait_ticks == 0)
+                wait_ticks = 1;
+        }
+
+        xEventGroupWaitBits(RenderTaskEventHandle, DrawScreenEvent,
+                            pdTRUE, pdTRUE, wait_ticks);
+        if (RenderTaskShouldStop)
+            break;
 
         if (xSemaphoreTake(SPIBusLock, pdMS_TO_TICKS(5)) == pdTRUE)
         {
@@ -247,6 +304,9 @@ void RenderTask(void *Param)
                         }
 
                         my_lcd.endWrite();
+
+                        if ((int32_t)(EmulatorOverlayUntilMs - millis()) > 0)
+                            DrawEmulatorStartupOverlay();
                     }
                 }
             }
@@ -254,6 +314,9 @@ void RenderTask(void *Param)
             xSemaphoreGive(SPIBusLock);
         }
     }
+
+    RenderTaskHandle = NULL;
+    vTaskDelete(NULL);
 }
 
 void minivmac(void)
@@ -261,6 +324,8 @@ void minivmac(void)
     RenderTaskEventHandle = xEventGroupCreate();
     RenderTaskLock = xSemaphoreCreateMutex();
     SPIBusLock = xSemaphoreCreateMutex();
+    RenderTaskShouldStop = false;
+    EmulatorOverlayUntilMs = millis() + 4000;
 
     xTaskCreatePinnedToCore(RenderTask, "RenderTask", 4096, NULL, 0, &RenderTaskHandle, 0);
 
@@ -268,6 +333,35 @@ void minivmac(void)
     EmulatorInputsBegin();
 
     minivmac_main(0, NULL);
+
+    RenderTaskShouldStop = true;
+    if (RenderTaskEventHandle)
+        xEventGroupSetBits(RenderTaskEventHandle, DrawScreenEvent);
+    for (int i = 0; RenderTaskHandle && i < 50; ++i)
+        vTaskDelay(pdMS_TO_TICKS(10));
+    if (RenderTaskHandle)
+    {
+        vTaskDelete(RenderTaskHandle);
+        RenderTaskHandle = NULL;
+    }
+
+    EmScreenPtr = NULL;
+    ScreenNeedsUpdate = false;
+    if (RenderTaskLock)
+    {
+        vSemaphoreDelete(RenderTaskLock);
+        RenderTaskLock = NULL;
+    }
+    if (SPIBusLock)
+    {
+        vSemaphoreDelete(SPIBusLock);
+        SPIBusLock = NULL;
+    }
+    if (RenderTaskEventHandle)
+    {
+        vEventGroupDelete(RenderTaskEventHandle);
+        RenderTaskEventHandle = NULL;
+    }
 }
 
 void ArduinoAPI_GetDisplayDimensions(int *OutWidthPtr, int *OutHeightPtr)

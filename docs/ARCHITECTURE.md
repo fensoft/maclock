@@ -2,8 +2,8 @@
 
 Maclock is ESP32-S3 firmware that drives a 320x240 color display inside a
 Maclock enclosure. The firmware either presents a Macintosh-inspired clock UI
-or boots a Macintosh Plus emulator, depending on physical input and a saved boot
-preference.
+or boots a Macintosh Plus emulator, depending on a saved boot preference or a
+selection in Boot Options.
 
 PlatformIO builds the project with the Arduino framework for `lolin_s3`.
 TFT_eSPI owns the ILI9341 panel, LVGL implements the normal interface, LittleFS
@@ -16,25 +16,23 @@ core.
 
 1. Start serial output at 115200 baud and keep the TFT backlight off.
 2. Open the `maclock` Preferences namespace and load the boot-brightness and
-   floppy-mode choices.
+   default-mode choices.
 3. Enable external-memory allocation, mount LittleFS, initialize the TFT, and
    initialize both touch mechanisms.
-4. Rotate the TFT to orientation 3 and configure the FT6336 mapping.
+4. Rotate the TFT, configure the FT6336 mapping and encoder, and apply the
+   selected perceptual brightness level.
 5. Sample the clock button to detect a boot-options request.
-6. If boot options were not requested, the floppy switch is active, and the
-   saved mode selects the emulator, set full brightness and enter `minivmac()`.
-7. Otherwise, initialize the codec, LVGL display/input/filesystem bridge, UI
-   assets, I2C peripherals, encoder, FreeRTOS input/audio tasks, and weather
-   sensor.
-8. If the clock button was held, request the boot-options state; otherwise the
-   normal startup state machine begins.
+6. If boot options were not requested and the saved default selects Mini vMac,
+   enter `minivmac()` regardless of the physical floppy-switch position.
+7. After clock selection or an emulator return, initialize the codec, LVGL
+   display/input/filesystem bridge, UI assets, I2C peripherals, FreeRTOS
+   input/audio tasks, and weather sensor.
+8. If the clock button was held or Mini vMac returned, request Boot Options;
+   otherwise the normal clock startup state machine begins.
 
-The two paths are intentionally exclusive:
-
-- Emulator mode enters Mini vMac synchronously from `setup()` and normally does
-  not return.
-- Clock mode reaches the Arduino `loop()` and owns LVGL for the rest of the
-  session.
+Mini vMac can also be launched synchronously from the `EMULATOR` loop state.
+Its render resources are recreated for each launch and destroyed on return, so
+the user can switch between Boot Options and the emulator repeatedly.
 
 ## Source And Build Composition
 
@@ -122,7 +120,8 @@ changed screen, `ArduinoAPI_DrawScreen()` publishes the screen pointer and wakes
 - A single 320-pixel line buffer avoids allocating a full RGB565 frame.
 
 The task writes the full physical 320x240 display through TFT_eSPI while holding
-the emulator's render and SPI locks.
+the emulator's render and SPI locks. For the first four seconds it draws a
+control overlay above the emulated screen.
 
 ## Normal Clock State Machine
 
@@ -140,7 +139,9 @@ state-specific counters. Event callbacks request transitions through
 | `WAIT_FLOPPY_SOUND` | Wait for the floppy sound to finish. |
 | `NORMAL` | Show the clock, date, weather, gauge, menus, and floppy indicator. |
 | `SET_DATETIME` | Show the RTC date/time editor. |
-| `BOOT_OPTIONS` | Select startup brightness and emulator/clock floppy behavior. |
+| `BOOT_OPTIONS` | Select startup brightness, launch clock/emulator, optionally remember the default, or open diagnostics. |
+| `EMULATOR` | Run Mini vMac synchronously and return to Boot Options after a safe exit. |
+| `DIAGNOSTICS` | Live-test GPIO inputs, encoder, touch, charging, known I2C addresses, and RTC health. |
 | `CALIBRATION` | Capture four raw FT6336 corner samples and persist their bounds. |
 
 The plugin diagnostic is fail-stop by design. Each expected device must be
@@ -149,8 +150,9 @@ of advancing to the clock.
 
 In `NORMAL`, the UI refreshes at most every 100 ms, while
 `update_clock_labels()` suppresses work until the RTC second changes. Pressing
-the clock button opens the date/time editor. The floppy level controls the
-small disk icon.
+and releasing the clock button opens the date/time editor. Holding Clock and
+Alarm together for two seconds opens Boot Options. The floppy level controls
+the small disk icon.
 
 ## UI Composition
 
@@ -161,8 +163,8 @@ small disk icon.
 - A white menu bar with left/right image fragments.
 - Clock, time, and date labels using generated Chicago-style LVGL fonts.
 - Temperature text, weather icon, and pressure/humidity gauge.
-- Date/time editor, boot-options panel, calibration label/crosshair, and a
-  touch cursor that hides after two seconds.
+- Date/time editor, boot-options and diagnostics panels, calibration
+  label/crosshair, and a touch cursor that hides after two seconds.
 
 `hide_all_ui()` is the common transition primitive. It hides every layer before
 the active state reveals its own set, preventing stale state-specific objects
@@ -207,11 +209,14 @@ sample so the next touch starts with zero delta.
 - A FreeRTOS critical section protects the shared `InputState`.
 
 The loop consumes one-shot edges and clears them while retaining the floppy
-level. The encoder count is clamped to 0–12 and mapped to backlight PWM.
-Brightness changes are written to Preferences after a 500 ms debounce. A touch
-edge overrides PWM to full brightness for ten seconds.
+level. The encoder count is clamped to 0–12 and mapped through a perceptual
+backlight PWM curve. Brightness changes are written to Preferences after a
+500 ms debounce. A touch edge overrides PWM to full brightness for ten seconds.
 
 The alarm edge is collected but currently has no state-machine behavior.
+The normal state reads both button levels directly for the two-second
+Clock+Alarm shortcut, delaying the Clock-only action until release so the chord
+can be distinguished.
 
 ## I2C Devices And Sensor Selection
 
@@ -232,7 +237,9 @@ icon; HTU mode maps 0–100% relative humidity.
 
 RTC detection first checks for an ACK at `0x68`, then probes control-register
 behavior to distinguish DS1307 from DS3231. `rtc_now()` returns a fixed
-2000-01-01 value when no supported RTC is active.
+2000-01-01 value when no supported RTC is active. Boot Options, Diagnostics,
+and serial output report stopped DS1307 clocks, DS3231 lost-power status,
+invalid dates, and dates earlier than 2024.
 
 ## Audio
 
@@ -251,7 +258,11 @@ the MP3 task.
 ## Mini vMac Runtime
 
 `minivmac()` creates the emulator event group and mutexes, starts `RenderTask`,
-initializes the touch-backed mouse, and calls `minivmac_main()`.
+initializes the touch-backed mouse, and calls `minivmac_main()`. Holding Clock
+and Alarm together for two seconds ejects and closes every mounted disk, sets
+Mini vMac's shutdown flag, and returns to Boot Options. Shutdown resets the
+render task and synchronization objects, while the next launch resets Mini
+vMac's shutdown flag.
 
 The selected configuration emulates a Macintosh Plus with:
 
@@ -293,9 +304,11 @@ Synchronization boundaries:
 - `RenderTaskLock` prevents screen-buffer/render handoff races.
 - `SPIBusLock` serializes emulator LittleFS operations and TFT rendering.
 
-Clock mode does not create `RenderTask`; emulator mode does not create the
-clock-mode input/audio tasks. This separation is part of the synchronization
-model.
+Only `minivmac()` creates `RenderTask`. A saved-default emulator launch happens
+before the clock-mode input/audio tasks exist; an emulator launch from Boot
+Options happens while those tasks are idle in the background. The Arduino
+loop is blocked inside Mini vMac, so LVGL is not mutated concurrently with the
+emulator renderer.
 
 ## Persistent State
 
@@ -303,7 +316,7 @@ Three storage mechanisms have different lifetimes:
 
 | Store | Data |
 | --- | --- |
-| NVS Preferences, namespace `maclock` | Encoder brightness, boot-brightness choice, floppy emulator/clock choice |
+| NVS Preferences, namespace `maclock` | Encoder brightness, boot-brightness choice, default emulator/clock choice |
 | EEPROM emulation | FT6336 calibration structure |
 | LittleFS | UI assets, audio, ROM, and mutable emulator disk images |
 
@@ -334,6 +347,10 @@ cover the mode and subsystem changed:
 
 - Cold boot into clock mode and emulator mode.
 - Boot-options entry by holding the clock button.
+- Start either mode with both floppy-switch positions and verify remembered
+  defaults.
+- Safely exit and relaunch Mini vMac repeatedly.
+- Exercise every live hardware-diagnostics input and RTC warning.
 - Startup plugin discovery and missing-device diagnostic.
 - FT6336 pointer mapping, discrete touch, and four-point calibration.
 - Encoder brightness, touch wake, and persistence across restart.
