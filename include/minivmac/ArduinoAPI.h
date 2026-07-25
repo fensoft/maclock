@@ -46,6 +46,7 @@ void ArduinoAPI_ScreenChanged( int Top, int Left, int Bottom, int Right );
 void ArduinoAPI_DrawScreen( const uint8_t* Screen );
 void ArduinoAPI_GiveScreenBufferToArduino( const uint8_t* ScreenPtr );
 
+void MinivMacAPI_UpdateKey( uint8_t Key, uint8_t Down );
 int minivmac_main( int Argc, char** Argv );
 
 #ifdef __cplusplus

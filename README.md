@@ -1,7 +1,7 @@
 # Maclock
 
-Maclock is a hardware-hacking project that replaces the original Maclock
-screen with a 320x240 color IPS display driven by an ESP32-S3.
+Maclock replaces the original Maclock screen with a 320x240 color IPS display
+driven by an ESP32-S3.
 
 The firmware has two operating modes:
 
@@ -11,14 +11,18 @@ The firmware has two operating modes:
 - **Mini vMac mode** emulates a Macintosh Plus from ROM and disk images stored
   in LittleFS.
 
+<p align="center">
+  <img src="img/final_front.jpg" alt="Completed Maclock showing the clock interface" width="420">
+</p>
+
 ## Discord
 
 Join the community on the [Discord server](https://discord.gg/89etSPMFym).
 
-## Recommended Hardware
+## Build Your Own
 
-Use the
-[2.8inch ESP32-S3 Display](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display).
+See the illustrated [BUILD.md](BUILD.md) guide for required hardware,
+disassembly, wiring, firmware preparation, and flashing.
 
 ## Software Manual
 
@@ -26,9 +30,9 @@ Use the
 
 | Control | Clock mode | Mini vMac mode |
 | --- | --- | --- |
-| Rotary encoder | Adjust brightness from off to maximum | Not used |
-| Clock button | Open the date/time editor | Not used |
-| Alarm button | Reserved; no software action yet | Not used |
+| Rotary encoder | Adjust brightness from off to maximum | Adjust brightness from off to maximum |
+| Clock button | Open the date/time editor | Enter key |
+| Alarm button | Reserved; no software action yet | Escape key |
 | Floppy switch | Advance startup and show the floppy icon | Select emulator boot when active at power-on |
 | Display touchscreen | Operate menus and show the pointer | Move the Macintosh pointer using relative motion |
 | Discrete touch sensor (red wire) | Force full brightness for 10 seconds | Macintosh mouse button |
@@ -79,6 +83,10 @@ Calibration is entered from the boot-options screen:
 After the fourth point, the calibration is saved and Maclock opens the normal
 clock display.
 
+<p align="center">
+  <img src="img/config_calib.jpg" alt="Maclock touchscreen calibration crosshair" width="640">
+</p>
+
 ### Clock Startup
 
 Clock mode follows a Macintosh-style startup sequence:
@@ -97,6 +105,10 @@ The startup diagnostic expects:
 | `0x38` | FT6336 touchscreen |
 | `0x40` or `0x47` | HTU2x or BMP580/BMP581 weather sensor |
 | `0x68` | DS1307 or DS3231 real-time clock |
+
+| Successful plugin detection | Missing-plugin diagnostic |
+| --- | --- |
+| ![Boot screen showing all plugin icons](img/clock_booting.jpg) | ![Boot screen showing a red missing-plugin icon](img/clock_booting_error.jpg) |
 
 A missing expected device is shown in red and blinks continuously. This is a
 deliberate diagnostic stop; correct the connection and restart Maclock. Serial
@@ -122,12 +134,20 @@ backlight to maximum.
 Touching the display shows a Macintosh pointer, which automatically disappears
 after two seconds.
 
+<p align="center">
+  <img src="img/final_front_floppy.jpg" alt="Clock interface with the floppy inserted" width="640">
+</p>
+
 ### Setting The Date And Time
 
 1. Press the **Clock** button from the main screen.
 2. Tap the hour, minute, second, day, month, or year field.
 3. Use **-** and **+** to change the selected value. Hold a button to repeat.
 4. Tap **Save** to write the value to the RTC, or **Cancel** to discard it.
+
+<p align="center">
+  <img src="img/config_date.jpg" alt="Maclock date and time editor" width="640">
+</p>
 
 Supported RTCs are DS1307 and DS3231 at I²C address `0x68`. Without a working
 RTC, the firmware falls back to `01/01/2000 00:00:00`, and the startup plugin
@@ -137,6 +157,10 @@ diagnostic will not complete.
 
 Mini vMac mode emulates a Macintosh Plus with a 304x224 monochrome desktop
 inside the physical 320x240 display.
+
+| About This Macintosh | MacPaint |
+| --- | --- |
+| ![Mini vMac About This Macintosh dialog](img/emulator_about.jpg) | ![MacPaint running in Mini vMac](img/emulator_paint.jpg) |
 
 The LittleFS image must contain:
 
@@ -156,7 +180,9 @@ To start the emulator:
 4. Turn Maclock on.
 
 Move a finger on the display to move the Macintosh pointer. Use the discrete
-red-wire touch sensor as the mouse button.
+red-wire touch sensor as the mouse button. In the emulator, the **Clock** button
+acts as **Enter**, the **Alarm** button acts as **Escape**, and the rotary
+encoder adjusts and saves the display brightness.
 
 Emulator sound is currently disabled. There is no software command to return
 from Mini vMac to the clock; power-cycle Maclock and leave the floppy switch
@@ -167,64 +193,7 @@ emulated Macintosh persist in LittleFS. Keep backup copies of important disk
 images. Uploading a new LittleFS image can replace the on-device disks and
 their changes.
 
-## Hardware Assembly
-
-- Separate the LCD from the main board with a knife.
-- Desolder it so a roughly 10 cm wire extension can be added before
-  reconnecting it.
-- All components connect to **GND** and their respective GPIO pins, except as
-  required by the touch-sensor wiring.
-
-| Component | GPIO |
-| --- | --- |
-| Encoder CLK | GPIO 14 |
-| Encoder DT | GPIO 21 |
-| I²C SDA | GPIO 16 |
-| I²C SCL | GPIO 15 |
-| Touch Sensor (red wire) | GPIO 2 |
-| Floppy Switch | GPIO 47 (SD connector pad 2) |
-| Alarm Button | GPIO 40 (SD connector pad 3) |
-| Clock Button | GPIO 48 (SD connector pad 1, exterior) |
-
-The I²C bus is shared with the onboard ES8311 audio codec (`0x18`) and FT6336G
-touch controller (`0x38`). The firmware also supports these external
-3.3 V-compatible I²C devices:
-
-- HTU2x temperature/humidity sensor at `0x40`.
-- BMP580/BMP581 pressure/temperature sensor at `0x47`.
-- DS1307 or DS3231 real-time clock at `0x68`.
-
-## Firmware Installation
-
-1. Install Visual Studio Code.
-2. Install the PlatformIO IDE extension.
-3. Open this folder in Visual Studio Code and let PlatformIO initialize the
-   environment.
-4. Run `./prepare.sh` once in a fresh checkout to prepare Mini vMac and the
-   initial emulator files.
-5. Build and upload the firmware.
-6. Upload the filesystem image so assets and emulator files under `data/` are
-   flashed to LittleFS.
-
-In PlatformIO:
-
-- **PlatformIO: Upload** uploads the firmware.
-- **PlatformIO: Upload Filesystem Image** uploads LittleFS.
-
-Equivalent command-line builds are:
-
-```bash
-pio run -e lolin_s3
-pio run -e lolin_s3 -t buildfs
-```
-
-If `pio` is not on `PATH`, use `~/.platformio/penv/bin/pio`.
-
-Firmware and filesystem uploads are separate. Uploading only the firmware does
-not update images, audio, ROMs, or disks. Uploading the filesystem may overwrite
-mutable emulator disks, so back them up first.
-
-## Adding Macintosh Software
+### Adding Macintosh Software
 
 1. In Infinite Mac, open
    [System 7.0 at 320x240](https://infinitemac.org/1991/System%207.0?screenSize=320x240)
@@ -238,7 +207,8 @@ mutable emulator disks, so back them up first.
 5. Copy the software from the exported disk to the blank disk.
 6. Place the resulting image in `data/` as the next contiguous name, such as
    `disk2.dsk`.
-7. Rebuild and upload the LittleFS image.
+7. Rebuild and upload LittleFS using the instructions in
+   [BUILD.md](BUILD.md#build-and-upload).
 
 Use only ROMs and software that you are legally entitled to use and distribute.
 
@@ -280,5 +250,7 @@ I²C wiring, and address `0x68`.
 
 ## Developer Documentation
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the firmware architecture
-and [AGENTS.md](AGENTS.md) for repository-specific development guidance.
+- [BUILD.md](BUILD.md): hardware construction, firmware preparation, and
+  flashing.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): firmware architecture.
+- [AGENTS.md](AGENTS.md): repository-specific development guidance.

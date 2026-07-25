@@ -136,7 +136,8 @@ enum UiState
     UI_STATE_NORMAL = 8,
     UI_STATE_SET_DATETIME = 9,
     UI_STATE_CALIBRATION = 10,
-    UI_STATE_BOOT_OPTIONS = 11
+    UI_STATE_BOOT_OPTIONS = 11,
+    UI_STATE_EMULATOR = 12
 };
 
 static InputState g_input_state = {};
@@ -293,7 +294,9 @@ static void boot_floppy_event(lv_event_t *event)
 static void boot_options_continue_event(lv_event_t *event)
 {
     (void)event;
-    request_state(UI_STATE_EMPTY_SCREEN);
+    request_state(g_boot_floppy_emulator
+                      ? UI_STATE_EMULATOR
+                      : UI_STATE_EMPTY_SCREEN);
 }
 
 static void boot_options_continue_visual_event(lv_event_t *event)
@@ -363,7 +366,7 @@ static void init_boot_options_ui(lv_obj_t *screen)
                         LV_EVENT_VALUE_CHANGED, nullptr);
 
     lv_obj_t *floppy_label = lv_label_create(g_boot_options_ui.panel);
-    lv_label_set_text(floppy_label, "Boot with floppy");
+    lv_label_set_text(floppy_label, "Boot mode");
     lv_obj_set_style_text_font(floppy_label, &lv_font_chicago_8, 0);
     lv_obj_align(floppy_label, LV_ALIGN_TOP_LEFT, 0, 76);
 
@@ -981,13 +984,17 @@ void setup()
     touch_init(my_lcd.width(), my_lcd.height(), my_lcd.getRotation());
 
     pinMode(GPIO_FLOPPY, INPUT);
+    pinMode(GPIO_ALARM, INPUT);
     pinMode(GPIO_CLOCK, INPUT);
+    pinMode(GPIO_ENCODER1, INPUT_PULLUP);
+    pinMode(GPIO_ENCODER2, INPUT_PULLUP);
+    ESP32Encoder::useInternalWeakPullResistors = puType::up;
+    encoder.attachHalfQuad(GPIO_ENCODER1, GPIO_ENCODER2);
+    apply_boot_brightness(g_boot_brightness, false);
+
     const bool boot_options_requested = !digitalRead(GPIO_CLOCK);
 
-    if (!boot_options_requested &&
-        !digitalRead(GPIO_FLOPPY) &&
-        g_boot_floppy_emulator) {
-        analogWrite(TFT_BL_VAR, 255);
+    if (!boot_options_requested && g_boot_floppy_emulator) {
         minivmac();
     }
 
@@ -998,13 +1005,6 @@ void setup()
     init_ui_assets();
     Wire.begin(I2C_SDA, I2C_SCL);
     setup_rtc();
-
-    pinMode(GPIO_ALARM, INPUT);
-    pinMode(GPIO_ENCODER1, INPUT_PULLUP);
-    pinMode(GPIO_ENCODER2, INPUT_PULLUP);
-    ESP32Encoder::useInternalWeakPullResistors = puType::up;
-    encoder.attachHalfQuad(GPIO_ENCODER1, GPIO_ENCODER2);
-    apply_boot_brightness(g_boot_brightness, false);
 
     pinMode(GPIO_CHARGING, INPUT_PULLDOWN);
     pinMode(GPIO_BAT_EN, OUTPUT);
@@ -1331,6 +1331,11 @@ void loop()
             g_requested_state = UI_STATE_CALIBRATION;
             stateStartTime = now;
         }
+        break;
+    case UI_STATE_EMULATOR:
+        minivmac();
+        g_requested_state = UI_STATE_EMPTY_SCREEN;
+        stateStartTime = now;
         break;
     case UI_STATE_CALIBRATION: // calibration screen
         if (currentState != lastState)

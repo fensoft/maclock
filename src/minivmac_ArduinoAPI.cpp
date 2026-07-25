@@ -6,6 +6,8 @@
 #include <FS.h>
 #include <LittleFS.h>
 
+#include <ESP32Encoder.h>
+#include <Preferences.h>
 #include <TFT_eSPI.h>
 
 #include "ArduinoAPI.h"
@@ -18,6 +20,8 @@
 #include "mouse.h"
 
 extern TFT_eSPI my_lcd;
+extern ESP32Encoder encoder;
+extern Preferences preferences;
 
 int vMacMouseX = 0;
 int vMacMouseY = 0;
@@ -34,6 +38,85 @@ SemaphoreHandle_t SPIBusLock = NULL;
 TaskHandle_t RenderTaskHandle = NULL;
 
 volatile const uint8_t *EmScreenPtr = NULL;
+
+static constexpr uint8_t kMacKeyEnter = 0x4C;
+static constexpr uint8_t kMacKeyEscape = 0x35;
+
+struct EmulatorButton
+{
+    bool pressed;
+};
+
+static EmulatorButton EmulatorClockButton = {};
+static EmulatorButton EmulatorAlarmButton = {};
+static int EmulatorAppliedBrightness = -1;
+static int EmulatorSavedBrightness = -1;
+static uint32_t EmulatorBrightnessSaveMs = 0;
+
+static void EmulatorButtonBegin(EmulatorButton &button, bool pressed)
+{
+    button.pressed = pressed;
+}
+
+static void EmulatorButtonUpdate(EmulatorButton &button,
+                                 bool pressed,
+                                 uint8_t mac_key)
+{
+    if (pressed != button.pressed)
+    {
+        button.pressed = pressed;
+        MinivMacAPI_UpdateKey(mac_key, button.pressed ? 1 : 0);
+    }
+}
+
+static int EmulatorReadBrightness()
+{
+    int brightness = (int)encoder.getCount();
+    if (brightness < 0)
+        brightness = 0;
+    if (brightness > 12)
+        brightness = 12;
+    if (brightness != encoder.getCount())
+        encoder.setCount(brightness);
+    return brightness;
+}
+
+static void EmulatorInputsBegin()
+{
+    EmulatorButtonBegin(EmulatorClockButton, !digitalRead(GPIO_CLOCK));
+    EmulatorButtonBegin(EmulatorAlarmButton, !digitalRead(GPIO_ALARM));
+
+    const int brightness = EmulatorReadBrightness();
+    EmulatorAppliedBrightness = brightness;
+    EmulatorSavedBrightness = brightness;
+    EmulatorBrightnessSaveMs = millis();
+    analogWrite(TFT_BL_VAR, brightness * 255 / 12);
+}
+
+static void EmulatorInputsUpdate()
+{
+    const uint32_t now = millis();
+    EmulatorButtonUpdate(EmulatorClockButton,
+                         !digitalRead(GPIO_CLOCK),
+                         kMacKeyEnter);
+    EmulatorButtonUpdate(EmulatorAlarmButton,
+                         !digitalRead(GPIO_ALARM),
+                         kMacKeyEscape);
+
+    const int brightness = EmulatorReadBrightness();
+    if (brightness != EmulatorAppliedBrightness)
+    {
+        analogWrite(TFT_BL_VAR, brightness * 255 / 12);
+        EmulatorAppliedBrightness = brightness;
+    }
+    if (brightness != EmulatorSavedBrightness &&
+        (uint32_t)(now - EmulatorBrightnessSaveMs) >= 500)
+    {
+        preferences.putUChar("brightness", (uint8_t)brightness);
+        EmulatorSavedBrightness = brightness;
+        EmulatorBrightnessSaveMs = now;
+    }
+}
 
 void RenderTask(void *Param)
 {
@@ -182,6 +265,7 @@ void minivmac(void)
     xTaskCreatePinnedToCore(RenderTask, "RenderTask", 4096, NULL, 0, &RenderTaskHandle, 0);
 
     Mouse.Init();
+    EmulatorInputsBegin();
 
     minivmac_main(0, NULL);
 }
@@ -397,6 +481,7 @@ void ArduinoAPI_free(void *Memory)
 
 void ArduinoAPI_CheckForEvents(void)
 {
+    EmulatorInputsUpdate();
     Mouse.Update( );
 }
 
