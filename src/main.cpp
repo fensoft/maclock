@@ -398,7 +398,7 @@ static void update_clock_labels()
     {
     case WEATHER_SENSOR_BMP5XX:
     {
-        if (!bmp.dataReady() || !bmp.performReading())
+        if (!bmp.performReading())
             return;
         temperature = bmp.temperature;
         const float p = bmp.pressure;
