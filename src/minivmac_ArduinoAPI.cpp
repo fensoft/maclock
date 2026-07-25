@@ -12,6 +12,7 @@
 
 #include "AudioOutputI2S.h"
 #include "ArduinoAPI.h"
+#include "audio_output.h"
 #include "brightness.h"
 #include "es8311.h"
 
@@ -32,20 +33,30 @@ extern void setup_codec();
 int vMacMouseX = 0;
 int vMacMouseY = 0;
 
-bool ScreenNeedsUpdate = false;
-
 portMUX_TYPE Crit = portMUX_INITIALIZER_UNLOCKED;
 
 #define DrawScreenEvent 0x01
 
 EventGroupHandle_t RenderTaskEventHandle = NULL;
-SemaphoreHandle_t RenderTaskLock = NULL;
-SemaphoreHandle_t SPIBusLock = NULL;
+SemaphoreHandle_t DisplayLock = NULL;
+SemaphoreHandle_t FileSystemLock = NULL;
 TaskHandle_t RenderTaskHandle = NULL;
 
-volatile const uint8_t *EmScreenPtr = NULL;
+struct DirtyRegion
+{
+    int top;
+    int left;
+    int bottom;
+    int right;
+    bool valid;
+};
+
+static const uint8_t *EmScreenPtr = NULL;
+static DirtyRegion ChangedScreenRegion = {};
+static DirtyRegion PendingRenderRegion = {};
 static volatile bool RenderTaskShouldStop = false;
 static volatile uint32_t EmulatorOverlayUntilMs = 0;
+static bool EmulatorOverlayDrawn = false;
 
 static constexpr uint8_t kMacKeyEnter = 0x4C;
 static constexpr uint8_t kMacKeyEscape = 0x35;
@@ -66,6 +77,35 @@ static bool EmulatorExitRequested = false;
 static bool EmulatorSoundInitialized = false;
 static bool EmulatorSoundStarted = false;
 static uint32_t EmulatorSoundSampleRate = 0;
+
+static void MergeDirtyRegion(DirtyRegion &region,
+                             int top,
+                             int left,
+                             int bottom,
+                             int right)
+{
+    if (bottom <= top || right <= left)
+        return;
+
+    if (!region.valid)
+    {
+        region.top = top;
+        region.left = left;
+        region.bottom = bottom;
+        region.right = right;
+        region.valid = true;
+        return;
+    }
+
+    if (top < region.top)
+        region.top = top;
+    if (left < region.left)
+        region.left = left;
+    if (bottom > region.bottom)
+        region.bottom = bottom;
+    if (right > region.right)
+        region.right = right;
+}
 
 uint8_t ArduinoAPI_Sound_Init(uint32_t sample_rate)
 {
@@ -151,18 +191,34 @@ void ArduinoAPI_Sound_Write(const uint8_t *samples, size_t count)
     if (!EmulatorSoundStarted || !samples)
         return;
 
-    int16_t stereo_sample[2];
-    for (size_t i = 0; i < count; ++i)
+    static constexpr size_t kAudioBlockFrames = 512;
+    static int16_t stereo_frames[kAudioBlockFrames * 2];
+
+    size_t offset = 0;
+    while (offset < count && EmulatorSoundStarted)
     {
-        const int16_t sample =
-            (int16_t)(((int32_t)samples[i] - 128) * 256);
-        stereo_sample[0] = sample;
-        stereo_sample[1] = sample;
-        while (EmulatorSoundStarted &&
-               !audio_out->ConsumeSample(stereo_sample))
+        const size_t block_frames =
+            min(count - offset, kAudioBlockFrames);
+        for (size_t i = 0; i < block_frames; ++i)
         {
-            vTaskDelay(1);
+            const int16_t sample =
+                (int16_t)(((int32_t)samples[offset + i] - 128) * 256);
+            stereo_frames[i * 2] = sample;
+            stereo_frames[i * 2 + 1] = sample;
         }
+
+        size_t frames_written = 0;
+        while (frames_written < block_frames && EmulatorSoundStarted)
+        {
+            const size_t written = audio_write_stereo_frames(
+                &stereo_frames[frames_written * 2],
+                block_frames - frames_written);
+            if (written == 0)
+                vTaskDelay(1);
+            else
+                frames_written += written;
+        }
+        offset += block_frames;
     }
 }
 
@@ -269,8 +325,107 @@ static void DrawEmulatorStartupOverlay()
     my_lcd.drawString("Rotary: Brightness", x + 7, y + 39, 1);
 }
 
+static void DrawScreenRegion(const uint8_t *screen_ptr,
+                             DirtyRegion region)
+{
+    static constexpr int border_top = 16;
+    static constexpr int border_right = 16;
+
+    int display_width = 0;
+    int display_height = 0;
+    ArduinoAPI_GetDisplayDimensions(&display_width, &display_height);
+
+    int width = display_width - border_right;
+    int height = display_height - border_top;
+    if (width > vMacScreenWidth)
+        width = vMacScreenWidth;
+    if (height > vMacScreenHeight)
+        height = vMacScreenHeight;
+    if (width <= 0 || height <= 0)
+        return;
+
+    if (region.top < 0)
+        region.top = 0;
+    if (region.left < 0)
+        region.left = 0;
+    if (region.bottom > height)
+        region.bottom = height;
+    if (region.right > width)
+        region.right = width;
+    if (region.bottom <= region.top || region.right <= region.left)
+        return;
+
+    // Mini vMac stores eight monochrome pixels per byte. Expanding an
+    // aligned region avoids per-pixel source addressing while adding at
+    // most seven harmless pixels on either side.
+    region.left &= ~7;
+    region.right = (region.right + 7) & ~7;
+    if (region.right > width)
+        region.right = width;
+
+#ifdef LCD_W
+    static uint16_t line_buffer[LCD_W];
+    const int line_buffer_width = LCD_W;
+#else
+    static uint16_t line_buffer[vMacScreenWidth];
+    const int line_buffer_width = vMacScreenWidth;
+#endif
+
+    const int region_width = region.right - region.left;
+    if (region_width <= 0 || region_width > line_buffer_width)
+        return;
+
+    const uint16_t color_on = 0x0000;
+    const uint16_t color_off = 0xFFFF;
+    const int pitch_bytes = (vMacScreenWidth + 7) / 8;
+
+    my_lcd.startWrite();
+    my_lcd.setAddrWindow(region.left,
+                         border_top + region.top,
+                         region_width,
+                         region.bottom - region.top);
+
+    for (int y = region.top; y < region.bottom; ++y)
+    {
+        const uint8_t *src =
+            screen_ptr + y * pitch_bytes + region.left / 8;
+        uint16_t *dst = line_buffer;
+        int remaining = region_width;
+
+        while (remaining >= 8)
+        {
+            const uint8_t byte = *src++;
+            dst[0] = (byte & 0x80) ? color_on : color_off;
+            dst[1] = (byte & 0x40) ? color_on : color_off;
+            dst[2] = (byte & 0x20) ? color_on : color_off;
+            dst[3] = (byte & 0x10) ? color_on : color_off;
+            dst[4] = (byte & 0x08) ? color_on : color_off;
+            dst[5] = (byte & 0x04) ? color_on : color_off;
+            dst[6] = (byte & 0x02) ? color_on : color_off;
+            dst[7] = (byte & 0x01) ? color_on : color_off;
+            dst += 8;
+            remaining -= 8;
+        }
+
+        if (remaining > 0)
+        {
+            const uint8_t byte = *src;
+            for (int bit = 0; bit < remaining; ++bit)
+                *dst++ = (byte & (uint8_t)(0x80 >> bit))
+                             ? color_on
+                             : color_off;
+        }
+
+        my_lcd.pushColors(line_buffer, (uint32_t)region_width, true);
+    }
+
+    my_lcd.endWrite();
+}
+
 void RenderTask(void *Param)
 {
+    (void)Param;
+
     while (true)
     {
         TickType_t wait_ticks = portMAX_DELAY;
@@ -282,144 +437,43 @@ void RenderTask(void *Param)
             if (wait_ticks == 0)
                 wait_ticks = 1;
         }
+        else if (EmulatorOverlayDrawn)
+        {
+            wait_ticks = 0;
+        }
 
         xEventGroupWaitBits(RenderTaskEventHandle, DrawScreenEvent,
                             pdTRUE, pdTRUE, wait_ticks);
         if (RenderTaskShouldStop)
             break;
 
-        if (xSemaphoreTake(SPIBusLock, pdMS_TO_TICKS(5)) == pdTRUE)
+        DirtyRegion region = {};
+        const uint8_t *screen_ptr = NULL;
+        portENTER_CRITICAL(&Crit);
+        region = PendingRenderRegion;
+        PendingRenderRegion.valid = false;
+        screen_ptr = EmScreenPtr;
+        portEXIT_CRITICAL(&Crit);
+
+        const bool overlay_visible =
+            (int32_t)(EmulatorOverlayUntilMs - millis()) > 0;
+        if (!overlay_visible && EmulatorOverlayDrawn)
         {
-            xSemaphoreTake(RenderTaskLock, portMAX_DELAY);
-            const uint8_t *screen_ptr = (const uint8_t *)EmScreenPtr;
-            if (screen_ptr)
-            {
-                int display_width = 0;
-                int display_height = 0;
-                ArduinoAPI_GetDisplayDimensions(&display_width, &display_height);
-
-                const int vmac_width = vMacScreenWidth;
-                const int vmac_height = vMacScreenHeight;
-
-                if (display_width > 0 && display_height > 0 && vmac_width > 0 && vmac_height > 0)
-                {
-                    const int border_top = 16;
-                    const int border_right = 16;
-                    const int src_x = 0;
-                    const int src_y = 0;
-
-                    int out_width = display_width;
-                    int out_height = display_height;
-
-#ifdef LCD_W
-                    static uint16_t line_buffer[LCD_W];
-                    const int line_buffer_width = LCD_W;
-#else
-                    static uint16_t line_buffer[vMacScreenWidth];
-                    const int line_buffer_width = vMacScreenWidth;
-#endif
-
-                    if (out_width > line_buffer_width)
-                    {
-                        out_width = line_buffer_width;
-                    }
-                    if (out_height < 0)
-                    {
-                        out_height = 0;
-                    }
-
-                    int width = out_width - border_right;
-                    int height = out_height - border_top;
-
-                    if (width < 0)
-                    {
-                        width = 0;
-                    }
-                    if (height < 0)
-                    {
-                        height = 0;
-                    }
-
-                    if (width > (vmac_width - src_x))
-                    {
-                        width = vmac_width - src_x;
-                    }
-                    if (height > (vmac_height - src_y))
-                    {
-                        height = vmac_height - src_y;
-                    }
-
-                    if (out_width > 0 && out_height > 0)
-                    {
-                        const uint16_t color_on = 0x0000;
-                        const uint16_t color_off = 0xFFFF;
-                        const int pitch_bytes = (vmac_width + 7) / 8;
-                        const uint16_t color_border = 0x0000;
-
-                        my_lcd.startWrite();
-                        my_lcd.setAddrWindow(0, 0, out_width, out_height);
-
-                        for (int y = 0; y < out_height; ++y)
-                        {
-                            uint16_t *dst = line_buffer;
-
-                            if (y < border_top || y >= (border_top + height))
-                            {
-                                for (int i = 0; i < out_width; ++i)
-                                {
-                                    *dst++ = color_border;
-                                }
-                                my_lcd.pushColors(line_buffer, (uint32_t)out_width, true);
-                                continue;
-                            }
-
-                            const int src_row = y - border_top;
-                            const uint8_t *row_ptr = screen_ptr + ((src_y + src_row) * pitch_bytes) + (src_x / 8);
-                            int remaining = width;
-
-                            while (remaining >= 8)
-                            {
-                                const uint8_t byte = *row_ptr++;
-                                dst[0] = (byte & 0x80) ? color_on : color_off;
-                                dst[1] = (byte & 0x40) ? color_on : color_off;
-                                dst[2] = (byte & 0x20) ? color_on : color_off;
-                                dst[3] = (byte & 0x10) ? color_on : color_off;
-                                dst[4] = (byte & 0x08) ? color_on : color_off;
-                                dst[5] = (byte & 0x04) ? color_on : color_off;
-                                dst[6] = (byte & 0x02) ? color_on : color_off;
-                                dst[7] = (byte & 0x01) ? color_on : color_off;
-                                dst += 8;
-                                remaining -= 8;
-                            }
-
-                            if (remaining > 0)
-                            {
-                                const uint8_t byte = *row_ptr++;
-                                for (int bit = 0; bit < remaining; ++bit)
-                                {
-                                    const uint8_t mask = (uint8_t)(0x80 >> bit);
-                                    *dst++ = (byte & mask) ? color_on : color_off;
-                                }
-                            }
-
-                            for (int i = width; i < out_width; ++i)
-                            {
-                                *dst++ = color_border;
-                            }
-
-                            my_lcd.pushColors(line_buffer, (uint32_t)out_width, true);
-                        }
-
-                        my_lcd.endWrite();
-
-                        if ((int32_t)(EmulatorOverlayUntilMs - millis()) > 0)
-                            DrawEmulatorStartupOverlay();
-                    }
-                }
-            }
-            xSemaphoreGive(RenderTaskLock);
-            xSemaphoreGive(SPIBusLock);
+            MergeDirtyRegion(region, 174 - 16, 8, 174 - 16 + 58, 8 + 288);
+            EmulatorOverlayDrawn = false;
         }
+
+        if (!screen_ptr || !region.valid)
+            continue;
+
+        xSemaphoreTake(DisplayLock, portMAX_DELAY);
+        DrawScreenRegion(screen_ptr, region);
+        if ((int32_t)(EmulatorOverlayUntilMs - millis()) > 0)
+        {
+            DrawEmulatorStartupOverlay();
+            EmulatorOverlayDrawn = true;
+        }
+        xSemaphoreGive(DisplayLock);
     }
 
     RenderTaskHandle = NULL;
@@ -431,10 +485,16 @@ void minivmac(void)
     my_lcd.fillScreen(TFT_BLACK);
 
     RenderTaskEventHandle = xEventGroupCreate();
-    RenderTaskLock = xSemaphoreCreateMutex();
-    SPIBusLock = xSemaphoreCreateMutex();
+    DisplayLock = xSemaphoreCreateMutex();
+    FileSystemLock = xSemaphoreCreateMutex();
+    portENTER_CRITICAL(&Crit);
+    EmScreenPtr = NULL;
+    ChangedScreenRegion.valid = false;
+    PendingRenderRegion.valid = false;
+    portEXIT_CRITICAL(&Crit);
     RenderTaskShouldStop = false;
     EmulatorOverlayUntilMs = millis() + 4000;
+    EmulatorOverlayDrawn = false;
 
     xTaskCreatePinnedToCore(RenderTask, "RenderTask", 4096, NULL, 0, &RenderTaskHandle, 0);
 
@@ -454,17 +514,20 @@ void minivmac(void)
         RenderTaskHandle = NULL;
     }
 
+    portENTER_CRITICAL(&Crit);
     EmScreenPtr = NULL;
-    ScreenNeedsUpdate = false;
-    if (RenderTaskLock)
+    ChangedScreenRegion.valid = false;
+    PendingRenderRegion.valid = false;
+    portEXIT_CRITICAL(&Crit);
+    if (DisplayLock)
     {
-        vSemaphoreDelete(RenderTaskLock);
-        RenderTaskLock = NULL;
+        vSemaphoreDelete(DisplayLock);
+        DisplayLock = NULL;
     }
-    if (SPIBusLock)
+    if (FileSystemLock)
     {
-        vSemaphoreDelete(SPIBusLock);
-        SPIBusLock = NULL;
+        vSemaphoreDelete(FileSystemLock);
+        FileSystemLock = NULL;
     }
     if (RenderTaskEventHandle)
     {
@@ -551,13 +614,13 @@ ArduinoFile ArduinoAPI_open(const char *Path, const char *Mode)
         NormalizedPath = LittleFSPath;
     }
 
-    xSemaphoreTake(SPIBusLock, portMAX_DELAY);
+    xSemaphoreTake(FileSystemLock, portMAX_DELAY);
     fs::File File = LittleFS.open(NormalizedPath, Mode);
     if (File)
     {
         Handle = new fs::File(File);
     }
-    xSemaphoreGive(SPIBusLock);
+    xSemaphoreGive(FileSystemLock);
 
     return Handle;
 }
@@ -567,9 +630,9 @@ void ArduinoAPI_close(ArduinoFile Handle)
     if (Handle)
     {
         fs::File *File = (fs::File *)Handle;
-        xSemaphoreTake(SPIBusLock, portMAX_DELAY);
+        xSemaphoreTake(FileSystemLock, portMAX_DELAY);
         File->close();
-        xSemaphoreGive(SPIBusLock);
+        xSemaphoreGive(FileSystemLock);
         delete File;
     }
 }
@@ -582,10 +645,10 @@ size_t ArduinoAPI_read(void *Buffer, size_t Size, size_t Nmemb, ArduinoFile Hand
     {
         fs::File *File = (fs::File *)Handle;
         size_t BytesRequested = Size * Nmemb;
-        xSemaphoreTake(SPIBusLock, portMAX_DELAY);
+        xSemaphoreTake(FileSystemLock, portMAX_DELAY);
         size_t BytesRead = File->read((uint8_t *)Buffer, BytesRequested);
         ElementsRead = BytesRead / Size;
-        xSemaphoreGive(SPIBusLock);
+        xSemaphoreGive(FileSystemLock);
     }
 
     return ElementsRead;
@@ -599,10 +662,10 @@ size_t ArduinoAPI_write(const void *Buffer, size_t Size, size_t Nmemb, ArduinoFi
     {
         fs::File *File = (fs::File *)Handle;
         size_t BytesRequested = Size * Nmemb;
-        xSemaphoreTake(SPIBusLock, portMAX_DELAY);
+        xSemaphoreTake(FileSystemLock, portMAX_DELAY);
         size_t BytesWritten = File->write((const uint8_t *)Buffer, BytesRequested);
         ElementsWritten = BytesWritten / Size;
-        xSemaphoreGive(SPIBusLock);
+        xSemaphoreGive(FileSystemLock);
     }
 
     return ElementsWritten;
@@ -615,9 +678,9 @@ long ArduinoAPI_tell(ArduinoFile Handle)
     if (Handle)
     {
         fs::File *File = (fs::File *)Handle;
-        xSemaphoreTake(SPIBusLock, portMAX_DELAY);
+        xSemaphoreTake(FileSystemLock, portMAX_DELAY);
         Offset = (long)File->position();
-        xSemaphoreGive(SPIBusLock);
+        xSemaphoreGive(FileSystemLock);
     }
 
     return Offset;
@@ -630,7 +693,7 @@ long ArduinoAPI_seek(ArduinoFile Handle, long Offset, int Whence)
     if (Handle)
     {
         fs::File *File = (fs::File *)Handle;
-        xSemaphoreTake(SPIBusLock, portMAX_DELAY);
+        xSemaphoreTake(FileSystemLock, portMAX_DELAY);
         int64_t Base = 0;
         if (Whence == Arduino_Seek_Cur)
         {
@@ -646,7 +709,7 @@ long ArduinoAPI_seek(ArduinoFile Handle, long Offset, int Whence)
         {
             Result = File->seek((uint32_t)Target, fs::SeekSet) ? 0 : -1;
         }
-        xSemaphoreGive(SPIBusLock);
+        xSemaphoreGive(FileSystemLock);
     }
 
     return Result;
@@ -659,9 +722,9 @@ int ArduinoAPI_eof(ArduinoFile Handle)
     if (Handle)
     {
         fs::File *File = (fs::File *)Handle;
-        xSemaphoreTake(SPIBusLock, portMAX_DELAY);
+        xSemaphoreTake(FileSystemLock, portMAX_DELAY);
         IsEOF = (File->position() >= File->size()) ? 1 : 0;
-        xSemaphoreGive(SPIBusLock);
+        xSemaphoreGive(FileSystemLock);
     }
 
     return IsEOF;
@@ -690,21 +753,38 @@ void ArduinoAPI_CheckForEvents(void)
 
 void ArduinoAPI_ScreenChanged(int Top, int Left, int Bottom, int Right)
 {
-    ScreenNeedsUpdate = true;
+    if (Top < 0)
+        Top = 0;
+    if (Left < 0)
+        Left = 0;
+    if (Bottom > vMacScreenHeight)
+        Bottom = vMacScreenHeight;
+    if (Right > vMacScreenWidth)
+        Right = vMacScreenWidth;
+
+    portENTER_CRITICAL(&Crit);
+    MergeDirtyRegion(ChangedScreenRegion, Top, Left, Bottom, Right);
+    portEXIT_CRITICAL(&Crit);
 }
 
 void ArduinoAPI_DrawScreen(const uint8_t *Screen)
 {
-    if (ScreenNeedsUpdate)
+    bool needs_render = false;
+
+    portENTER_CRITICAL(&Crit);
+    EmScreenPtr = Screen;
+    if (ChangedScreenRegion.valid)
     {
-        ScreenNeedsUpdate = false;
-        EmScreenPtr = Screen;
-
-        if (xSemaphoreTake(RenderTaskLock, 0) == pdTRUE)
-        {
-            xSemaphoreGive(RenderTaskLock);
-
-            xEventGroupSetBits(RenderTaskEventHandle, DrawScreenEvent);
-        }
+        MergeDirtyRegion(PendingRenderRegion,
+                         ChangedScreenRegion.top,
+                         ChangedScreenRegion.left,
+                         ChangedScreenRegion.bottom,
+                         ChangedScreenRegion.right);
+        ChangedScreenRegion.valid = false;
+        needs_render = true;
     }
+    portEXIT_CRITICAL(&Crit);
+
+    if (needs_render && RenderTaskEventHandle)
+        xEventGroupSetBits(RenderTaskEventHandle, DrawScreenEvent);
 }

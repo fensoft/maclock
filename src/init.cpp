@@ -4,6 +4,26 @@
 #include <LittleFS.h>
 #include "touch.h"
 #include "AudioOutputI2S.h"
+#include "audio_output.h"
+
+class MaclockAudioOutputI2S : public AudioOutputI2S
+{
+public:
+    size_t writeStereoFrames(const int16_t *frames, size_t frame_count)
+    {
+        if (!i2sOn || !frames || frame_count == 0)
+            return 0;
+
+        size_t bytes_written = 0;
+        i2s_channel_write(
+            _tx_handle,
+            frames,
+            frame_count * 2 * sizeof(int16_t),
+            &bytes_written,
+            0);
+        return bytes_written / (2 * sizeof(int16_t));
+    }
+};
 
 TFT_eSPI my_lcd = TFT_eSPI();
 static lv_display_t *disp;
@@ -11,6 +31,14 @@ static uint8_t buf1[LCD_W * LCD_H * 2];
 static lv_indev_t *indev;
 es8311_handle_t es8311_handle = nullptr;
 AudioOutputI2S *audio_out;
+
+size_t audio_write_stereo_frames(const int16_t *frames, size_t frame_count)
+{
+    if (!audio_out)
+        return 0;
+    return static_cast<MaclockAudioOutputI2S *>(audio_out)
+        ->writeStereoFrames(frames, frame_count);
+}
 
 static void lvgl_log_cb(lv_log_level_t level, const char *msg)
 {
@@ -155,7 +183,7 @@ void setup_codec() {
     es8311_voice_volume_set(es8311_handle, 80, NULL);
     es8311_voice_mute(es8311_handle, false);
 
-    audio_out = new AudioOutputI2S();
+    audio_out = new MaclockAudioOutputI2S();
     audio_out->SetPinout(I2S_BCK, I2S_WS, I2S_DOUT, I2S_MCK);
     audio_out->SetBuffers(8, 8192);
 }

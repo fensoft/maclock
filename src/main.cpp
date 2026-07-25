@@ -163,12 +163,15 @@ static lv_timer_t *g_cursor_timer = nullptr;
 static BootBrightness g_boot_brightness = BOOT_BRIGHTNESS_LATEST;
 static bool g_boot_floppy_emulator = true;
 static int g_last_saved_encoder = -1;
+static TaskHandle_t g_input_task_handle = nullptr;
+static TaskHandle_t g_audio_task_handle = nullptr;
 
 void setup_codec();
 void setup_lvgl_display();
 void setup_lvgl_input();
 void lvgl_fs_init_littlefs();
 void minivmac();
+static void run_emulator();
 static void update_diagnostics_ui();
 
 void request_state(int state)
@@ -1019,6 +1022,29 @@ static void audio_task(void *param)
     }
 }
 
+static void run_emulator()
+{
+    if (g_audio_task_handle)
+        vTaskSuspend(g_audio_task_handle);
+    if (g_input_task_handle)
+        vTaskSuspend(g_input_task_handle);
+
+    if (mp3 && mp3->isRunning())
+    {
+        mp3->stop();
+        portENTER_CRITICAL(&g_mp3_mux);
+        g_mp3_finished = true;
+        portEXIT_CRITICAL(&g_mp3_mux);
+    }
+
+    minivmac();
+
+    if (g_input_task_handle)
+        vTaskResume(g_input_task_handle);
+    if (g_audio_task_handle)
+        vTaskResume(g_audio_task_handle);
+}
+
 static bool i2c_device_present(uint8_t addr)
 {
     Wire.beginTransmission(addr);
@@ -1186,7 +1212,7 @@ void setup()
     bool emulator_returned_to_menu = false;
 
     if (!boot_options_requested && g_boot_floppy_emulator) {
-        minivmac();
+        run_emulator();
         emulator_returned_to_menu = true;
     }
 
@@ -1213,7 +1239,7 @@ void setup()
         2048,
         nullptr,
         1,
-        nullptr,
+        &g_input_task_handle,
         1);
 
     xTaskCreatePinnedToCore(
@@ -1222,7 +1248,7 @@ void setup()
         4096,
         nullptr,
         1,
-        nullptr,
+        &g_audio_task_handle,
         0);
     setup_weather_sensor();
 
@@ -1566,7 +1592,7 @@ void loop()
         }
         break;
     case UI_STATE_EMULATOR:
-        minivmac();
+        run_emulator();
         g_requested_state = UI_STATE_BOOT_OPTIONS;
         stateStartTime = now;
         break;
