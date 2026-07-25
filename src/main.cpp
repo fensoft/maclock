@@ -19,6 +19,8 @@
 #include "datetime_ui.h"
 #include "touch.h"
 #include "Adafruit_BMP5xx.h"
+#include "Adafruit_HTU21DF.h"
+#include <Preferences.h>
 
 LV_FONT_DECLARE(lv_font_chicago_8);
 LV_FONT_DECLARE(lv_font_chicago_32);
@@ -32,8 +34,30 @@ extern es8311_handle_t es8311_handle;
 AudioGeneratorMP3 *mp3 = NULL;
 extern TFT_eSPI my_lcd;
 extern es8311_handle_t es8311_handle;
-RTC_DS1307 rtc;
+RTC_DS1307 rtc_ds1307;
+RTC_DS3231 rtc_ds3231;
 Adafruit_BMP5xx bmp;
+Adafruit_HTU21DF htu2x;
+Preferences preferences;
+
+enum RtcType
+{
+    RTC_TYPE_NONE,
+    RTC_TYPE_DS1307,
+    RTC_TYPE_DS3231
+};
+
+static RtcType g_rtc_type = RTC_TYPE_NONE;
+
+enum WeatherSensor
+{
+    WEATHER_SENSOR_NONE,
+    WEATHER_SENSOR_BMP5XX,
+    WEATHER_SENSOR_HTU2X
+};
+
+static WeatherSensor g_weather_sensor = WEATHER_SENSOR_NONE;
+static uint8_t g_weather_sensor_address = 0;
 
 struct InputState
 {
@@ -43,7 +67,7 @@ struct InputState
     bool touch;
 };
 
-static constexpr size_t k_plugin_max = 5;
+static constexpr size_t k_plugin_max = 4;
 
 struct UiImages
 {
@@ -109,7 +133,6 @@ static portMUX_TYPE g_mp3_mux = portMUX_INITIALIZER_UNLOCKED;
 static int g_requested_state = 0;
 static lv_obj_t *g_cursor = nullptr;
 static lv_timer_t *g_cursor_timer = nullptr;
-static constexpr uint8_t k_nvram_addr_encoder = 0;
 
 void setup_codec();
 void setup_lvgl_display();
@@ -120,6 +143,39 @@ void minivmac();
 void request_state(int state)
 {
     g_requested_state = state;
+}
+
+void request_normal_state()
+{
+    request_state(UI_STATE_NORMAL);
+}
+
+DateTime rtc_now()
+{
+    switch (g_rtc_type)
+    {
+    case RTC_TYPE_DS1307:
+        return rtc_ds1307.now();
+    case RTC_TYPE_DS3231:
+        return rtc_ds3231.now();
+    default:
+        return DateTime(2000, 1, 1, 0, 0, 0);
+    }
+}
+
+void rtc_adjust_datetime(const DateTime &date_time)
+{
+    switch (g_rtc_type)
+    {
+    case RTC_TYPE_DS1307:
+        rtc_ds1307.adjust(date_time);
+        break;
+    case RTC_TYPE_DS3231:
+        rtc_ds3231.adjust(date_time);
+        break;
+    default:
+        break;
+    }
 }
 
 static void cursor_hide_timer_cb(lv_timer_t *timer)
@@ -315,7 +371,7 @@ static void update_clock_labels()
     static int last_sec = -1;
     static int16_t gauge_width = 0;
     static int16_t gauge_box_w = 0;
-    DateTime now = rtc.now();
+    DateTime now = rtc_now();
     int sec = now.second();
     if (sec == last_sec)
         return;
@@ -333,40 +389,100 @@ static void update_clock_labels()
     lv_label_set_text(g_ui.date, buf);
     lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID, 0, 14 + 4 + 32 + 16);
 
-    if (!bmp.dataReady())
-    {
-        bmp.performReading();
-        char tbuf[12];
-        snprintf(tbuf, sizeof(tbuf), "%02.1f°C", bmp.temperature);
-        lv_label_set_text(g_ui.temp, tbuf);
+    float temperature;
+    float gauge_value;
+    float gauge_min;
+    float gauge_max;
 
+    switch (g_weather_sensor)
+    {
+    case WEATHER_SENSOR_BMP5XX:
+    {
+        if (!bmp.dataReady() || !bmp.performReading())
+            return;
+        temperature = bmp.temperature;
         const float p = bmp.pressure;
+        gauge_value = p;
+        gauge_min = 980.0f;
+        gauge_max = 1040.0f;
         if (p < 1000.0f)
             lv_image_set_src(g_ui.gauge_icon, "S:/rainy.png");
         else if (p < 1020.0f)
             lv_image_set_src(g_ui.gauge_icon, "S:/cloudy.png");
         else
             lv_image_set_src(g_ui.gauge_icon, "S:/sunny.png");
-
-        if (gauge_width == 0)
-        {
-            gauge_width = lv_obj_get_width(g_ui.gauge_line);
-            gauge_box_w = lv_obj_get_width(g_ui.gauge_box);
-        }
-
-        const float min_p = 980.0f;
-        const float max_p = 1040.0f;
-        float clamped = p;
-        if (clamped < min_p)
-            clamped = min_p;
-        if (clamped > max_p)
-            clamped = max_p;
-        const float t = (clamped - min_p) / (max_p - min_p);
-        const int16_t max_offset = gauge_width - gauge_box_w;
-        const int16_t x_offset = (int16_t)(max_offset * t);
-        lv_obj_align_to(g_ui.gauge_box, g_ui.gauge_line, LV_ALIGN_LEFT_MID, x_offset, 0);
-        lv_obj_move_foreground(g_ui.gauge_box);
+        break;
     }
+
+    case WEATHER_SENSOR_HTU2X:
+    {
+        temperature = htu2x.readTemperature();
+        const float humidity = htu2x.readHumidity();
+        if (isnan(temperature) || isnan(humidity))
+            return;
+        gauge_value = humidity;
+        gauge_min = 0.0f;
+        gauge_max = 100.0f;
+        if (humidity >= 70.0f)
+            lv_image_set_src(g_ui.gauge_icon, "S:/rainy.png");
+        else if (humidity >= 40.0f)
+            lv_image_set_src(g_ui.gauge_icon, "S:/cloudy.png");
+        else
+            lv_image_set_src(g_ui.gauge_icon, "S:/sunny.png");
+        break;
+    }
+
+    default:
+        return;
+    }
+
+    char tbuf[12];
+    snprintf(tbuf, sizeof(tbuf), "%02.1f°C", temperature);
+    lv_label_set_text(g_ui.temp, tbuf);
+
+    if (gauge_width == 0)
+    {
+        gauge_width = lv_obj_get_width(g_ui.gauge_line);
+        gauge_box_w = lv_obj_get_width(g_ui.gauge_box);
+    }
+
+    float clamped = gauge_value;
+    if (clamped < gauge_min)
+        clamped = gauge_min;
+    if (clamped > gauge_max)
+        clamped = gauge_max;
+    const float t = (clamped - gauge_min) / (gauge_max - gauge_min);
+    const int16_t max_offset = gauge_width - gauge_box_w;
+    const int16_t x_offset = (int16_t)(max_offset * t);
+    lv_obj_align_to(g_ui.gauge_box, g_ui.gauge_line, LV_ALIGN_LEFT_MID, x_offset, 0);
+    lv_obj_move_foreground(g_ui.gauge_box);
+}
+
+static void setup_weather_sensor()
+{
+    if (bmp.begin(BMP5XX_ALTERNATIVE_ADDRESS, &Wire))
+    {
+        g_weather_sensor = WEATHER_SENSOR_BMP5XX;
+        g_weather_sensor_address = BMP5XX_ALTERNATIVE_ADDRESS;
+        bmp.setTemperatureOversampling(BMP5XX_OVERSAMPLING_16X);
+        bmp.setPressureOversampling(BMP5XX_OVERSAMPLING_16X);
+        bmp.setIIRFilterCoeff(BMP5XX_IIR_FILTER_COEFF_127);
+        bmp.setOutputDataRate(BMP5XX_ODR_120_HZ);
+        bmp.setPowerMode(BMP5XX_POWERMODE_NORMAL);
+        bmp.enablePressure(true);
+        Serial.println("BMP5xx detected at 0x47");
+        return;
+    }
+
+    if (htu2x.begin(&Wire))
+    {
+        g_weather_sensor = WEATHER_SENSOR_HTU2X;
+        g_weather_sensor_address = HTU21DF_I2CADDR;
+        Serial.println("HTU2x detected at 0x40");
+        return;
+    }
+
+    Serial.println("No weather sensor detected");
 }
 
 static void init_ui_assets()
@@ -574,6 +690,78 @@ static bool i2c_device_present(uint8_t addr)
     return Wire.endTransmission() == 0;
 }
 
+static bool i2c_read_register(uint8_t addr, uint8_t reg, uint8_t &value)
+{
+    Wire.beginTransmission(addr);
+    Wire.write(reg);
+    if (Wire.endTransmission(false) != 0)
+        return false;
+    if (Wire.requestFrom(addr, (uint8_t)1) != 1)
+        return false;
+    value = Wire.read();
+    return true;
+}
+
+static bool i2c_write_register(uint8_t addr, uint8_t reg, uint8_t value)
+{
+    Wire.beginTransmission(addr);
+    Wire.write(reg);
+    Wire.write(value);
+    return Wire.endTransmission() == 0;
+}
+
+static bool probe_ds1307()
+{
+    static constexpr uint8_t k_rtc_address = 0x68;
+    static constexpr uint8_t k_ds3231_control_register = 0x0E;
+    static constexpr uint8_t k_ds3231_convert_temperature = 0x20;
+
+    uint8_t original = 0;
+    if (!i2c_read_register(k_rtc_address, k_ds3231_control_register, original))
+        return false;
+    if (!i2c_write_register(k_rtc_address, k_ds3231_control_register,
+                            original | k_ds3231_convert_temperature))
+        return false;
+
+    delay(250);
+
+    uint8_t after = 0;
+    if (!i2c_read_register(k_rtc_address, k_ds3231_control_register, after))
+        return false;
+
+    const bool is_ds1307 = (after & k_ds3231_convert_temperature) != 0;
+    i2c_write_register(k_rtc_address, k_ds3231_control_register,
+                       is_ds1307 ? original : (original & ~k_ds3231_convert_temperature));
+    return is_ds1307;
+}
+
+static bool setup_rtc()
+{
+    static constexpr uint8_t k_rtc_address = 0x68;
+    if (!i2c_device_present(k_rtc_address))
+    {
+        Serial.println("No RTC detected at 0x68");
+        return false;
+    }
+
+    if (probe_ds1307() && rtc_ds1307.begin(&Wire))
+    {
+        g_rtc_type = RTC_TYPE_DS1307;
+        Serial.println("DS1307 detected at 0x68");
+        return true;
+    }
+
+    if (rtc_ds3231.begin(&Wire))
+    {
+        g_rtc_type = RTC_TYPE_DS3231;
+        Serial.println("DS3231 detected at 0x68");
+        return true;
+    }
+
+    Serial.println("RTC at 0x68 could not be initialized");
+    return false;
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -605,7 +793,8 @@ void setup()
     lvgl_fs_init_littlefs();
     init_ui_assets();
     Wire.begin(I2C_SDA, I2C_SCL);
-    rtc.begin();
+    setup_rtc();
+    preferences.begin("maclock", false);
 
     pinMode(GPIO_ALARM, INPUT);
     pinMode(GPIO_CLOCK, INPUT);
@@ -614,7 +803,7 @@ void setup()
     ESP32Encoder::useInternalWeakPullResistors = puType::up;
     encoder.attachHalfQuad(GPIO_ENCODER1, GPIO_ENCODER2);
     {
-        uint8_t saved = rtc.readnvram(k_nvram_addr_encoder);
+        uint8_t saved = preferences.getUChar("brightness", 6);
         int start_count = (saved <= 12) ? saved : 6;
         encoder.setCount(start_count);
     }
@@ -640,13 +829,7 @@ void setup()
         1,
         nullptr,
         0);
-    bmp.begin(BMP5XX_ALTERNATIVE_ADDRESS, &Wire);
-    bmp.setTemperatureOversampling(BMP5XX_OVERSAMPLING_16X);
-    bmp.setPressureOversampling(BMP5XX_OVERSAMPLING_16X);
-    bmp.setIIRFilterCoeff(BMP5XX_IIR_FILTER_COEFF_127);
-    bmp.setOutputDataRate(BMP5XX_ODR_120_HZ);
-    bmp.setPowerMode(BMP5XX_POWERMODE_NORMAL);
-    bmp.enablePressure(true);
+    setup_weather_sensor();
 
     if (!digitalRead(GPIO_CLOCK)) // run calibration if clock button set on boot
         request_state(UI_STATE_CALIBRATION);
@@ -770,7 +953,7 @@ void loop()
     case UI_STATE_BOOT_PLUGINS: // show boot screen + detected i2c plugins
         if (currentState != lastState)
         {
-            static const uint8_t k_addrs[k_plugin_max] = {0x18, 0x38, 0x47, 0x50, 0x68};
+            const uint8_t k_addrs[k_plugin_max] = {0x18, 0x38, g_weather_sensor_address, 0x68};
             const int16_t margin_x = 8;
             const int16_t margin_y = 8;
             const int16_t spacing = 4;
@@ -781,7 +964,7 @@ void loop()
             for (size_t i = 0; i < k_plugin_max; ++i)
             {
                 const uint8_t addr = k_addrs[i];
-                if (i2c_device_present(addr) && plugin_count < k_plugin_max)
+                if (addr != 0 && i2c_device_present(addr) && plugin_count < k_plugin_max)
                 {
                     char fs_path[32];
                     char lv_path[36];
@@ -916,7 +1099,7 @@ void loop()
     case UI_STATE_SET_DATETIME: // change date/time
         if (currentState != lastState)
         {
-            DateTime current = rtc.now();
+            DateTime current = rtc_now();
             datetime_ui_enter(current);
         }
         if (now - stateStartTime >= 0)
@@ -1008,7 +1191,7 @@ void loop()
 
     if (enc != last_saved_encoder && (now - last_encoder_save_ms) >= 500)
     {
-        rtc.writenvram(k_nvram_addr_encoder, (uint8_t)enc);
+        preferences.putUChar("brightness", (uint8_t)enc);
         last_saved_encoder = enc;
         last_encoder_save_ms = now;
     }

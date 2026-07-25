@@ -20,11 +20,18 @@ Join our community: [Discord Server](https://discord.gg/89etSPMFym)
 |-----------|------|
 | Encoder CLK | GPIO 14 |
 | Encoder DT | GPIO 21 |
-| Encoder Center | GPIO 8 |
+| I²C SDA | GPIO 16 |
+| I²C SCL | GPIO 15 |
 | Touch Sensor (red wire) | GPIO 2 |
-| Floppy Switch | GPIO 47 (sd connector) |
-| Alarm Button | GPIO 40 (sd connector) |
-| Clock Button | GPIO 48 (sd connector) |
+| Floppy Switch | GPIO 47 (sd connector pad 2) |
+| Alarm Button | GPIO 40 (sd connector pad 3) |
+| Clock Button | GPIO 48 (sd connector pad 1 - exterior) |
+
+The I²C bus is shared with the onboard ES8311 audio codec (`0x18`) and FT6336G touch controller (`0x38`). The firmware also supports these external 3.3 V-compatible I²C devices:
+
+- HTU2x temperature/humidity sensor at `0x40`
+- BMP580/BMP581 pressure/temperature sensor at `0x47`
+- DS1307 or DS3231 real-time clock at `0x68`
 
 ## Installation
 
