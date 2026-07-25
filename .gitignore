@@ -4,7 +4,6 @@
 .vscode/launch.json
 .vscode/ipch
 .DS_Store
-docs/
 old/
 src/minivmac/
 minivmac-*.src.tgz
