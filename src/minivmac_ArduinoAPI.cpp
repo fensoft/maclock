@@ -42,6 +42,18 @@ SemaphoreHandle_t DisplayLock = NULL;
 SemaphoreHandle_t FileSystemLock = NULL;
 TaskHandle_t RenderTaskHandle = NULL;
 
+static constexpr size_t kDiskCacheSize = 4096;
+
+struct ArduinoFileState
+{
+    fs::File File;
+    uint32_t Position;
+    uint32_t CacheStart;
+    size_t CacheLength;
+    bool CacheValid;
+    uint8_t Cache[kDiskCacheSize];
+};
+
 struct DirtyRegion
 {
     int top;
@@ -618,7 +630,20 @@ ArduinoFile ArduinoAPI_open(const char *Path, const char *Mode)
     fs::File File = LittleFS.open(NormalizedPath, Mode);
     if (File)
     {
-        Handle = new fs::File(File);
+        ArduinoFileState *State = new ArduinoFileState;
+        if (State)
+        {
+            State->File = File;
+            State->Position = (uint32_t)File.position();
+            State->CacheStart = 0;
+            State->CacheLength = 0;
+            State->CacheValid = false;
+            Handle = State;
+        }
+        else
+        {
+            File.close();
+        }
     }
     xSemaphoreGive(FileSystemLock);
 
@@ -629,42 +654,97 @@ void ArduinoAPI_close(ArduinoFile Handle)
 {
     if (Handle)
     {
-        fs::File *File = (fs::File *)Handle;
+        ArduinoFileState *State = (ArduinoFileState *)Handle;
         xSemaphoreTake(FileSystemLock, portMAX_DELAY);
-        File->close();
+        State->File.close();
         xSemaphoreGive(FileSystemLock);
-        delete File;
+        delete State;
     }
 }
 
 size_t ArduinoAPI_read(void *Buffer, size_t Size, size_t Nmemb, ArduinoFile Handle)
 {
-    size_t ElementsRead = 0;
-
-    if (Handle && Size > 0 && Nmemb > 0)
+    if (!Handle || !Buffer || Size == 0 || Nmemb == 0 ||
+        Nmemb > (SIZE_MAX / Size))
     {
-        fs::File *File = (fs::File *)Handle;
-        size_t BytesRequested = Size * Nmemb;
-        xSemaphoreTake(FileSystemLock, portMAX_DELAY);
-        size_t BytesRead = File->read((uint8_t *)Buffer, BytesRequested);
-        ElementsRead = BytesRead / Size;
-        xSemaphoreGive(FileSystemLock);
+        return 0;
     }
 
-    return ElementsRead;
+    ArduinoFileState *State = (ArduinoFileState *)Handle;
+    uint8_t *Destination = (uint8_t *)Buffer;
+    const size_t BytesRequested = Size * Nmemb;
+    size_t BytesRead = 0;
+
+    xSemaphoreTake(FileSystemLock, portMAX_DELAY);
+    while (BytesRead < BytesRequested)
+    {
+        if (State->CacheValid &&
+            State->Position >= State->CacheStart &&
+            State->Position < State->CacheStart + State->CacheLength)
+        {
+            const size_t CacheOffset = State->Position - State->CacheStart;
+            const size_t CacheAvailable = State->CacheLength - CacheOffset;
+            const size_t Remaining = BytesRequested - BytesRead;
+            const size_t CopyLength =
+                (CacheAvailable < Remaining) ? CacheAvailable : Remaining;
+
+            memcpy(Destination + BytesRead, State->Cache + CacheOffset, CopyLength);
+            State->Position += CopyLength;
+            BytesRead += CopyLength;
+            continue;
+        }
+
+        const size_t Remaining = BytesRequested - BytesRead;
+        if (Remaining >= kDiskCacheSize)
+        {
+            State->CacheValid = false;
+            if (!State->File.seek(State->Position, fs::SeekSet))
+                break;
+
+            const size_t DirectRead =
+                State->File.read(Destination + BytesRead, Remaining);
+            State->Position += DirectRead;
+            BytesRead += DirectRead;
+            if (DirectRead == 0)
+                break;
+            continue;
+        }
+
+        const uint32_t CacheStart =
+            State->Position - (State->Position % kDiskCacheSize);
+        if (!State->File.seek(CacheStart, fs::SeekSet))
+            break;
+
+        State->CacheStart = CacheStart;
+        State->CacheLength = State->File.read(State->Cache, kDiskCacheSize);
+        State->CacheValid =
+            (State->Position - CacheStart) < State->CacheLength;
+        if (!State->CacheValid)
+            break;
+    }
+    xSemaphoreGive(FileSystemLock);
+
+    return BytesRead / Size;
 }
 
 size_t ArduinoAPI_write(const void *Buffer, size_t Size, size_t Nmemb, ArduinoFile Handle)
 {
     size_t ElementsWritten = 0;
 
-    if (Handle && Size > 0 && Nmemb > 0)
+    if (Handle && Buffer && Size > 0 && Nmemb > 0 &&
+        Nmemb <= (SIZE_MAX / Size))
     {
-        fs::File *File = (fs::File *)Handle;
-        size_t BytesRequested = Size * Nmemb;
+        ArduinoFileState *State = (ArduinoFileState *)Handle;
+        const size_t BytesRequested = Size * Nmemb;
         xSemaphoreTake(FileSystemLock, portMAX_DELAY);
-        size_t BytesWritten = File->write((const uint8_t *)Buffer, BytesRequested);
-        ElementsWritten = BytesWritten / Size;
+        State->CacheValid = false;
+        if (State->File.seek(State->Position, fs::SeekSet))
+        {
+            const size_t BytesWritten =
+                State->File.write((const uint8_t *)Buffer, BytesRequested);
+            State->Position += BytesWritten;
+            ElementsWritten = BytesWritten / Size;
+        }
         xSemaphoreGive(FileSystemLock);
     }
 
@@ -677,9 +757,9 @@ long ArduinoAPI_tell(ArduinoFile Handle)
 
     if (Handle)
     {
-        fs::File *File = (fs::File *)Handle;
+        ArduinoFileState *State = (ArduinoFileState *)Handle;
         xSemaphoreTake(FileSystemLock, portMAX_DELAY);
-        Offset = (long)File->position();
+        Offset = (long)State->Position;
         xSemaphoreGive(FileSystemLock);
     }
 
@@ -692,22 +772,23 @@ long ArduinoAPI_seek(ArduinoFile Handle, long Offset, int Whence)
 
     if (Handle)
     {
-        fs::File *File = (fs::File *)Handle;
+        ArduinoFileState *State = (ArduinoFileState *)Handle;
         xSemaphoreTake(FileSystemLock, portMAX_DELAY);
         int64_t Base = 0;
         if (Whence == Arduino_Seek_Cur)
         {
-            Base = (int64_t)File->position();
+            Base = (int64_t)State->Position;
         }
         else if (Whence == Arduino_Seek_End)
         {
-            Base = (int64_t)File->size();
+            Base = (int64_t)State->File.size();
         }
 
         int64_t Target = Base + (int64_t)Offset;
         if (Target >= 0 && Target <= UINT32_MAX)
         {
-            Result = File->seek((uint32_t)Target, fs::SeekSet) ? 0 : -1;
+            State->Position = (uint32_t)Target;
+            Result = 0;
         }
         xSemaphoreGive(FileSystemLock);
     }
@@ -721,9 +802,9 @@ int ArduinoAPI_eof(ArduinoFile Handle)
 
     if (Handle)
     {
-        fs::File *File = (fs::File *)Handle;
+        ArduinoFileState *State = (ArduinoFileState *)Handle;
         xSemaphoreTake(FileSystemLock, portMAX_DELAY);
-        IsEOF = (File->position() >= File->size()) ? 1 : 0;
+        IsEOF = (State->Position >= State->File.size()) ? 1 : 0;
         xSemaphoreGive(FileSystemLock);
     }
 
