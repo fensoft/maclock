@@ -188,8 +188,8 @@ encoder adjusts and saves the display brightness. A control reminder is shown
 over the emulated screen for four seconds after startup.
 
 Hold **Clock** and **Alarm** together for two seconds to safely eject and close
-the mounted disk images, stop Mini vMac, and return to Boot Options. Emulator
-sound is currently disabled.
+the mounted disk images, stop Mini vMac, and return to Boot Options. Macintosh
+mono sound plays through the ES8311 speaker output.
 
 Disk images are opened read/write when possible, so changes made inside the
 emulated Macintosh persist in LittleFS. Keep backup copies of important disk

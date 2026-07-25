@@ -1352,6 +1352,11 @@ LOCALPROC MySound_Stop(void)
 #endif
 
 	if (cur_audio.wantplaying && HaveSoundOut) {
+#if 0 == SDL_MAJOR_VERSION
+		cur_audio.wantplaying = falseblnr;
+		cur_audio.lastv = kCenterTempSound;
+		ArduinoAPI_Sound_Stop();
+#else
 		ui4r retry_limit = 50; /* half of a second */
 
 		cur_audio.wantplaying = falseblnr;
@@ -1388,7 +1393,8 @@ label_retry:
 
 #if 0 != SDL_MAJOR_VERSION
 		SDL_PauseAudio(1);
-#endif
+#endif /* 0 != SDL_MAJOR_VERSION */
+#endif /* 0 == SDL_MAJOR_VERSION */
 	}
 
 #if dbglog_SoundStuff
@@ -1406,6 +1412,10 @@ LOCALPROC MySound_Start(void)
 
 #if 0 != SDL_MAJOR_VERSION
 		SDL_PauseAudio(0);
+#else
+		if (! ArduinoAPI_Sound_Start()) {
+			cur_audio.wantplaying = falseblnr;
+		}
 #endif
 	}
 }
@@ -1415,7 +1425,10 @@ LOCALPROC MySound_UnInit(void)
 	if (HaveSoundOut) {
 #if 0 != SDL_MAJOR_VERSION
 		SDL_CloseAudio();
+#else
+		ArduinoAPI_Sound_UnInit();
 #endif
+		HaveSoundOut = falseblnr;
 	}
 }
 
@@ -1468,6 +1481,11 @@ LOCALFUNC blnr MySound_Init(void)
 				start early.
 			*/
 	}
+#else
+	HaveSoundOut = ArduinoAPI_Sound_Init(SOUND_SAMPLERATE);
+	if (HaveSoundOut) {
+		MySound_Start();
+	}
 #endif /* 0 != SDL_MAJOR_VERSION */
 
 	return trueblnr; /* keep going, even if no sound */
@@ -1476,6 +1494,16 @@ LOCALFUNC blnr MySound_Init(void)
 GLOBALOSGLUPROC MySound_EndWrite(ui4r actL)
 {
 	if (MySound_EndWrite0(actL)) {
+#if 0 == SDL_MAJOR_VERSION
+		ui4b PrevWriteOffset = TheWriteOffset - kOneBuffLen;
+		tpSoundSamp p =
+			TheSoundBuffer + (PrevWriteOffset & kAllBuffMask);
+
+		if (HaveSoundOut && cur_audio.wantplaying) {
+			ArduinoAPI_Sound_Write((const uint8_t *)p, kOneBuffLen);
+		}
+		ThePlayOffset = TheFillOffset;
+#endif
 	}
 }
 

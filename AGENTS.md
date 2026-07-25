@@ -135,6 +135,9 @@ and device-address assumptions when changing any peripheral.
 - Emulator mode creates `RenderTask` on core 0. `RenderTaskLock` coordinates
   screen-buffer handoff and `SPIBusLock` serializes emulator display/filesystem
   operations.
+- Mini vMac PCM is produced on the calling Arduino task and written
+  synchronously through the shared `AudioOutputI2S` object. Clock MP3 playback
+  must be stopped while the emulator owns I2S.
 - Mini vMac allocates large blocks from PSRAM through the Arduino API.
 
 Do not remove these locks or access their shared globals from another task
@@ -196,8 +199,9 @@ pio device monitor -b 115200
   handling. Do not add automatic formatting casually; it could erase disks.
 - The boot-time `minivmac()` call occurs before codec/LVGL initialization and
   blocks in the emulator main loop until safe exit.
-- Mini vMac sound is disabled in `include/minivmac/CNFGGLOB.h`; normal-mode MP3
-  sound still uses the ES8311.
+- Mini vMac sound is enabled in `include/minivmac/CNFGGLOB.h`. Its native
+  22,255 Hz mono PCM and normal-mode 44.1 kHz MP3 sound share the ES8311 and
+  `AudioOutputI2S`; preserve the entry/exit reconfiguration.
 - The alarm edge has no Clock-only action, but the normal state polls the Alarm
   level as half of its Boot Options chord. Mini vMac polls Alarm directly as
   Escape and as half of its safe-exit chord.

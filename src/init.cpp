@@ -136,6 +136,9 @@ void lvgl_fs_init_littlefs()
 }
 
 void setup_codec() {
+    if (es8311_handle && audio_out)
+        return;
+
     pinMode(I2S_EN, OUTPUT);
     digitalWrite(I2S_EN, LOW);
     Wire.begin(I2C_SDA, I2C_SCL);

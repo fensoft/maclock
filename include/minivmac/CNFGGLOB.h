@@ -66,7 +66,7 @@ typedef si5b si5r;
 
 /* capabilities provided by platform specific code */
 
-#define MySoundEnabled 0
+#define MySoundEnabled 1
 
 #define MySoundRecenterSilence 0
 #define kLn2SoundSampSz 3

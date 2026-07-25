@@ -48,6 +48,11 @@ void ArduinoAPI_GiveScreenBufferToArduino( const uint8_t* ScreenPtr );
 
 void MinivMacAPI_UpdateKey( uint8_t Key, uint8_t Down );
 void MinivMacAPI_RequestSafeExit( void );
+uint8_t ArduinoAPI_Sound_Init( uint32_t SampleRate );
+uint8_t ArduinoAPI_Sound_Start( void );
+void ArduinoAPI_Sound_Stop( void );
+void ArduinoAPI_Sound_UnInit( void );
+void ArduinoAPI_Sound_Write( const uint8_t* Samples, size_t Count );
 int minivmac_main( int Argc, char** Argv );
 
 #ifdef __cplusplus

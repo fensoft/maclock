@@ -10,8 +10,10 @@
 #include <Preferences.h>
 #include <TFT_eSPI.h>
 
+#include "AudioOutputI2S.h"
 #include "ArduinoAPI.h"
 #include "brightness.h"
+#include "es8311.h"
 
 #include "SYSDEPNS.h"
 #include "CNFGGLOB.h"
@@ -23,6 +25,9 @@
 extern TFT_eSPI my_lcd;
 extern ESP32Encoder encoder;
 extern Preferences preferences;
+extern AudioOutputI2S *audio_out;
+extern es8311_handle_t es8311_handle;
+extern void setup_codec();
 
 int vMacMouseX = 0;
 int vMacMouseY = 0;
@@ -58,6 +63,108 @@ static int EmulatorSavedBrightness = -1;
 static uint32_t EmulatorBrightnessSaveMs = 0;
 static uint32_t EmulatorExitHoldStartMs = 0;
 static bool EmulatorExitRequested = false;
+static bool EmulatorSoundInitialized = false;
+static bool EmulatorSoundStarted = false;
+static uint32_t EmulatorSoundSampleRate = 0;
+
+uint8_t ArduinoAPI_Sound_Init(uint32_t sample_rate)
+{
+    static constexpr uint32_t kCodecNominalRate = 22050;
+    static constexpr uint32_t kCodecMclkMultiplier = 256;
+
+    /*
+     * Mini vMac generates 22,255 Hz PCM. The ES8311 table has a 22,050 Hz
+     * entry with the same MCLK/256 ratio, so its divider values remain correct
+     * when the I2S peripheral supplies the native 22,255 Hz MCLK.
+     */
+    setup_codec();
+    if (!audio_out || !es8311_handle)
+        return 0;
+
+    audio_out->stop();
+    if (es8311_sample_frequency_config(
+            es8311_handle,
+            kCodecNominalRate * kCodecMclkMultiplier,
+            kCodecNominalRate) != ESP_OK)
+    {
+        return 0;
+    }
+
+    audio_out->SetBuffers(8, 1024);
+    audio_out->SetRate((int)sample_rate);
+    audio_out->SetChannels(1);
+    audio_out->SetGain(1.0f);
+    es8311_voice_volume_set(es8311_handle, 80, nullptr);
+    es8311_voice_mute(es8311_handle, false);
+
+    EmulatorSoundSampleRate = sample_rate;
+    EmulatorSoundInitialized = true;
+    EmulatorSoundStarted = false;
+    return 1;
+}
+
+uint8_t ArduinoAPI_Sound_Start()
+{
+    if (!EmulatorSoundInitialized)
+        return 0;
+    if (EmulatorSoundStarted)
+        return 1;
+
+    audio_out->SetRate((int)EmulatorSoundSampleRate);
+    EmulatorSoundStarted = audio_out->begin();
+    return EmulatorSoundStarted ? 1 : 0;
+}
+
+void ArduinoAPI_Sound_Stop()
+{
+    if (!EmulatorSoundStarted)
+        return;
+    audio_out->stop();
+    EmulatorSoundStarted = false;
+}
+
+void ArduinoAPI_Sound_UnInit()
+{
+    static constexpr uint32_t kClockAudioRate = 44100;
+    static constexpr uint32_t kClockAudioMclkMultiplier = 256;
+
+    ArduinoAPI_Sound_Stop();
+    if (es8311_handle)
+    {
+        es8311_sample_frequency_config(
+            es8311_handle,
+            kClockAudioRate * kClockAudioMclkMultiplier,
+            kClockAudioRate);
+    }
+    if (audio_out)
+    {
+        audio_out->SetBuffers(8, 8192);
+        audio_out->SetRate((int)kClockAudioRate);
+        audio_out->SetChannels(2);
+    }
+    EmulatorSoundInitialized = false;
+    EmulatorSoundSampleRate = 0;
+}
+
+void ArduinoAPI_Sound_Write(const uint8_t *samples, size_t count)
+{
+    if (!EmulatorSoundStarted || !samples)
+        return;
+
+    int16_t stereo_sample[2];
+    for (size_t i = 0; i < count; ++i)
+    {
+        const int16_t sample =
+            (int16_t)(((int32_t)samples[i] - 128) * 256);
+        stereo_sample[0] = sample;
+        stereo_sample[1] = sample;
+        while (EmulatorSoundStarted &&
+               !audio_out->ConsumeSample(stereo_sample))
+        {
+            vTaskDelay(1);
+        }
+    }
+}
 
 static void EmulatorButtonBegin(EmulatorButton &button, bool pressed)
 {
@@ -321,6 +428,8 @@ void RenderTask(void *Param)
 
 void minivmac(void)
 {
+    my_lcd.fillScreen(TFT_BLACK);
+
     RenderTaskEventHandle = xEventGroupCreate();
     RenderTaskLock = xSemaphoreCreateMutex();
     SPIBusLock = xSemaphoreCreateMutex();

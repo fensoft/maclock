@@ -251,9 +251,17 @@ Normal mode initializes the ES8311 codec and an `AudioOutputI2S` instance at
 completion flag under `g_mp3_mux`, allowing the UI state machine to wait without
 performing decoding itself.
 
-Mini vMac audio is disabled by `MySoundEnabled 0`. Emulator mode enters before
-the normal codec setup, so there is no competition between emulator sound and
-the MP3 task.
+Mini vMac produces unsigned 8-bit mono PCM at its native 22,255 Hz rate.
+`src/minivmac_OSGLUE.c` forwards each completed 512-sample block to the Arduino
+bridge, which converts it to signed 16-bit samples and writes it to both I2S
+channels. The ES8311 uses the divider ratio from its 22,050 Hz table entry while
+the I2S peripheral supplies the exact Mini vMac clock.
+
+The bridge initializes the codec on demand for a saved-default emulator boot,
+stops and reconfigures the shared `AudioOutputI2S` object for Mini vMac, and
+restores its 44.1 kHz clock-mode configuration on exit. When Mini vMac is
+launched from Boot Options, the normal `audio_task` remains alive but its MP3
+decoder is stopped, leaving I2S ownership with the synchronous emulator path.
 
 ## Mini vMac Runtime
 
@@ -270,7 +278,8 @@ The selected configuration emulates a Macintosh Plus with:
 - A 128 KiB ROM named `vMac.ROM`.
 - A 304x224 monochrome display.
 - Up to six disk-image slots.
-- No emulator sound, FPU, MMU, ADB, or secondary VIA.
+- Unsigned 8-bit mono sound at 22,255 Hz.
+- No FPU, MMU, ADB, or secondary VIA.
 
 At startup, `LoadInitialImages()` opens sequential `diskN.dsk` files starting
 at 1 and stops at the first missing number. Images are opened read/write when
@@ -291,7 +300,7 @@ input, and requests rendering when the monochrome screen changes.
 
 | Context | Core | Responsibility |
 | --- | ---: | --- |
-| Arduino setup/loop | Arduino default | Boot decision, normal state machine, LVGL, RTC/weather reads, brightness |
+| Arduino setup/loop | Arduino default | Boot decision, normal state machine, LVGL, RTC/weather reads, brightness, synchronous emulator PCM output |
 | `input_task` | 1 | GPIO/discrete-touch polling and edge publication |
 | `audio_task` | 0 | Normal-mode MP3 decoder advancement |
 | `RenderTask` | 0 | Emulator bitmap conversion and TFT writes |
