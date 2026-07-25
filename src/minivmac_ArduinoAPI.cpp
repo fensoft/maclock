@@ -740,6 +740,14 @@ void *ArduinoAPI_calloc(size_t Nmemb, size_t Size)
     return heap_caps_calloc(Nmemb, Size, ((Size * Nmemb) >= 262144) ? MALLOC_CAP_SPIRAM : MALLOC_CAP_DEFAULT);
 }
 
+void *ArduinoAPI_calloc_internal(size_t Nmemb, size_t Size)
+{
+    return heap_caps_calloc(
+        Nmemb,
+        Size,
+        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+}
+
 void ArduinoAPI_free(void *Memory)
 {
     heap_caps_free(Memory);

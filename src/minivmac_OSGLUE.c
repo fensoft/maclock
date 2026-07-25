@@ -1986,12 +1986,14 @@ LOCALPROC ZapOSGLUVars(void)
 	ZapWinStateVars();
 }
 
-LOCALPROC ReserveAllocAll(void)
+LOCALVAR ui3p HostReserveAllocBigBlock = nullpr;
+LOCALVAR ui3p EmulationReserveAllocBigBlock = nullpr;
+
+LOCALPROC ReserveAllocHostBuffers(void)
 {
 #if dbglog_HAVE
 	dbglog_ReserveAlloc();
 #endif
-	ReserveAllocOneBlock(&ROM, kROM_Size, 5, falseblnr);
 
 	ReserveAllocOneBlock(&screencomparebuff,
 		vMacScreenNumBytes, 5, trueblnr);
@@ -2004,29 +2006,61 @@ LOCALPROC ReserveAllocAll(void)
 	ReserveAllocOneBlock((ui3p *)&TheSoundBuffer,
 		dbhBufferSize, 5, falseblnr);
 #endif
+}
 
+LOCALPROC ReserveAllocEmulationMemory(void)
+{
+	ReserveAllocOneBlock(&ROM, kROM_Size, 5, falseblnr);
 	EmulationReserveAlloc();
 }
 
 LOCALFUNC blnr AllocMyMemory(void)
 {
-	uimr n;
+	uimr HostSize;
+	uimr EmulationSize;
 	blnr IsOk = falseblnr;
 
 	ReserveAllocOffset = 0;
 	ReserveAllocBigBlock = nullpr;
-	ReserveAllocAll();
-	n = ReserveAllocOffset;
-	ReserveAllocBigBlock = (ui3p) ArduinoAPI_calloc(1, n);
-	if (NULL == ReserveAllocBigBlock) {
+	ReserveAllocHostBuffers();
+	HostSize = ReserveAllocOffset;
+
+	ReserveAllocOffset = 0;
+	ReserveAllocEmulationMemory();
+	EmulationSize = ReserveAllocOffset;
+
+	HostReserveAllocBigBlock =
+		(ui3p) ArduinoAPI_calloc_internal(1, HostSize);
+	if (NULL == HostReserveAllocBigBlock) {
+		/*
+			Falling back to the default heap keeps the emulator usable
+			when the normal clock UI has consumed too much internal RAM.
+		*/
+		HostReserveAllocBigBlock =
+			(ui3p) ArduinoAPI_calloc(1, HostSize);
+	}
+	EmulationReserveAllocBigBlock =
+		(ui3p) ArduinoAPI_calloc(1, EmulationSize);
+
+	if ((NULL == HostReserveAllocBigBlock)
+		|| (NULL == EmulationReserveAllocBigBlock))
+	{
 		MacMsg(kStrOutOfMemTitle, kStrOutOfMemMessage, trueblnr);
 	} else {
 		ReserveAllocOffset = 0;
-		ReserveAllocAll();
-		if (n != ReserveAllocOffset) {
+		ReserveAllocBigBlock = HostReserveAllocBigBlock;
+		ReserveAllocHostBuffers();
+		if (HostSize != ReserveAllocOffset) {
 			/* oops, program error */
 		} else {
-			IsOk = trueblnr;
+			ReserveAllocOffset = 0;
+			ReserveAllocBigBlock = EmulationReserveAllocBigBlock;
+			ReserveAllocEmulationMemory();
+			if (EmulationSize != ReserveAllocOffset) {
+				/* oops, program error */
+			} else {
+				IsOk = trueblnr;
+			}
 		}
 	}
 
@@ -2035,9 +2069,15 @@ LOCALFUNC blnr AllocMyMemory(void)
 
 LOCALPROC UnallocMyMemory(void)
 {
-	if (nullpr != ReserveAllocBigBlock) {
-		ArduinoAPI_free((char *)ReserveAllocBigBlock);
+	if (nullpr != HostReserveAllocBigBlock) {
+		ArduinoAPI_free((char *)HostReserveAllocBigBlock);
+		HostReserveAllocBigBlock = nullpr;
 	}
+	if (nullpr != EmulationReserveAllocBigBlock) {
+		ArduinoAPI_free((char *)EmulationReserveAllocBigBlock);
+		EmulationReserveAllocBigBlock = nullpr;
+	}
+	ReserveAllocBigBlock = nullpr;
 }
 
 LOCALFUNC blnr InitOSGLU(void)

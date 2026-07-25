@@ -38,6 +38,7 @@ int ArduinoAPI_eof( ArduinoFile Handle );
 
 void* ArduinoAPI_malloc( size_t Size );
 void* ArduinoAPI_calloc( size_t Nmemb, size_t Size );
+void* ArduinoAPI_calloc_internal( size_t Nmemb, size_t Size );
 void ArduinoAPI_free( void* Memory );
 
 void ArduinoAPI_CheckForEvents( void );
