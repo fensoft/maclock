@@ -11,3 +11,4 @@ minivmac-*.src.tgz
 data/vMac.ROM
 data/disk*.dsk
 data/disk*.dsk.zip
+data/Thumbs.db

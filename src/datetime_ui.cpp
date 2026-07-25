@@ -3,8 +3,8 @@
 LV_FONT_DECLARE(lv_font_chicago_8);
 LV_FONT_DECLARE(lv_font_chicago_32);
 
-extern RTC_DS1307 rtc;
-extern void request_state(int state);
+extern void rtc_adjust_datetime(const DateTime &date_time);
+extern void request_normal_state();
 
 struct DateTimeUi
 {
@@ -113,14 +113,14 @@ static void datetime_save_event(lv_event_t *e)
     int hour = lv_spinbox_get_value(g_dt_ui.hour);
     int minute = lv_spinbox_get_value(g_dt_ui.minute);
     int second = lv_spinbox_get_value(g_dt_ui.second);
-    rtc.adjust(DateTime(year, month, day, hour, minute, second));
-    request_state(7);
+    rtc_adjust_datetime(DateTime(year, month, day, hour, minute, second));
+    request_normal_state();
 }
 
 static void datetime_cancel_event(lv_event_t *e)
 {
     (void)e;
-    request_state(7);
+    request_normal_state();
 }
 
 static lv_obj_t *create_spinbox_column(lv_obj_t *parent, int min_value, int max_value, int digits, int init_value)
