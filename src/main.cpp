@@ -110,6 +110,20 @@ struct CalibUi
     lv_obj_t *cross;
 };
 
+struct BootOptionsUi
+{
+    lv_obj_t *panel;
+    lv_obj_t *brightness_options;
+    lv_obj_t *floppy_options;
+};
+
+enum BootBrightness
+{
+    BOOT_BRIGHTNESS_LATEST,
+    BOOT_BRIGHTNESS_LOWEST,
+    BOOT_BRIGHTNESS_HIGHEST
+};
+
 enum UiState
 {
     UI_STATE_EMPTY_SCREEN = 1,
@@ -121,18 +135,23 @@ enum UiState
     UI_STATE_WAIT_FLOPPY_SOUND = 7,
     UI_STATE_NORMAL = 8,
     UI_STATE_SET_DATETIME = 9,
-    UI_STATE_CALIBRATION = 10
+    UI_STATE_CALIBRATION = 10,
+    UI_STATE_BOOT_OPTIONS = 11
 };
 
 static InputState g_input_state = {};
 static portMUX_TYPE g_input_state_mux = portMUX_INITIALIZER_UNLOCKED;
 static UiImages g_ui = {};
 static CalibUi g_calib_ui = {};
+static BootOptionsUi g_boot_options_ui = {};
 static bool g_mp3_finished = false;
 static portMUX_TYPE g_mp3_mux = portMUX_INITIALIZER_UNLOCKED;
 static int g_requested_state = 0;
 static lv_obj_t *g_cursor = nullptr;
 static lv_timer_t *g_cursor_timer = nullptr;
+static BootBrightness g_boot_brightness = BOOT_BRIGHTNESS_LATEST;
+static bool g_boot_floppy_emulator = true;
+static int g_last_saved_encoder = -1;
 
 void setup_codec();
 void setup_lvgl_display();
@@ -234,6 +253,175 @@ static void calib_set_cross_pos(const lv_point_t &pt)
     lv_obj_set_pos(g_calib_ui.cross, x, y);
 }
 
+static void apply_boot_brightness(BootBrightness choice, bool save_choice)
+{
+    g_boot_brightness = choice;
+    if (save_choice)
+        preferences.putUChar("boot_brightness", (uint8_t)choice);
+
+    int brightness = preferences.getUChar("brightness", 6);
+    if (brightness > 12)
+        brightness = 6;
+    if (choice == BOOT_BRIGHTNESS_LOWEST)
+        brightness = 1;
+    else if (choice == BOOT_BRIGHTNESS_HIGHEST)
+        brightness = 12;
+
+    encoder.setCount(brightness);
+    g_last_saved_encoder = brightness;
+    analogWrite(TFT_BL_VAR, brightness * 255 / 12);
+}
+
+static void boot_brightness_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected = lv_buttonmatrix_get_selected_button(options);
+    if (selected <= BOOT_BRIGHTNESS_HIGHEST)
+        apply_boot_brightness((BootBrightness)selected, true);
+}
+
+static void boot_floppy_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected = lv_buttonmatrix_get_selected_button(options);
+    if (selected > 1)
+        return;
+    g_boot_floppy_emulator = selected == 0;
+    preferences.putBool("floppy_emulator", g_boot_floppy_emulator);
+}
+
+static void boot_options_continue_event(lv_event_t *event)
+{
+    (void)event;
+    request_state(UI_STATE_EMPTY_SCREEN);
+}
+
+static void boot_options_continue_visual_event(lv_event_t *event)
+{
+    lv_obj_t *label = (lv_obj_t *)lv_event_get_user_data(event);
+    const lv_event_code_t code = lv_event_get_code(event);
+    lv_obj_set_style_text_color(
+        label,
+        code == LV_EVENT_PRESSED ? lv_color_white() : lv_color_black(),
+        0);
+}
+
+static void style_boot_options_matrix(lv_obj_t *matrix)
+{
+    const lv_style_selector_t checked_items =
+        (lv_style_selector_t)LV_PART_ITEMS |
+        (lv_style_selector_t)LV_STATE_CHECKED;
+
+    lv_obj_set_style_bg_color(matrix, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(matrix, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(matrix, lv_color_black(), 0);
+    lv_obj_set_style_border_width(matrix, 1, 0);
+    lv_obj_set_style_pad_all(matrix, 2, 0);
+    lv_obj_set_style_pad_column(matrix, 2, 0);
+    lv_obj_set_style_text_font(matrix, &lv_font_chicago_8, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(matrix, lv_color_white(), LV_PART_ITEMS);
+    lv_obj_set_style_text_color(matrix, lv_color_black(), LV_PART_ITEMS);
+    lv_obj_set_style_border_color(matrix, lv_color_black(), LV_PART_ITEMS);
+    lv_obj_set_style_border_width(matrix, 1, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(matrix, lv_color_black(), checked_items);
+    lv_obj_set_style_text_color(matrix, lv_color_white(), checked_items);
+}
+
+static void init_boot_options_ui(lv_obj_t *screen)
+{
+    static const char *brightness_map[] = {"Latest", "Lowest", "Highest", ""};
+    static const char *floppy_map[] = {"Emulator", "Clock", ""};
+
+    g_boot_options_ui.panel = lv_obj_create(screen);
+    lv_obj_set_size(g_boot_options_ui.panel, 286, 202);
+    lv_obj_center(g_boot_options_ui.panel);
+    lv_obj_set_style_bg_color(g_boot_options_ui.panel, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(g_boot_options_ui.panel, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(g_boot_options_ui.panel, lv_color_black(), 0);
+    lv_obj_set_style_border_width(g_boot_options_ui.panel, 2, 0);
+    lv_obj_set_style_radius(g_boot_options_ui.panel, 0, 0);
+    lv_obj_set_style_pad_all(g_boot_options_ui.panel, 8, 0);
+
+    lv_obj_t *title = lv_label_create(g_boot_options_ui.panel);
+    lv_label_set_text(title, "Boot Options");
+    lv_obj_set_style_text_font(title, &lv_font_chicago_8, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+
+    lv_obj_t *brightness_label = lv_label_create(g_boot_options_ui.panel);
+    lv_label_set_text(brightness_label, "Brightness");
+    lv_obj_set_style_text_font(brightness_label, &lv_font_chicago_8, 0);
+    lv_obj_align(brightness_label, LV_ALIGN_TOP_LEFT, 0, 22);
+
+    g_boot_options_ui.brightness_options = lv_buttonmatrix_create(g_boot_options_ui.panel);
+    lv_buttonmatrix_set_map(g_boot_options_ui.brightness_options, brightness_map);
+    lv_buttonmatrix_set_button_ctrl_all(g_boot_options_ui.brightness_options, LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_one_checked(g_boot_options_ui.brightness_options, true);
+    lv_obj_set_size(g_boot_options_ui.brightness_options, lv_pct(100), 34);
+    lv_obj_align(g_boot_options_ui.brightness_options, LV_ALIGN_TOP_MID, 0, 36);
+    style_boot_options_matrix(g_boot_options_ui.brightness_options);
+    lv_obj_add_event_cb(g_boot_options_ui.brightness_options, boot_brightness_event,
+                        LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *floppy_label = lv_label_create(g_boot_options_ui.panel);
+    lv_label_set_text(floppy_label, "Boot with floppy");
+    lv_obj_set_style_text_font(floppy_label, &lv_font_chicago_8, 0);
+    lv_obj_align(floppy_label, LV_ALIGN_TOP_LEFT, 0, 76);
+
+    g_boot_options_ui.floppy_options = lv_buttonmatrix_create(g_boot_options_ui.panel);
+    lv_buttonmatrix_set_map(g_boot_options_ui.floppy_options, floppy_map);
+    lv_buttonmatrix_set_button_ctrl_all(g_boot_options_ui.floppy_options, LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_one_checked(g_boot_options_ui.floppy_options, true);
+    lv_obj_set_size(g_boot_options_ui.floppy_options, lv_pct(100), 34);
+    lv_obj_align(g_boot_options_ui.floppy_options, LV_ALIGN_TOP_MID, 0, 90);
+    style_boot_options_matrix(g_boot_options_ui.floppy_options);
+    lv_obj_add_event_cb(g_boot_options_ui.floppy_options, boot_floppy_event,
+                        LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *continue_button = lv_btn_create(g_boot_options_ui.panel);
+    lv_obj_set_size(continue_button, 100, 28);
+    lv_obj_align(continue_button, LV_ALIGN_TOP_MID, 0, 130);
+    lv_obj_set_style_bg_color(continue_button, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(continue_button, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(continue_button, lv_color_black(), 0);
+    lv_obj_set_style_border_width(continue_button, 2, 0);
+    lv_obj_set_style_radius(continue_button, 0, 0);
+    lv_obj_set_style_bg_color(continue_button, lv_color_black(), LV_STATE_PRESSED);
+    lv_obj_t *continue_label = lv_label_create(continue_button);
+    lv_label_set_text(continue_label, "Continue");
+    lv_obj_set_style_text_font(continue_label, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_color(continue_label, lv_color_black(), 0);
+    lv_obj_center(continue_label);
+    lv_obj_add_event_cb(continue_button, boot_options_continue_visual_event,
+                        LV_EVENT_PRESSED, continue_label);
+    lv_obj_add_event_cb(continue_button, boot_options_continue_visual_event,
+                        LV_EVENT_RELEASED, continue_label);
+    lv_obj_add_event_cb(continue_button, boot_options_continue_visual_event,
+                        LV_EVENT_PRESS_LOST, continue_label);
+    lv_obj_add_event_cb(continue_button, boot_options_continue_event, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *calibration_label = lv_label_create(g_boot_options_ui.panel);
+    lv_label_set_text(calibration_label, "Press again for screen calibration");
+    lv_obj_set_style_text_font(calibration_label, &lv_font_chicago_8, 0);
+    lv_obj_align(calibration_label, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    lv_obj_add_flag(g_boot_options_ui.panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void show_boot_options_ui()
+{
+    lv_buttonmatrix_clear_button_ctrl_all(g_boot_options_ui.brightness_options,
+                                          LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_buttonmatrix_set_button_ctrl(g_boot_options_ui.brightness_options,
+                                    (uint32_t)g_boot_brightness,
+                                    LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_buttonmatrix_clear_button_ctrl_all(g_boot_options_ui.floppy_options,
+                                          LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_buttonmatrix_set_button_ctrl(g_boot_options_ui.floppy_options,
+                                    g_boot_floppy_emulator ? 0 : 1,
+                                    LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_obj_clear_flag(g_boot_options_ui.panel, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void hide_all_ui()
 {
     lv_obj_add_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
@@ -254,6 +442,8 @@ static void hide_all_ui()
     lv_obj_add_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
+    if (g_boot_options_ui.panel)
+        lv_obj_add_flag(g_boot_options_ui.panel, LV_OBJ_FLAG_HIDDEN);
     for (size_t i = 0; i < k_plugin_max; ++i)
     {
         if (g_ui.plugin_icons[i])
@@ -622,6 +812,8 @@ static void init_ui_assets()
 
     lv_obj_add_event_cb(scr, screen_touch_event, LV_EVENT_PRESSED, NULL);
 
+    init_boot_options_ui(scr);
+
     hide_all_ui();
 }
 
@@ -766,6 +958,14 @@ void setup()
 {
     Serial.begin(115200);
     analogWrite(TFT_BL_VAR, 0);
+    preferences.begin("maclock", false);
+
+    uint8_t saved_boot_brightness =
+        preferences.getUChar("boot_brightness", BOOT_BRIGHTNESS_LATEST);
+    if (saved_boot_brightness > BOOT_BRIGHTNESS_HIGHEST)
+        saved_boot_brightness = BOOT_BRIGHTNESS_LATEST;
+    g_boot_brightness = (BootBrightness)saved_boot_brightness;
+    g_boot_floppy_emulator = preferences.getBool("floppy_emulator", true);
 
     heap_caps_malloc_extmem_enable(0);
     LittleFS.begin();
@@ -781,8 +981,12 @@ void setup()
     touch_init(my_lcd.width(), my_lcd.height(), my_lcd.getRotation());
 
     pinMode(GPIO_FLOPPY, INPUT);
+    pinMode(GPIO_CLOCK, INPUT);
+    const bool boot_options_requested = !digitalRead(GPIO_CLOCK);
 
-    if (!digitalRead(GPIO_FLOPPY)) {
+    if (!boot_options_requested &&
+        !digitalRead(GPIO_FLOPPY) &&
+        g_boot_floppy_emulator) {
         analogWrite(TFT_BL_VAR, 255);
         minivmac();
     }
@@ -794,19 +998,13 @@ void setup()
     init_ui_assets();
     Wire.begin(I2C_SDA, I2C_SCL);
     setup_rtc();
-    preferences.begin("maclock", false);
 
     pinMode(GPIO_ALARM, INPUT);
-    pinMode(GPIO_CLOCK, INPUT);
     pinMode(GPIO_ENCODER1, INPUT_PULLUP);
     pinMode(GPIO_ENCODER2, INPUT_PULLUP);
     ESP32Encoder::useInternalWeakPullResistors = puType::up;
     encoder.attachHalfQuad(GPIO_ENCODER1, GPIO_ENCODER2);
-    {
-        uint8_t saved = preferences.getUChar("brightness", 6);
-        int start_count = (saved <= 12) ? saved : 6;
-        encoder.setCount(start_count);
-    }
+    apply_boot_brightness(g_boot_brightness, false);
 
     pinMode(GPIO_CHARGING, INPUT_PULLDOWN);
     pinMode(GPIO_BAT_EN, OUTPUT);
@@ -831,8 +1029,8 @@ void setup()
         0);
     setup_weather_sensor();
 
-    if (!digitalRead(GPIO_CLOCK)) // run calibration if clock button set on boot
-        request_state(UI_STATE_CALIBRATION);
+    if (boot_options_requested)
+        request_state(UI_STATE_BOOT_OPTIONS);
 }
 
 void loop()
@@ -848,7 +1046,7 @@ void loop()
     static uint16_t calib_raw_x[4] = {};
     static uint16_t calib_raw_y[4] = {};
     static lv_point_t calib_targets[4] = {};
-    static int last_saved_encoder = -1;
+    static bool boot_options_clock_armed = false;
     static unsigned long last_encoder_save_ms = 0;
     static unsigned long full_brightness_until = 0;
 
@@ -1113,6 +1311,27 @@ void loop()
             lv_timer_handler();
         }
         break;
+    case UI_STATE_BOOT_OPTIONS:
+        if (currentState != lastState)
+        {
+            boot_options_clock_armed = false;
+            hide_all_ui();
+            lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
+            show_boot_options_ui();
+        }
+        lv_timer_handler();
+        if (!boot_options_clock_armed)
+        {
+            if (digitalRead(GPIO_CLOCK))
+                boot_options_clock_armed = true;
+        }
+        else if (inputs.clock)
+        {
+            g_requested_state = UI_STATE_CALIBRATION;
+            stateStartTime = now;
+        }
+        break;
     case UI_STATE_CALIBRATION: // calibration screen
         if (currentState != lastState)
         {
@@ -1189,10 +1408,10 @@ void loop()
     else
         analogWrite(TFT_BL_VAR, enc * 255 / 12);
 
-    if (enc != last_saved_encoder && (now - last_encoder_save_ms) >= 500)
+    if (enc != g_last_saved_encoder && (now - last_encoder_save_ms) >= 500)
     {
         preferences.putUChar("brightness", (uint8_t)enc);
-        last_saved_encoder = enc;
+        g_last_saved_encoder = enc;
         last_encoder_save_ms = now;
     }
 }
