@@ -485,7 +485,9 @@ void ArduinoAPI_Sound_UnInit()
     }
     if (audio_out)
     {
-        audio_out->SetBuffers(8, 8192);
+        audio_out->SetBuffers(
+            kClockAudioDmaBufferCount,
+            kClockAudioDmaBufferBytes);
         audio_out->SetRate((int)kClockAudioRate);
         audio_out->SetChannels(2);
     }

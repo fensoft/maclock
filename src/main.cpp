@@ -25,8 +25,10 @@
 #include "Adafruit_HTU21DF.h"
 #include <Preferences.h>
 #include "brightness.h"
+#include "wifi_mode.h"
 
 LV_FONT_DECLARE(lv_font_chicago_8);
+LV_FONT_DECLARE(lv_font_chicago_16);
 LV_FONT_DECLARE(lv_font_chicago_32);
 LV_FONT_DECLARE(lv_font_chicago_48);
 
@@ -62,6 +64,7 @@ enum WeatherSensor
 
 static WeatherSensor g_weather_sensor = WEATHER_SENSOR_NONE;
 static uint8_t g_weather_sensor_address = 0;
+static bool g_clock_compact_weather_layout = false;
 
 struct InputState
 {
@@ -88,6 +91,12 @@ struct UiImages
     lv_obj_t *time;
     lv_obj_t *date;
     lv_obj_t *temp;
+    lv_obj_t *weather_int_names;
+    lv_obj_t *weather_int_values;
+    lv_obj_t *weather_ext_names;
+    lv_obj_t *weather_ext_values;
+    lv_obj_t *weather_rain_name;
+    lv_obj_t *weather_rain_value;
     lv_obj_t *gauge_icon;
     lv_obj_t *gauge_line;
     lv_obj_t *gauge_box;
@@ -126,6 +135,7 @@ enum BootOptionsPage
     BOOT_OPTIONS_CHIME_SOUND,
     BOOT_OPTIONS_CHIME_VOLUME,
     BOOT_OPTIONS_CHIME_QUIET,
+    BOOT_OPTIONS_WIFI,
     BOOT_OPTIONS_TOOLS,
     BOOT_OPTIONS_PAGE_COUNT
 };
@@ -148,6 +158,8 @@ struct BootOptionsUi
     lv_obj_t *chime_quiet_options;
     lv_obj_t *chime_quiet_start_options;
     lv_obj_t *chime_quiet_end_options;
+    lv_obj_t *wifi_enabled_options;
+    lv_obj_t *wifi_status;
     lv_obj_t *rtc_status;
     lv_obj_t *previous;
     lv_obj_t *previous_label;
@@ -158,6 +170,12 @@ struct BootOptionsUi
 };
 
 struct DiagnosticsUi
+{
+    lv_obj_t *panel;
+    lv_obj_t *status;
+};
+
+struct WifiSetupUi
 {
     lv_obj_t *panel;
     lv_obj_t *status;
@@ -222,7 +240,8 @@ enum UiState
     UI_STATE_ALARM_EDITOR = 14,
     UI_STATE_ALARM_RINGING = 15,
     UI_STATE_TIMER_EDITOR = 16,
-    UI_STATE_TIMER_FINISHED = 17
+    UI_STATE_TIMER_FINISHED = 17,
+    UI_STATE_WIFI_SETUP = 18
 };
 
 static InputState g_input_state = {};
@@ -231,6 +250,7 @@ static UiImages g_ui = {};
 static CalibUi g_calib_ui = {};
 static BootOptionsUi g_boot_options_ui = {};
 static DiagnosticsUi g_diagnostics_ui = {};
+static WifiSetupUi g_wifi_setup_ui = {};
 static bool g_mp3_finished = false;
 static portMUX_TYPE g_mp3_mux = portMUX_INITIALIZER_UNLOCKED;
 static SemaphoreHandle_t g_mp3_lock = nullptr;
@@ -273,6 +293,7 @@ void lvgl_fs_init_littlefs();
 void minivmac();
 static void run_emulator();
 static void update_diagnostics_ui();
+static void update_wifi_options_ui();
 
 void request_state(int state)
 {
@@ -729,6 +750,41 @@ static void update_chime_options_ui()
         g_chime.quiet_enabled ? 1 : 0);
 }
 
+static void update_wifi_options_ui()
+{
+    if (!g_boot_options_ui.wifi_enabled_options)
+        return;
+
+    const WifiModeSnapshot wifi = wifi_mode_snapshot();
+    set_checked_button(
+        g_boot_options_ui.wifi_enabled_options,
+        wifi.enabled ? 1 : 0);
+
+    char status[144];
+    if (!wifi.enabled)
+    {
+        snprintf(status, sizeof(status),
+                 "Wi-Fi disabled\nClock remains fully offline");
+    }
+    else if (!wifi.configured)
+    {
+        snprintf(status, sizeof(status),
+                 "Setup required\nChoose Setup Wi-Fi below");
+    }
+    else if (wifi.connected)
+    {
+        snprintf(status, sizeof(status), "Online: %s\n%s",
+                 wifi.location[0] ? wifi.location : wifi.city,
+                 wifi.timezone[0] ? wifi.timezone : wifi.status);
+    }
+    else
+    {
+        snprintf(status, sizeof(status), "%s\n%s",
+                 wifi.ssid, wifi.status);
+    }
+    lv_label_set_text(g_boot_options_ui.wifi_status, status);
+}
+
 static void chime_mode_event(lv_event_t *event)
 {
     lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
@@ -870,6 +926,17 @@ static void night_off_event(lv_event_t *event)
     update_night_options_ui();
 }
 
+static void wifi_enabled_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected >= 2)
+        return;
+    wifi_mode_set_enabled(selected == 1);
+    update_wifi_options_ui();
+}
+
 static void boot_brightness_event(lv_event_t *event)
 {
     lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
@@ -914,6 +981,18 @@ static void boot_diagnostics_event(lv_event_t *event)
     request_state(UI_STATE_DIAGNOSTICS);
 }
 
+static void boot_wifi_setup_event(lv_event_t *event)
+{
+    (void)event;
+    request_state(UI_STATE_WIFI_SETUP);
+}
+
+static void wifi_setup_back_event(lv_event_t *event)
+{
+    (void)event;
+    request_state(UI_STATE_BOOT_OPTIONS);
+}
+
 static void boot_exit_event(lv_event_t *event)
 {
     (void)event;
@@ -934,7 +1013,7 @@ static void set_boot_options_page(BootOptionsPage page)
     static const char *page_names[BOOT_OPTIONS_PAGE_COUNT] = {
         "Start", "Preferences", "Night Schedule",
         "Night Screen", "Chime", "Chime Sound",
-        "Chime Volume", "Quiet Hours", "Tools"};
+        "Chime Volume", "Quiet Hours", "Wi-Fi", "Tools"};
     g_boot_options_page = page;
     for (size_t i = 0; i < BOOT_OPTIONS_PAGE_COUNT; ++i)
         lv_obj_add_flag(
@@ -1078,6 +1157,8 @@ static void init_boot_options_ui(lv_obj_t *screen)
         "25%", "50%", "\n", "75%", "100%", ""};
     static const char *chime_quiet_map[] = {
         "Disabled", "Enabled", ""};
+    static const char *wifi_enabled_map[] = {
+        "Off", "On", ""};
 
     g_boot_options_ui.panel = lv_obj_create(screen);
     lv_obj_set_size(g_boot_options_ui.panel, 292, 208);
@@ -1426,6 +1507,50 @@ static void init_boot_options_ui(lv_obj_t *screen)
         g_boot_options_ui.chime_quiet_end_options,
         chime_quiet_end_event, LV_EVENT_VALUE_CHANGED, nullptr);
 
+    lv_obj_t *wifi_page =
+        g_boot_options_ui.pages[BOOT_OPTIONS_WIFI];
+    g_boot_options_ui.wifi_enabled_options =
+        lv_buttonmatrix_create(wifi_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.wifi_enabled_options, wifi_enabled_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.wifi_enabled_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.wifi_enabled_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        g_boot_options_ui.wifi_enabled_options, true);
+    lv_obj_set_size(
+        g_boot_options_ui.wifi_enabled_options, 260, 36);
+    lv_obj_align(
+        g_boot_options_ui.wifi_enabled_options,
+        LV_ALIGN_TOP_MID, 0, 0);
+    style_boot_options_matrix(
+        g_boot_options_ui.wifi_enabled_options);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.wifi_enabled_options,
+        wifi_enabled_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    g_boot_options_ui.wifi_status = lv_label_create(wifi_page);
+    lv_label_set_text(
+        g_boot_options_ui.wifi_status, "Wi-Fi disabled");
+    lv_obj_set_width(g_boot_options_ui.wifi_status, 260);
+    lv_obj_set_style_text_font(
+        g_boot_options_ui.wifi_status, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_align(
+        g_boot_options_ui.wifi_status, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(
+        g_boot_options_ui.wifi_status,
+        LV_ALIGN_TOP_MID, 0, 45);
+
+    lv_obj_t *wifi_setup_button =
+        create_action_button(
+            wifi_page, "Setup Wi-Fi", boot_wifi_setup_event);
+    lv_obj_set_size(wifi_setup_button, 260, 46);
+    lv_obj_align(
+        wifi_setup_button, LV_ALIGN_BOTTOM_MID, 0, 0);
+
     lv_obj_t *start_page =
         g_boot_options_ui.pages[BOOT_OPTIONS_START];
     lv_obj_t *clock_button =
@@ -1522,6 +1647,7 @@ static void show_boot_options_ui()
         g_boot_options_ui.remember_selection, 1);
     update_night_options_ui();
     update_chime_options_ui();
+    update_wifi_options_ui();
     set_boot_options_page(BOOT_OPTIONS_START);
 
     char rtc_status[64];
@@ -1540,14 +1666,14 @@ static void show_boot_options_ui()
 static void init_diagnostics_ui(lv_obj_t *screen)
 {
     g_diagnostics_ui.panel = lv_obj_create(screen);
-    lv_obj_set_size(g_diagnostics_ui.panel, 286, 202);
+    lv_obj_set_size(g_diagnostics_ui.panel, 286, 230);
     lv_obj_center(g_diagnostics_ui.panel);
     lv_obj_set_style_bg_color(g_diagnostics_ui.panel, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(g_diagnostics_ui.panel, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(g_diagnostics_ui.panel, lv_color_black(), 0);
     lv_obj_set_style_border_width(g_diagnostics_ui.panel, 2, 0);
     lv_obj_set_style_radius(g_diagnostics_ui.panel, 0, 0);
-    lv_obj_set_style_pad_all(g_diagnostics_ui.panel, 8, 0);
+    lv_obj_set_style_pad_all(g_diagnostics_ui.panel, 6, 0);
 
     lv_obj_t *title = lv_label_create(g_diagnostics_ui.panel);
     lv_label_set_text(title, "Hardware Diagnostics");
@@ -1559,16 +1685,63 @@ static void init_diagnostics_ui(lv_obj_t *screen)
     lv_obj_set_width(g_diagnostics_ui.status, lv_pct(100));
     lv_obj_set_style_text_font(g_diagnostics_ui.status,
                                &lv_font_chicago_8, 0);
-    lv_obj_set_style_text_line_space(g_diagnostics_ui.status, 2, 0);
-    lv_obj_align(g_diagnostics_ui.status, LV_ALIGN_TOP_LEFT, 0, 20);
+    lv_obj_set_style_text_line_space(g_diagnostics_ui.status, 0, 0);
+    lv_obj_align(g_diagnostics_ui.status, LV_ALIGN_TOP_LEFT, 0, 18);
 
     lv_obj_t *back_button =
         create_action_button(g_diagnostics_ui.panel, "Back",
                              diagnostics_back_event);
-    lv_obj_set_size(back_button, 80, 26);
+    lv_obj_set_size(back_button, 80, 24);
     lv_obj_align(back_button, LV_ALIGN_BOTTOM_MID, 0, 0);
 
     lv_obj_add_flag(g_diagnostics_ui.panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void init_wifi_setup_ui(lv_obj_t *screen)
+{
+    g_wifi_setup_ui.panel = lv_obj_create(screen);
+    lv_obj_set_size(g_wifi_setup_ui.panel, 286, 208);
+    lv_obj_center(g_wifi_setup_ui.panel);
+    lv_obj_set_style_bg_color(
+        g_wifi_setup_ui.panel, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(
+        g_wifi_setup_ui.panel, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(
+        g_wifi_setup_ui.panel, lv_color_black(), 0);
+    lv_obj_set_style_border_width(g_wifi_setup_ui.panel, 2, 0);
+    lv_obj_set_style_radius(g_wifi_setup_ui.panel, 0, 0);
+    lv_obj_set_style_pad_all(g_wifi_setup_ui.panel, 8, 0);
+
+    lv_obj_t *title = lv_label_create(g_wifi_setup_ui.panel);
+    lv_label_set_text(title, "Wi-Fi Setup");
+    lv_obj_set_style_text_font(title, &lv_font_chicago_8, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+
+    g_wifi_setup_ui.status =
+        lv_label_create(g_wifi_setup_ui.panel);
+    lv_label_set_text(
+        g_wifi_setup_ui.status,
+        "Connect to: Maclock Setup\n"
+        "Then open: 192.168.4.1");
+    lv_obj_set_width(g_wifi_setup_ui.status, 250);
+    lv_obj_set_style_text_font(
+        g_wifi_setup_ui.status, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_align(
+        g_wifi_setup_ui.status, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_line_space(
+        g_wifi_setup_ui.status, 4, 0);
+    lv_obj_align(
+        g_wifi_setup_ui.status, LV_ALIGN_TOP_MID, 0, 28);
+
+    lv_obj_t *back_button =
+        create_action_button(
+            g_wifi_setup_ui.panel, "Back",
+            wifi_setup_back_event);
+    lv_obj_set_size(back_button, 100, 38);
+    lv_obj_align(back_button, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    lv_obj_add_flag(
+        g_wifi_setup_ui.panel, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void hide_all_ui()
@@ -1586,6 +1759,18 @@ static void hide_all_ui()
     lv_obj_add_flag(g_ui.time, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.date, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.temp, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(
+        g_ui.weather_int_names, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(
+        g_ui.weather_int_values, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(
+        g_ui.weather_ext_names, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(
+        g_ui.weather_ext_values, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(
+        g_ui.weather_rain_name, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(
+        g_ui.weather_rain_value, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.gauge_icon, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.gauge_line, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
@@ -1596,6 +1781,8 @@ static void hide_all_ui()
         lv_obj_add_flag(g_boot_options_ui.panel, LV_OBJ_FLAG_HIDDEN);
     if (g_diagnostics_ui.panel)
         lv_obj_add_flag(g_diagnostics_ui.panel, LV_OBJ_FLAG_HIDDEN);
+    if (g_wifi_setup_ui.panel)
+        lv_obj_add_flag(g_wifi_setup_ui.panel, LV_OBJ_FLAG_HIDDEN);
     for (size_t i = 0; i < k_plugin_max; ++i)
     {
         if (g_ui.plugin_icons[i])
@@ -1731,24 +1918,27 @@ static void update_clock_labels()
     snprintf(buf, sizeof(buf), "%02d/%02d/%04d",
              now.day(), now.month(), year);
     lv_label_set_text(g_ui.date, buf);
-    lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID, 0, 14 + 4 + 32 + 16);
 
-    float temperature;
-    float gauge_value;
-    float gauge_min;
-    float gauge_max;
+    const WifiModeSnapshot online = wifi_mode_snapshot();
+
+    float temperature = NAN;
+    float gauge_value = 0.0f;
+    float gauge_min = 0.0f;
+    float gauge_max = 1.0f;
+    bool sensor_valid = false;
 
     switch (g_weather_sensor)
     {
     case WEATHER_SENSOR_BMP5XX:
     {
         if (!bmp.performReading())
-            return;
+            break;
         temperature = bmp.temperature;
         const float p = bmp.pressure;
         gauge_value = p;
         gauge_min = 980.0f;
         gauge_max = 1040.0f;
+        sensor_valid = true;
         if (p < 1000.0f)
             lv_image_set_src(g_ui.gauge_icon, "S:/rainy.png");
         else if (p < 1020.0f)
@@ -1763,10 +1953,11 @@ static void update_clock_labels()
         temperature = htu2x.readTemperature();
         const float humidity = htu2x.readHumidity();
         if (isnan(temperature) || isnan(humidity))
-            return;
+            break;
         gauge_value = humidity;
         gauge_min = 0.0f;
         gauge_max = 100.0f;
+        sensor_valid = true;
         if (humidity >= 70.0f)
             lv_image_set_src(g_ui.gauge_icon, "S:/rainy.png");
         else if (humidity >= 40.0f)
@@ -1777,8 +1968,111 @@ static void update_clock_labels()
     }
 
     default:
+        break;
+    }
+
+    g_clock_compact_weather_layout = online.forecast_valid;
+    if (online.forecast_valid)
+    {
+        char internal_values[32];
+        if (sensor_valid)
+            snprintf(
+                internal_values, sizeof(internal_values),
+                "%.1f°C\n%.0f°C",
+                temperature, online.minimum_temperature);
+        else
+            snprintf(
+                internal_values, sizeof(internal_values),
+                "--\n%.0f°C",
+                online.minimum_temperature);
+
+        char external_values[32];
+        snprintf(
+            external_values, sizeof(external_values),
+            "%.1f°C\n%.0f°C",
+            online.current_temperature,
+            online.maximum_temperature);
+
+        char rain_value[8];
+        snprintf(
+            rain_value, sizeof(rain_value), "%u%%",
+            (unsigned)online.precipitation_probability);
+
+        lv_label_set_text(
+            g_ui.weather_int_values, internal_values);
+        lv_label_set_text(
+            g_ui.weather_ext_values, external_values);
+        lv_label_set_text(
+            g_ui.weather_rain_value, rain_value);
+        lv_obj_add_flag(g_ui.temp, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(
+            g_ui.weather_int_names, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(
+            g_ui.weather_int_values, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(
+            g_ui.weather_ext_names, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(
+            g_ui.weather_ext_values, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(
+            g_ui.weather_rain_name, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(
+            g_ui.weather_rain_value, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_text_font(
+            g_ui.date, &lv_font_chicago_16, 0);
+        lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID, 0, 76);
+        lv_obj_align(
+            g_ui.gauge_icon, LV_ALIGN_TOP_RIGHT, -12, 121);
+
+        if (online.weather_code <= 1)
+            lv_image_set_src(g_ui.gauge_icon, "S:/sunny.png");
+        else if (online.weather_code <= 3 ||
+                 online.weather_code == 45 ||
+                 online.weather_code == 48)
+            lv_image_set_src(g_ui.gauge_icon, "S:/cloudy.png");
+        else
+            lv_image_set_src(g_ui.gauge_icon, "S:/rainy.png");
+        lv_obj_add_flag(g_ui.gauge_line, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
         return;
     }
+
+    lv_obj_clear_flag(g_ui.temp, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(
+        g_ui.weather_int_names, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(
+        g_ui.weather_int_values, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(
+        g_ui.weather_ext_names, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(
+        g_ui.weather_ext_values, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(
+        g_ui.weather_rain_name, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(
+        g_ui.weather_rain_value, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_text_font(
+        g_ui.date, &lv_font_chicago_32, 0);
+    lv_obj_set_style_text_font(
+        g_ui.temp, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_letter_space(g_ui.temp, 1, 0);
+    lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID,
+                 0, 14 + 4 + 32 + 16);
+    lv_obj_set_width(g_ui.temp, 220);
+    lv_obj_set_style_text_align(
+        g_ui.temp, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_align(g_ui.temp, LV_ALIGN_TOP_LEFT, 12, 118);
+    lv_obj_align(
+        g_ui.gauge_icon, LV_ALIGN_TOP_RIGHT, -12, 111);
+
+    if (!sensor_valid)
+    {
+        lv_label_set_text(g_ui.temp, "Internal=--");
+        lv_obj_add_flag(g_ui.gauge_line, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    lv_obj_clear_flag(g_ui.gauge_line, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
 
     char tbuf[12];
     snprintf(tbuf, sizeof(tbuf), "%02.1f°C", temperature);
@@ -1804,12 +2098,15 @@ static void update_clock_labels()
 
 static void update_alarm_indicator_layout(bool active)
 {
-    static constexpr int kDateTop = 14 + 4 + 32 + 16;
     static constexpr int kIndicatorGap = 4;
     static constexpr int kDateShift = (18 + kIndicatorGap) / 2;
+    const int date_top =
+        g_clock_compact_weather_layout
+            ? 76
+            : 14 + 4 + 32 + 16;
 
     lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID,
-                 active ? kDateShift : 0, kDateTop);
+                 active ? kDateShift : 0, date_top);
     if (!active)
     {
         lv_obj_add_flag(
@@ -1927,7 +2224,90 @@ static void init_ui_assets()
     lv_label_set_text(g_ui.temp, "00.0°C");
     lv_obj_set_style_text_font(g_ui.temp, &lv_font_chicago_8, 0);
     lv_obj_set_style_text_letter_space(g_ui.temp, 1, 0);
+    lv_obj_set_width(g_ui.temp, 220);
     lv_obj_align(g_ui.temp, LV_ALIGN_TOP_LEFT, 12, 118);
+
+    g_ui.weather_int_names = lv_label_create(g_ui.clock);
+    lv_label_set_text(g_ui.weather_int_names, "Int:\nLow:");
+    lv_obj_set_style_text_font(
+        g_ui.weather_int_names, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_letter_space(
+        g_ui.weather_int_names, 0, 0);
+    lv_obj_set_style_text_align(
+        g_ui.weather_int_names, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_long_mode(
+        g_ui.weather_int_names, LV_LABEL_LONG_CLIP);
+    lv_obj_set_size(g_ui.weather_int_names, 34, LV_SIZE_CONTENT);
+    lv_obj_align(
+        g_ui.weather_int_names, LV_ALIGN_TOP_LEFT, 0, 105);
+
+    g_ui.weather_int_values = lv_label_create(g_ui.clock);
+    lv_label_set_text(g_ui.weather_int_values, "--\n--");
+    lv_obj_set_style_text_font(
+        g_ui.weather_int_values, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_letter_space(
+        g_ui.weather_int_values, 0, 0);
+    lv_label_set_long_mode(
+        g_ui.weather_int_values, LV_LABEL_LONG_CLIP);
+    lv_obj_set_size(
+        g_ui.weather_int_values, 40, LV_SIZE_CONTENT);
+    lv_obj_align(
+        g_ui.weather_int_values, LV_ALIGN_TOP_LEFT, 36, 105);
+
+    g_ui.weather_ext_names = lv_label_create(g_ui.clock);
+    lv_label_set_text(g_ui.weather_ext_names, "Ext:\nHigh:");
+    lv_obj_set_style_text_font(
+        g_ui.weather_ext_names, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_letter_space(
+        g_ui.weather_ext_names, 0, 0);
+    lv_obj_set_style_text_align(
+        g_ui.weather_ext_names, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_long_mode(
+        g_ui.weather_ext_names, LV_LABEL_LONG_CLIP);
+    lv_obj_set_size(g_ui.weather_ext_names, 40, LV_SIZE_CONTENT);
+    lv_obj_align(
+        g_ui.weather_ext_names, LV_ALIGN_TOP_LEFT, 76, 105);
+
+    g_ui.weather_ext_values = lv_label_create(g_ui.clock);
+    lv_label_set_text(g_ui.weather_ext_values, "--\n--");
+    lv_obj_set_style_text_font(
+        g_ui.weather_ext_values, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_letter_space(
+        g_ui.weather_ext_values, 0, 0);
+    lv_label_set_long_mode(
+        g_ui.weather_ext_values, LV_LABEL_LONG_CLIP);
+    lv_obj_set_size(
+        g_ui.weather_ext_values, 44, LV_SIZE_CONTENT);
+    lv_obj_align(
+        g_ui.weather_ext_values, LV_ALIGN_TOP_LEFT, 116, 105);
+
+    g_ui.weather_rain_name = lv_label_create(g_ui.clock);
+    lv_label_set_text(g_ui.weather_rain_name, "Rain:");
+    lv_obj_set_style_text_font(
+        g_ui.weather_rain_name, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_letter_space(
+        g_ui.weather_rain_name, 0, 0);
+    lv_obj_set_style_text_align(
+        g_ui.weather_rain_name, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_long_mode(
+        g_ui.weather_rain_name, LV_LABEL_LONG_CLIP);
+    lv_obj_set_size(
+        g_ui.weather_rain_name, 40, LV_SIZE_CONTENT);
+    lv_obj_align(
+        g_ui.weather_rain_name, LV_ALIGN_TOP_LEFT, 160, 105);
+
+    g_ui.weather_rain_value = lv_label_create(g_ui.clock);
+    lv_label_set_text(g_ui.weather_rain_value, "--");
+    lv_obj_set_style_text_font(
+        g_ui.weather_rain_value, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_letter_space(
+        g_ui.weather_rain_value, 0, 0);
+    lv_label_set_long_mode(
+        g_ui.weather_rain_value, LV_LABEL_LONG_CLIP);
+    lv_obj_set_size(
+        g_ui.weather_rain_value, 42, LV_SIZE_CONTENT);
+    lv_obj_align(
+        g_ui.weather_rain_value, LV_ALIGN_TOP_LEFT, 202, 105);
 
     g_ui.gauge_icon = lv_image_create(g_ui.clock);
     lv_image_set_src(g_ui.gauge_icon, "S:/cloudy.png");
@@ -2001,6 +2381,7 @@ static void init_ui_assets()
 
     init_boot_options_ui(scr);
     init_diagnostics_ui(scr);
+    init_wifi_setup_ui(scr);
 
     hide_all_ui();
 }
@@ -2071,6 +2452,7 @@ static void audio_task(void *param)
 static void run_emulator()
 {
     stop_mp3_playback();
+    wifi_mode_pause();
     if (g_audio_task_handle)
         vTaskSuspend(g_audio_task_handle);
     if (g_input_task_handle)
@@ -2082,6 +2464,7 @@ static void run_emulator()
         vTaskResume(g_input_task_handle);
     if (g_audio_task_handle)
         vTaskResume(g_audio_task_handle);
+    wifi_mode_resume();
 }
 
 static bool i2c_device_present(uint8_t addr)
@@ -2165,7 +2548,7 @@ static bool setup_rtc()
 static void update_diagnostics_ui()
 {
     static constexpr uint8_t addresses[] = {0x18, 0x38, 0x40, 0x47, 0x68};
-    char i2c_devices[32] = {};
+    char i2c_devices[48] = {};
     size_t i2c_length = 0;
     for (uint8_t address : addresses)
     {
@@ -2173,7 +2556,7 @@ static void update_diagnostics_ui()
             continue;
         const int written = snprintf(i2c_devices + i2c_length,
                                      sizeof(i2c_devices) - i2c_length,
-                                     "%s%02X",
+                                     "%s0x%02X",
                                      i2c_length ? " " : "",
                                      address);
         if (written <= 0)
@@ -2191,7 +2574,30 @@ static void update_diagnostics_ui()
     char rtc_status[64];
     format_rtc_health(rtc_status, sizeof(rtc_status));
 
-    char status[320];
+    const WifiModeSnapshot wifi = wifi_mode_snapshot();
+    const char *network_state =
+        !wifi.enabled
+            ? "disabled"
+            : (wifi.portal_active
+                   ? "setup portal"
+                   : (!wifi.configured
+                          ? "not configured"
+                          : (wifi.connected ? "online" : "offline")));
+    const char *network_ssid =
+        wifi.ssid[0] ? wifi.ssid : "--";
+    char network_address[40];
+    if (wifi.connected && wifi.ip_address[0])
+    {
+        snprintf(network_address, sizeof(network_address),
+                 "%s / %ld dBm",
+                 wifi.ip_address, (long)wifi.rssi);
+    }
+    else
+    {
+        snprintf(network_address, sizeof(network_address), "--");
+    }
+
+    char status[480];
     snprintf(status, sizeof(status),
              "Clock  : %s\n"
              "Alarm  : %s\n"
@@ -2200,6 +2606,9 @@ static void update_diagnostics_ui()
              "Touch  : %s\n"
              "Charging: %s\n"
              "I2C    : %s\n"
+             "Wi-Fi  : %s\n"
+             "SSID   : %s\n"
+             "IP/RSSI: %s\n"
              "%s",
              digitalRead(GPIO_CLOCK) == LOW ? "pressed" : "released",
              digitalRead(GPIO_ALARM) == LOW ? "pressed" : "released",
@@ -2208,6 +2617,9 @@ static void update_diagnostics_ui()
              touch.touched() ? "pressed" : "released",
              digitalRead(GPIO_CHARGING) == HIGH ? "yes" : "no",
              i2c_devices,
+             network_state,
+             network_ssid,
+             network_address,
              rtc_status);
     lv_label_set_text(g_diagnostics_ui.status, status);
 }
@@ -2219,6 +2631,7 @@ void setup()
     preferences.begin("maclock", false);
     g_mp3_lock = xSemaphoreCreateMutex();
     alarms_init(preferences);
+    wifi_mode_begin(preferences);
 
     uint8_t saved_boot_brightness =
         preferences.getUChar("boot_brightness", BOOT_BRIGHTNESS_LATEST);
@@ -2375,6 +2788,24 @@ void loop()
         g_requested_state = 0;
     }
 
+    if (lastState == UI_STATE_WIFI_SETUP &&
+        currentState != UI_STATE_WIFI_SETUP)
+    {
+        wifi_mode_stop_portal();
+    }
+
+    uint32_t synchronized_epoch = 0;
+    if (wifi_mode_take_time_sync(synchronized_epoch))
+    {
+        rtc_adjust_datetime(DateTime(synchronized_epoch));
+        const DateTime synchronized = rtc_now();
+        Serial.printf(
+            "RTC synchronized by NTP: %04d-%02d-%02d %02d:%02d:%02d\n",
+            synchronized.year(), synchronized.month(), synchronized.day(),
+            synchronized.hour(), synchronized.minute(),
+            synchronized.second());
+    }
+
     if ((currentState == UI_STATE_NORMAL ||
          currentState == UI_STATE_SET_DATETIME ||
          currentState == UI_STATE_ALARM_EDITOR ||
@@ -2435,6 +2866,7 @@ void loop()
             lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
             lv_timer_handler();
             start_mp3_playback("/startup.mp3", 80);
+            wifi_mode_start_task();
             g_requested_state = currentState + 1;
             stateStartTime = now;
         }
@@ -2606,6 +3038,7 @@ void loop()
         static constexpr unsigned long kDualKeyHoldMs = 2000;
         if (currentState != lastState)
         {
+            wifi_mode_start_task();
             dual_key_hold_start = 0;
             dual_key_handled = false;
             clock_press_pending = false;
@@ -2821,6 +3254,37 @@ void loop()
             update_diagnostics_ui();
             lv_timer_handler();
             last_diagnostics_update = now;
+        }
+        break;
+    }
+    case UI_STATE_WIFI_SETUP:
+    {
+        static unsigned long last_wifi_setup_update = 0;
+        if (currentState != lastState)
+        {
+            hide_all_ui();
+            lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(
+                g_wifi_setup_ui.panel, LV_OBJ_FLAG_HIDDEN);
+            wifi_mode_start_portal();
+            last_wifi_setup_update = 0;
+        }
+        wifi_mode_process_portal();
+        if (!last_wifi_setup_update ||
+            now - last_wifi_setup_update >= 500)
+        {
+            const WifiModeSnapshot wifi = wifi_mode_snapshot();
+            char setup_status[180];
+            snprintf(
+                setup_status, sizeof(setup_status),
+                "1. Connect to Wi-Fi:\nMaclock Setup\n\n"
+                "2. Open 192.168.4.1\n\n%s",
+                wifi.status);
+            lv_label_set_text(
+                g_wifi_setup_ui.status, setup_status);
+            lv_timer_handler();
+            last_wifi_setup_update = now;
         }
         break;
     }

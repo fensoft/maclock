@@ -55,11 +55,11 @@ To open the boot-options screen:
 2. Turn Maclock off, hold **Clock**, turn Maclock on, and release the button
    when **Boot Options** appears.
 
-Boot Options uses nine pages with large controls. Its first page has
+Boot Options uses ten pages with large controls. Its first page has
 rounded-square **Clock** and **Emulator** launch buttons. Every page has fixed
 **Previous**, **Exit**, and **Next** footer slots; the unavailable direction
 is left empty on the first or last page. The pages cover Start, Preferences,
-two Night pages, four Chime pages, and Tools:
+two Night pages, four Chime pages, Wi-Fi, and Tools:
 
 - **Brightness / Latest** restores the last encoder brightness.
 - **Brightness / Lowest** starts at the lowest visible setting.
@@ -105,6 +105,36 @@ The four Chime pages in **Boot Options** configure:
 Chime settings are saved immediately. A due chime is skipped during quiet
 hours or while an alarm, timer, startup effect, or other sound is already
 playing.
+
+### Optional Wi-Fi Mode
+
+Wi-Fi is disabled by default, and the RTC, alarms, timers, night mode, and
+local weather sensor continue to work without a network.
+
+To configure it:
+
+1. Open the **Wi-Fi** page in Boot Options and choose **Setup Wi-Fi**.
+2. Connect a phone or computer to the `Maclock Setup` access point.
+3. Open `http://192.168.4.1` if the setup page does not appear automatically.
+4. Enter the Wi-Fi name, password, and city, then save.
+5. Return to Maclock and press **Back**.
+
+When enabled and connected, Maclock:
+
+- synchronizes the external RTC from NTP;
+- obtains the city coordinates and automatic UTC/DST offset;
+- refreshes the current conditions, daily low/high, and rain probability;
+- pauses its Wi-Fi worker while Mini vMac is running.
+
+The clock switches back to its local BMP5xx/HTU2x display if the online
+forecast becomes stale or cannot be reached. The last synchronized RTC time
+continues normally while offline. A DST change that happens during a long
+offline period is applied after the next successful connection.
+
+City lookup and weather use the
+[Open-Meteo Geocoding API](https://open-meteo.com/en/docs/geocoding-api) and
+[Forecast API](https://open-meteo.com/en/docs). Wi-Fi credentials and the city
+are stored in the device's persistent settings.
 
 ### Calibrating The Touchscreen
 
@@ -156,8 +186,10 @@ output at 115200 baud reports RTC and weather-sensor detection details.
 The main screen displays:
 
 - Time and date from the external RTC.
-- Temperature from the detected weather sensor.
-- A weather icon and gauge derived from pressure or humidity.
+- When online, current temperature, daily low/high, rain probability, and a
+  forecast icon.
+- When offline, temperature plus a weather icon and gauge derived from the
+  detected pressure or humidity sensor.
 - A small floppy icon while the floppy switch is active.
 
 When a BMP580/BMP581 is installed, the gauge represents atmospheric pressure.

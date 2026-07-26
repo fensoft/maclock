@@ -1,5 +1,6 @@
 #include <lvgl.h>
 #include <TFT_eSPI.h>
+#include <esp_heap_caps.h>
 #include "es8311.h"
 #include <LittleFS.h>
 #include "touch.h"
@@ -27,7 +28,8 @@ public:
 
 TFT_eSPI my_lcd = TFT_eSPI();
 static lv_display_t *disp;
-static uint8_t buf1[LCD_W * LCD_H * 2];
+static uint8_t *buf1;
+static constexpr size_t kLvglBufferSize = LCD_W * LCD_H * 2;
 static lv_indev_t *indev;
 es8311_handle_t es8311_handle = nullptr;
 AudioOutputI2S *audio_out;
@@ -67,6 +69,18 @@ void setup_lvgl_display()
     lv_init();
     lv_log_register_print_cb(lvgl_log_cb);
     lv_tick_set_cb(millis);
+    if (!buf1)
+    {
+        buf1 = static_cast<uint8_t *>(
+            heap_caps_malloc(
+                kLvglBufferSize,
+                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    }
+    if (!buf1)
+    {
+        Serial.println("[LVGL] Could not allocate display buffer in PSRAM");
+        abort();
+    }
     disp = lv_display_create(my_lcd.width() - 16, my_lcd.height() - 16);
     lv_display_set_flush_cb(disp, lvgl_to_TFT_eSPI);
     lv_display_set_antialiasing(disp, false);
@@ -75,7 +89,7 @@ void setup_lvgl_display()
         disp,
         buf1,
         NULL,
-        sizeof(buf1),
+        kLvglBufferSize,
         LV_DISPLAY_RENDER_MODE_PARTIAL
     );
 }
@@ -185,5 +199,7 @@ void setup_codec() {
 
     audio_out = new MaclockAudioOutputI2S();
     audio_out->SetPinout(I2S_BCK, I2S_WS, I2S_DOUT, I2S_MCK);
-    audio_out->SetBuffers(8, 8192);
+    audio_out->SetBuffers(
+        kClockAudioDmaBufferCount,
+        kClockAudioDmaBufferBytes);
 }
