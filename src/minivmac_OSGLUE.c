@@ -1881,6 +1881,10 @@ LOCALPROC CheckForSavedTasks(void)
 
 /* --- main program flow --- */
 
+#ifdef MINIVMAC_PROFILE
+LOCALVAR uint64_t ProfileWorkStartUS = 0;
+#endif
+
 LOCALPROC WaitForTheNextEvent(void)
 {
 	ArduinoAPI_Yield( );
@@ -1920,6 +1924,15 @@ GLOBALOSGLUFUNC blnr ExtraTimeNotOver(void)
 
 GLOBALOSGLUPROC WaitForNextTick(void)
 {
+#ifdef MINIVMAC_PROFILE
+	uint64_t ProfileWaitStartUS = ArduinoAPI_GetTimeUS();
+
+	if (0 != ProfileWorkStartUS) {
+		ArduinoAPI_ProfileEmulationWork(
+			ProfileWaitStartUS - ProfileWorkStartUS, EmLagTime);
+	}
+#endif
+
 label_retry:
 	CheckForSystemEvents();
 	CheckForSavedTasks();
@@ -1963,6 +1976,15 @@ label_retry:
 
 	OnTrueTime = TrueEmulatedTime;
 
+#ifdef MINIVMAC_PROFILE
+	{
+		uint64_t ProfileWaitEndUS = ArduinoAPI_GetTimeUS();
+		ArduinoAPI_ProfileEmulationWait(
+			ProfileWaitEndUS - ProfileWaitStartUS);
+		ProfileWorkStartUS = ProfileWaitEndUS;
+	}
+#endif
+
 #if dbglog_TimeStuff
 	dbglog_writelnNum("WaitForNextTick, OnTrueTime", OnTrueTime);
 #endif
@@ -1984,6 +2006,9 @@ LOCALPROC ZapOSGLUVars(void)
 
 	InitDrives();
 	ZapWinStateVars();
+#ifdef MINIVMAC_PROFILE
+	ProfileWorkStartUS = 0;
+#endif
 }
 
 LOCALVAR ui3p HostReserveAllocBigBlock = nullpr;

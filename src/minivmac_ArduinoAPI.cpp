@@ -6,6 +6,9 @@
 #include <FS.h>
 #include <LittleFS.h>
 
+#ifdef MINIVMAC_PROFILE
+#include <esp_timer.h>
+#endif
 #include <ESP32Encoder.h>
 #include <Preferences.h>
 #include <TFT_eSPI.h>
@@ -53,6 +56,142 @@ struct ArduinoFileState
     bool CacheValid;
     uint8_t Cache[kDiskCacheSize];
 };
+
+#ifdef MINIVMAC_PROFILE
+struct EmulatorProfileStats
+{
+    uint64_t EmulationWorkUS;
+    uint64_t EmulationWaitUS;
+    uint32_t EmulationLoops;
+    int MaxLag;
+    uint64_t RenderUS;
+    uint64_t RenderPixels;
+    uint32_t RenderRegions;
+    uint64_t AudioUS;
+    uint64_t AudioWaitUS;
+    uint64_t AudioFrames;
+    uint64_t DiskCacheHitBytes;
+    uint64_t DiskReadBytes;
+    uint64_t DiskWriteBytes;
+    uint32_t DiskCacheMisses;
+};
+
+static portMUX_TYPE EmulatorProfileCrit = portMUX_INITIALIZER_UNLOCKED;
+static EmulatorProfileStats EmulatorProfile = {};
+static uint64_t EmulatorProfileReportStartUS = 0;
+static constexpr uint64_t kEmulatorProfileIntervalUS = 5000000;
+
+static void EmulatorProfileReset()
+{
+    portENTER_CRITICAL(&EmulatorProfileCrit);
+    EmulatorProfile = {};
+    EmulatorProfileReportStartUS = (uint64_t)esp_timer_get_time();
+    portEXIT_CRITICAL(&EmulatorProfileCrit);
+}
+
+static void EmulatorProfileAddRender(uint64_t duration_us, uint32_t pixels)
+{
+    portENTER_CRITICAL(&EmulatorProfileCrit);
+    EmulatorProfile.RenderUS += duration_us;
+    EmulatorProfile.RenderPixels += pixels;
+    ++EmulatorProfile.RenderRegions;
+    portEXIT_CRITICAL(&EmulatorProfileCrit);
+}
+
+static void EmulatorProfileAddAudio(uint64_t duration_us,
+                                    uint64_t wait_us,
+                                    size_t frames)
+{
+    portENTER_CRITICAL(&EmulatorProfileCrit);
+    EmulatorProfile.AudioUS += duration_us;
+    EmulatorProfile.AudioWaitUS += wait_us;
+    EmulatorProfile.AudioFrames += frames;
+    portEXIT_CRITICAL(&EmulatorProfileCrit);
+}
+
+static void EmulatorProfileAddDiskRead(uint64_t cache_hit_bytes,
+                                       uint64_t filesystem_read_bytes,
+                                       uint32_t cache_misses)
+{
+    portENTER_CRITICAL(&EmulatorProfileCrit);
+    EmulatorProfile.DiskCacheHitBytes += cache_hit_bytes;
+    EmulatorProfile.DiskReadBytes += filesystem_read_bytes;
+    EmulatorProfile.DiskCacheMisses += cache_misses;
+    portEXIT_CRITICAL(&EmulatorProfileCrit);
+}
+
+static void EmulatorProfileAddDiskWrite(size_t bytes)
+{
+    portENTER_CRITICAL(&EmulatorProfileCrit);
+    EmulatorProfile.DiskWriteBytes += bytes;
+    portEXIT_CRITICAL(&EmulatorProfileCrit);
+}
+
+static void EmulatorProfileMaybeReport()
+{
+    const uint64_t now_us = (uint64_t)esp_timer_get_time();
+    if (EmulatorProfileReportStartUS == 0 ||
+        now_us - EmulatorProfileReportStartUS < kEmulatorProfileIntervalUS)
+    {
+        return;
+    }
+
+    EmulatorProfileStats stats = {};
+    uint64_t interval_us = 0;
+
+    portENTER_CRITICAL(&EmulatorProfileCrit);
+    interval_us = now_us - EmulatorProfileReportStartUS;
+    if (interval_us >= kEmulatorProfileIntervalUS)
+    {
+        stats = EmulatorProfile;
+        EmulatorProfile = {};
+        EmulatorProfileReportStartUS = now_us;
+    }
+    portEXIT_CRITICAL(&EmulatorProfileCrit);
+
+    if (interval_us < kEmulatorProfileIntervalUS)
+        return;
+
+    const uint64_t measured_us =
+        stats.EmulationWorkUS + stats.EmulationWaitUS;
+    const double work_percent = measured_us
+                                    ? 100.0 * stats.EmulationWorkUS / measured_us
+                                    : 0.0;
+    const double render_ms = stats.RenderUS / 1000.0;
+    const double render_average_ms = stats.RenderRegions
+                                         ? render_ms / stats.RenderRegions
+                                         : 0.0;
+    const double audio_ms = stats.AudioUS / 1000.0;
+    const double audio_wait_ms = stats.AudioWaitUS / 1000.0;
+
+    Serial.printf(
+        "[emu-prof] %.2fs cpu=%.1f%% work=%.1fms wait=%.1fms "
+        "loops=%u max-lag=%d\n",
+        interval_us / 1000000.0,
+        work_percent,
+        stats.EmulationWorkUS / 1000.0,
+        stats.EmulationWaitUS / 1000.0,
+        stats.EmulationLoops,
+        stats.MaxLag);
+    Serial.printf(
+        "[emu-prof] video=%.1fms regions=%u avg=%.2fms pixels=%llu "
+        "audio=%.1fms blocked=%.1fms frames=%llu\n",
+        render_ms,
+        stats.RenderRegions,
+        render_average_ms,
+        (unsigned long long)stats.RenderPixels,
+        audio_ms,
+        audio_wait_ms,
+        (unsigned long long)stats.AudioFrames);
+    Serial.printf(
+        "[emu-prof] disk cache-hit=%lluB misses=%u fs-read=%lluB "
+        "write=%lluB\n",
+        (unsigned long long)stats.DiskCacheHitBytes,
+        stats.DiskCacheMisses,
+        (unsigned long long)stats.DiskReadBytes,
+        (unsigned long long)stats.DiskWriteBytes);
+}
+#endif
 
 struct DirtyRegion
 {
@@ -203,6 +342,11 @@ void ArduinoAPI_Sound_Write(const uint8_t *samples, size_t count)
     if (!EmulatorSoundStarted || !samples)
         return;
 
+#ifdef MINIVMAC_PROFILE
+    const uint64_t profile_start_us = (uint64_t)esp_timer_get_time();
+    uint64_t profile_wait_us = 0;
+    size_t profile_frames = 0;
+#endif
     static constexpr size_t kAudioBlockFrames = 512;
     static int16_t stereo_frames[kAudioBlockFrames * 2];
 
@@ -226,12 +370,34 @@ void ArduinoAPI_Sound_Write(const uint8_t *samples, size_t count)
                 &stereo_frames[frames_written * 2],
                 block_frames - frames_written);
             if (written == 0)
+            {
+#ifdef MINIVMAC_PROFILE
+                const uint64_t wait_start_us =
+                    (uint64_t)esp_timer_get_time();
+#endif
                 vTaskDelay(1);
+#ifdef MINIVMAC_PROFILE
+                profile_wait_us +=
+                    (uint64_t)esp_timer_get_time() - wait_start_us;
+#endif
+            }
             else
+            {
                 frames_written += written;
+#ifdef MINIVMAC_PROFILE
+                profile_frames += written;
+#endif
+            }
         }
         offset += block_frames;
     }
+
+#ifdef MINIVMAC_PROFILE
+    EmulatorProfileAddAudio(
+        (uint64_t)esp_timer_get_time() - profile_start_us,
+        profile_wait_us,
+        profile_frames);
+#endif
 }
 
 static void EmulatorButtonBegin(EmulatorButton &button, bool pressed)
@@ -390,6 +556,9 @@ static void DrawScreenRegion(const uint8_t *screen_ptr,
     const uint16_t color_on = 0x0000;
     const uint16_t color_off = 0xFFFF;
     const int pitch_bytes = (vMacScreenWidth + 7) / 8;
+#ifdef MINIVMAC_PROFILE
+    const uint64_t profile_start_us = (uint64_t)esp_timer_get_time();
+#endif
 
     my_lcd.startWrite();
     my_lcd.setAddrWindow(region.left,
@@ -432,6 +601,11 @@ static void DrawScreenRegion(const uint8_t *screen_ptr,
     }
 
     my_lcd.endWrite();
+#ifdef MINIVMAC_PROFILE
+    EmulatorProfileAddRender(
+        (uint64_t)esp_timer_get_time() - profile_start_us,
+        (uint32_t)region_width * (uint32_t)(region.bottom - region.top));
+#endif
 }
 
 void RenderTask(void *Param)
@@ -494,6 +668,9 @@ void RenderTask(void *Param)
 
 void minivmac(void)
 {
+#ifdef MINIVMAC_PROFILE
+    EmulatorProfileReset();
+#endif
     my_lcd.fillScreen(TFT_BLACK);
 
     RenderTaskEventHandle = xEventGroupCreate();
@@ -599,6 +776,30 @@ uint64_t ArduinoAPI_GetTimeMS(void)
     return (uint64_t)millis();
 }
 
+#ifdef MINIVMAC_PROFILE
+uint64_t ArduinoAPI_GetTimeUS(void)
+{
+    return (uint64_t)esp_timer_get_time();
+}
+
+void ArduinoAPI_ProfileEmulationWork(uint64_t DurationUS, int Lag)
+{
+    portENTER_CRITICAL(&EmulatorProfileCrit);
+    EmulatorProfile.EmulationWorkUS += DurationUS;
+    ++EmulatorProfile.EmulationLoops;
+    if (Lag > EmulatorProfile.MaxLag)
+        EmulatorProfile.MaxLag = Lag;
+    portEXIT_CRITICAL(&EmulatorProfileCrit);
+}
+
+void ArduinoAPI_ProfileEmulationWait(uint64_t DurationUS)
+{
+    portENTER_CRITICAL(&EmulatorProfileCrit);
+    EmulatorProfile.EmulationWaitUS += DurationUS;
+    portEXIT_CRITICAL(&EmulatorProfileCrit);
+}
+#endif
+
 void ArduinoAPI_Yield(void)
 {
     yield();
@@ -674,6 +875,12 @@ size_t ArduinoAPI_read(void *Buffer, size_t Size, size_t Nmemb, ArduinoFile Hand
     uint8_t *Destination = (uint8_t *)Buffer;
     const size_t BytesRequested = Size * Nmemb;
     size_t BytesRead = 0;
+#ifdef MINIVMAC_PROFILE
+    uint64_t ProfileCacheHitBytes = 0;
+    uint64_t ProfileFilesystemReadBytes = 0;
+    uint32_t ProfileCacheMisses = 0;
+    bool ProfileCacheJustFilled = false;
+#endif
 
     xSemaphoreTake(FileSystemLock, portMAX_DELAY);
     while (BytesRead < BytesRequested)
@@ -689,6 +896,11 @@ size_t ArduinoAPI_read(void *Buffer, size_t Size, size_t Nmemb, ArduinoFile Hand
                 (CacheAvailable < Remaining) ? CacheAvailable : Remaining;
 
             memcpy(Destination + BytesRead, State->Cache + CacheOffset, CopyLength);
+#ifdef MINIVMAC_PROFILE
+            if (!ProfileCacheJustFilled)
+                ProfileCacheHitBytes += CopyLength;
+            ProfileCacheJustFilled = false;
+#endif
             State->Position += CopyLength;
             BytesRead += CopyLength;
             continue;
@@ -703,6 +915,10 @@ size_t ArduinoAPI_read(void *Buffer, size_t Size, size_t Nmemb, ArduinoFile Hand
 
             const size_t DirectRead =
                 State->File.read(Destination + BytesRead, Remaining);
+#ifdef MINIVMAC_PROFILE
+            ProfileFilesystemReadBytes += DirectRead;
+            ProfileCacheJustFilled = false;
+#endif
             State->Position += DirectRead;
             BytesRead += DirectRead;
             if (DirectRead == 0)
@@ -717,12 +933,23 @@ size_t ArduinoAPI_read(void *Buffer, size_t Size, size_t Nmemb, ArduinoFile Hand
 
         State->CacheStart = CacheStart;
         State->CacheLength = State->File.read(State->Cache, kDiskCacheSize);
+#ifdef MINIVMAC_PROFILE
+        ProfileFilesystemReadBytes += State->CacheLength;
+        ++ProfileCacheMisses;
+        ProfileCacheJustFilled = true;
+#endif
         State->CacheValid =
             (State->Position - CacheStart) < State->CacheLength;
         if (!State->CacheValid)
             break;
     }
     xSemaphoreGive(FileSystemLock);
+#ifdef MINIVMAC_PROFILE
+    EmulatorProfileAddDiskRead(
+        ProfileCacheHitBytes,
+        ProfileFilesystemReadBytes,
+        ProfileCacheMisses);
+#endif
 
     return BytesRead / Size;
 }
@@ -730,6 +957,9 @@ size_t ArduinoAPI_read(void *Buffer, size_t Size, size_t Nmemb, ArduinoFile Hand
 size_t ArduinoAPI_write(const void *Buffer, size_t Size, size_t Nmemb, ArduinoFile Handle)
 {
     size_t ElementsWritten = 0;
+#ifdef MINIVMAC_PROFILE
+    size_t ProfileBytesWritten = 0;
+#endif
 
     if (Handle && Buffer && Size > 0 && Nmemb > 0 &&
         Nmemb <= (SIZE_MAX / Size))
@@ -742,11 +972,18 @@ size_t ArduinoAPI_write(const void *Buffer, size_t Size, size_t Nmemb, ArduinoFi
         {
             const size_t BytesWritten =
                 State->File.write((const uint8_t *)Buffer, BytesRequested);
+#ifdef MINIVMAC_PROFILE
+            ProfileBytesWritten = BytesWritten;
+#endif
             State->Position += BytesWritten;
             ElementsWritten = BytesWritten / Size;
         }
         xSemaphoreGive(FileSystemLock);
     }
+#ifdef MINIVMAC_PROFILE
+    if (ProfileBytesWritten > 0)
+        EmulatorProfileAddDiskWrite(ProfileBytesWritten);
+#endif
 
     return ElementsWritten;
 }
@@ -838,6 +1075,9 @@ void ArduinoAPI_CheckForEvents(void)
 {
     EmulatorInputsUpdate();
     Mouse.Update( );
+#ifdef MINIVMAC_PROFILE
+    EmulatorProfileMaybeReport();
+#endif
 }
 
 void ArduinoAPI_ScreenChanged(int Top, int Left, int Bottom, int Right)

@@ -25,8 +25,15 @@ void ArduinoAPI_GiveEmulatedMouseToArduino( int* EmMouseX, int* EmMouseY );
 int ArduinoAPI_GetMouseButton( void );
 
 uint64_t ArduinoAPI_GetTimeMS( void );
+#ifdef MINIVMAC_PROFILE
+uint64_t ArduinoAPI_GetTimeUS( void );
+#endif
 void ArduinoAPI_Yield( void );
 void ArduinoAPI_Delay( uint32_t MSToDelay );
+#ifdef MINIVMAC_PROFILE
+void ArduinoAPI_ProfileEmulationWork( uint64_t DurationUS, int Lag );
+void ArduinoAPI_ProfileEmulationWait( uint64_t DurationUS );
+#endif
 
 ArduinoFile ArduinoAPI_open( const char* Path, const char* Mode );
 void ArduinoAPI_close( ArduinoFile Handle );
