@@ -11,16 +11,12 @@ extern void timer_dismiss_current();
 
 namespace
 {
-static constexpr size_t kPresetCount = 4;
-
 struct TimerUi
 {
     lv_obj_t *panel;
-    lv_obj_t *presets;
+    lv_obj_t *adjustments;
     lv_obj_t *countdown;
     lv_obj_t *status;
-    lv_obj_t *minus_button;
-    lv_obj_t *plus_button;
     lv_obj_t *stop_button;
     lv_obj_t *finished_panel;
 };
@@ -32,38 +28,8 @@ static uint32_t g_last_ui_seconds = UINT32_MAX;
 static uint16_t g_selected_minutes = 25;
 static TimerUi g_timer_ui = {};
 
-static const uint16_t g_preset_minutes[kPresetCount] = {5, 15, 25, 60};
-static const char *g_preset_map[] = {
-    "5 min", "15 min", "\n", "25 min", "60 min", ""};
-
-static int FindPreset(uint16_t minutes)
-{
-    for (size_t i = 0; i < kPresetCount; ++i)
-    {
-        if (g_preset_minutes[i] == minutes)
-            return (int)i;
-    }
-    return -1;
-}
-
-static void SyncPresetSelection()
-{
-    if (!g_timer_ui.presets)
-        return;
-
-    lv_buttonmatrix_clear_button_ctrl_all(
-        g_timer_ui.presets, LV_BUTTONMATRIX_CTRL_CHECKED);
-    const int preset = FindPreset(g_selected_minutes);
-    if (preset >= 0)
-    {
-        lv_buttonmatrix_set_button_ctrl(
-            g_timer_ui.presets,
-            (uint32_t)preset,
-            LV_BUTTONMATRIX_CTRL_CHECKED);
-        lv_buttonmatrix_set_selected_button(
-            g_timer_ui.presets, (uint32_t)preset);
-    }
-}
+static const char *g_adjustment_map[] = {
+    "-10", "-1", "+1", "+10", ""};
 
 static void FormatSeconds(uint32_t total_seconds,
                           char *text,
@@ -118,8 +84,10 @@ static lv_obj_t *CreateButton(lv_obj_t *parent,
     lv_obj_set_style_bg_color(button, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(button, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(button, lv_color_black(), 0);
-    lv_obj_set_style_border_width(button, 2, 0);
-    lv_obj_set_style_radius(button, 0, 0);
+    lv_obj_set_style_border_width(button, 1, 0);
+    lv_obj_set_style_radius(button, 4, 0);
+    lv_obj_set_style_shadow_width(button, 0, 0);
+    lv_obj_set_style_outline_width(button, 0, 0);
     lv_obj_set_style_bg_color(button, lv_color_black(), LV_STATE_PRESSED);
 
     lv_obj_t *label = lv_label_create(button);
@@ -138,40 +106,29 @@ static lv_obj_t *CreateButton(lv_obj_t *parent,
     return button;
 }
 
-static void StylePresetMatrix(lv_obj_t *matrix)
+static void StyleAdjustmentMatrix(lv_obj_t *matrix)
 {
-    const lv_style_selector_t checked_items =
+    const lv_style_selector_t pressed_items =
         (lv_style_selector_t)LV_PART_ITEMS |
-        (lv_style_selector_t)LV_STATE_CHECKED;
+        (lv_style_selector_t)LV_STATE_PRESSED;
 
-    lv_obj_set_style_bg_color(matrix, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(matrix, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(matrix, lv_color_black(), 0);
-    lv_obj_set_style_border_width(matrix, 1, 0);
+    lv_obj_set_style_bg_opa(matrix, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(matrix, 0, 0);
     lv_obj_set_style_radius(matrix, 0, 0);
-    lv_obj_set_style_pad_all(matrix, 2, 0);
-    lv_obj_set_style_pad_row(matrix, 2, 0);
-    lv_obj_set_style_pad_column(matrix, 2, 0);
+    lv_obj_set_style_pad_all(matrix, 0, 0);
+    lv_obj_set_style_pad_row(matrix, 6, 0);
+    lv_obj_set_style_pad_column(matrix, 6, 0);
     lv_obj_set_style_text_font(matrix, &lv_font_chicago_8, LV_PART_ITEMS);
     lv_obj_set_style_bg_color(matrix, lv_color_white(), LV_PART_ITEMS);
+    lv_obj_set_style_bg_opa(matrix, LV_OPA_COVER, LV_PART_ITEMS);
     lv_obj_set_style_text_color(matrix, lv_color_black(), LV_PART_ITEMS);
     lv_obj_set_style_border_color(matrix, lv_color_black(), LV_PART_ITEMS);
     lv_obj_set_style_border_width(matrix, 1, LV_PART_ITEMS);
-    lv_obj_set_style_bg_color(matrix, lv_color_black(), checked_items);
-    lv_obj_set_style_text_color(matrix, lv_color_white(), checked_items);
-}
-
-static void PresetEvent(lv_event_t *event)
-{
-    (void)event;
-    const uint32_t selected =
-        lv_buttonmatrix_get_selected_button(g_timer_ui.presets);
-    if (selected < kPresetCount)
-    {
-        g_selected_minutes = g_preset_minutes[selected];
-        if (!timer_is_active())
-            SetCountdownSeconds((uint32_t)g_selected_minutes * 60U);
-    }
+    lv_obj_set_style_radius(matrix, 4, LV_PART_ITEMS);
+    lv_obj_set_style_shadow_width(matrix, 0, LV_PART_ITEMS);
+    lv_obj_set_style_outline_width(matrix, 0, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(matrix, lv_color_black(), pressed_items);
+    lv_obj_set_style_text_color(matrix, lv_color_white(), pressed_items);
 }
 
 static void AdjustMinutes(int delta)
@@ -185,20 +142,31 @@ static void AdjustMinutes(int delta)
     if (minutes > 99)
         minutes = 99;
     g_selected_minutes = (uint16_t)minutes;
-    SyncPresetSelection();
     SetCountdownSeconds((uint32_t)g_selected_minutes * 60U);
 }
 
-static void MinusEvent(lv_event_t *event)
+static void AdjustmentEvent(lv_event_t *event)
 {
     (void)event;
-    AdjustMinutes(-1);
-}
-
-static void PlusEvent(lv_event_t *event)
-{
-    (void)event;
-    AdjustMinutes(1);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(g_timer_ui.adjustments);
+    switch (selected)
+    {
+    case 0:
+        AdjustMinutes(-10);
+        break;
+    case 1:
+        AdjustMinutes(-1);
+        break;
+    case 2:
+        AdjustMinutes(1);
+        break;
+    case 3:
+        AdjustMinutes(10);
+        break;
+    default:
+        break;
+    }
 }
 
 static void StartEvent(lv_event_t *event)
@@ -230,7 +198,7 @@ static void DismissEvent(lv_event_t *event)
 static void InitTimerPanel(lv_obj_t *screen)
 {
     g_timer_ui.panel = lv_obj_create(screen);
-    lv_obj_set_size(g_timer_ui.panel, 286, 196);
+    lv_obj_set_size(g_timer_ui.panel, 292, 208);
     lv_obj_center(g_timer_ui.panel);
     lv_obj_set_style_bg_color(g_timer_ui.panel, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(g_timer_ui.panel, LV_OPA_COVER, 0);
@@ -240,7 +208,7 @@ static void InitTimerPanel(lv_obj_t *screen)
     lv_obj_set_style_pad_all(g_timer_ui.panel, 8, 0);
 
     lv_obj_t *title = lv_label_create(g_timer_ui.panel);
-    lv_label_set_text(title, "Timer / Pomodoro");
+    lv_label_set_text(title, "Timer");
     lv_obj_set_style_text_font(title, &lv_font_chicago_8, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
 
@@ -248,51 +216,42 @@ static void InitTimerPanel(lv_obj_t *screen)
     lv_label_set_text(g_timer_ui.countdown, "25:00");
     lv_obj_set_style_text_font(
         g_timer_ui.countdown, &lv_font_chicago_48, 0);
-    lv_obj_align(g_timer_ui.countdown, LV_ALIGN_TOP_MID, 0, 17);
-
-    g_timer_ui.minus_button =
-        CreateButton(g_timer_ui.panel, "-", MinusEvent);
-    lv_obj_set_size(g_timer_ui.minus_button, 38, 32);
-    lv_obj_align(g_timer_ui.minus_button, LV_ALIGN_TOP_LEFT, 0, 26);
-
-    g_timer_ui.plus_button =
-        CreateButton(g_timer_ui.panel, "+", PlusEvent);
-    lv_obj_set_size(g_timer_ui.plus_button, 38, 32);
-    lv_obj_align(g_timer_ui.plus_button, LV_ALIGN_TOP_RIGHT, 0, 26);
+    lv_obj_align(g_timer_ui.countdown, LV_ALIGN_TOP_MID, 0, 13);
 
     g_timer_ui.status = lv_label_create(g_timer_ui.panel);
-    lv_label_set_text(g_timer_ui.status, "Select or adjust duration");
+    lv_label_set_text(g_timer_ui.status, "Adjust duration");
     lv_obj_set_style_text_font(
         g_timer_ui.status, &lv_font_chicago_8, 0);
-    lv_obj_align(g_timer_ui.status, LV_ALIGN_TOP_MID, 0, 67);
+    lv_obj_align(g_timer_ui.status, LV_ALIGN_TOP_MID, 0, 64);
 
-    g_timer_ui.presets = lv_buttonmatrix_create(g_timer_ui.panel);
-    lv_buttonmatrix_set_map(g_timer_ui.presets, g_preset_map);
+    g_timer_ui.adjustments = lv_buttonmatrix_create(g_timer_ui.panel);
+    lv_buttonmatrix_set_map(
+        g_timer_ui.adjustments, g_adjustment_map);
     lv_buttonmatrix_set_button_ctrl_all(
-        g_timer_ui.presets, LV_BUTTONMATRIX_CTRL_CHECKABLE);
-    lv_buttonmatrix_set_one_checked(g_timer_ui.presets, true);
-    lv_obj_set_size(g_timer_ui.presets, 240, 58);
-    lv_obj_align(g_timer_ui.presets, LV_ALIGN_TOP_MID, 0, 81);
-    StylePresetMatrix(g_timer_ui.presets);
+        g_timer_ui.adjustments, LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_obj_set_size(g_timer_ui.adjustments, 260, 60);
+    lv_obj_align(
+        g_timer_ui.adjustments, LV_ALIGN_TOP_MID, 0, 80);
+    StyleAdjustmentMatrix(g_timer_ui.adjustments);
     lv_obj_add_event_cb(
-        g_timer_ui.presets,
-        PresetEvent,
+        g_timer_ui.adjustments,
+        AdjustmentEvent,
         LV_EVENT_VALUE_CHANGED,
         nullptr);
 
     lv_obj_t *start =
         CreateButton(g_timer_ui.panel, "Start", StartEvent);
-    lv_obj_set_size(start, 78, 28);
+    lv_obj_set_size(start, 84, 40);
     lv_obj_align(start, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
     g_timer_ui.stop_button =
         CreateButton(g_timer_ui.panel, "Stop", StopEvent);
-    lv_obj_set_size(g_timer_ui.stop_button, 78, 28);
+    lv_obj_set_size(g_timer_ui.stop_button, 84, 40);
     lv_obj_align(g_timer_ui.stop_button, LV_ALIGN_BOTTOM_MID, 0, 0);
 
     lv_obj_t *back =
         CreateButton(g_timer_ui.panel, "Back", BackEvent);
-    lv_obj_set_size(back, 78, 28);
+    lv_obj_set_size(back, 84, 40);
     lv_obj_align(back, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
 
     lv_obj_add_flag(g_timer_ui.panel, LV_OBJ_FLAG_HIDDEN);
@@ -301,7 +260,7 @@ static void InitTimerPanel(lv_obj_t *screen)
 static void InitFinishedPanel(lv_obj_t *screen)
 {
     g_timer_ui.finished_panel = lv_obj_create(screen);
-    lv_obj_set_size(g_timer_ui.finished_panel, 286, 180);
+    lv_obj_set_size(g_timer_ui.finished_panel, 286, 200);
     lv_obj_center(g_timer_ui.finished_panel);
     lv_obj_set_style_bg_color(
         g_timer_ui.finished_panel, lv_color_white(), 0);
@@ -325,7 +284,7 @@ static void InitFinishedPanel(lv_obj_t *screen)
 
     lv_obj_t *dismiss =
         CreateButton(g_timer_ui.finished_panel, "Dismiss", DismissEvent);
-    lv_obj_set_size(dismiss, 150, 34);
+    lv_obj_set_size(dismiss, 260, 52);
     lv_obj_align(dismiss, LV_ALIGN_TOP_MID, 0, 91);
 
     lv_obj_t *help = lv_label_create(g_timer_ui.finished_panel);
@@ -412,7 +371,6 @@ void timer_ui_hide()
 
 void timer_ui_enter(uint32_t now_ms)
 {
-    SyncPresetSelection();
     g_last_ui_seconds = UINT32_MAX;
     if (timer_is_active())
     {
@@ -421,21 +379,17 @@ void timer_ui_enter(uint32_t now_ms)
         lv_obj_clear_flag(
             g_timer_ui.stop_button, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(
-            g_timer_ui.minus_button, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(
-            g_timer_ui.plus_button, LV_OBJ_FLAG_HIDDEN);
+            g_timer_ui.adjustments, LV_OBJ_FLAG_HIDDEN);
     }
     else
     {
         SetCountdownSeconds(
             (uint32_t)g_selected_minutes * 60U);
-        lv_label_set_text(g_timer_ui.status, "Select or adjust duration");
+        lv_label_set_text(g_timer_ui.status, "Adjust duration");
         lv_obj_add_flag(
             g_timer_ui.stop_button, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(
-            g_timer_ui.minus_button, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(
-            g_timer_ui.plus_button, LV_OBJ_FLAG_HIDDEN);
+            g_timer_ui.adjustments, LV_OBJ_FLAG_HIDDEN);
     }
 }
 

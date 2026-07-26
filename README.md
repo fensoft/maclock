@@ -55,21 +55,22 @@ To open the boot-options screen:
 2. Turn Maclock off, hold **Clock**, turn Maclock on, and release the button
    when **Boot Options** appears.
 
-The screen provides these choices:
+Boot Options uses three pages with large controls. Use **Back** and **Next** to
+move between Preferences, Start, and Tools. The pages provide these choices:
 
 - **Brightness / Latest** restores the last encoder brightness.
 - **Brightness / Lowest** starts at the lowest visible setting.
 - **Brightness / Highest** starts at full brightness.
 - **Start Clock** runs the normal Macintosh-style clock startup.
 - **Start Emulator** launches Mini vMac immediately.
-- **Remember selection** saves the selected start mode as the next power-on
-  default.
+- **Remember** saves the selected start mode as the next power-on default;
+  **One time** starts it without changing the default.
 - **Diagnostics** opens a live hardware test screen for both buttons, the
   floppy switch, encoder, touch sensor, charging input, known I²C devices, and
   RTC health.
 
 The brightness choice is saved as it is changed. The boot mode is saved only
-when **Remember selection** is checked.
+when **Remember** is selected.
 
 ### Calibrating The Touchscreen
 
@@ -150,24 +151,27 @@ alarms. Each alarm has its own:
 - Sound: Quack, Startup, or Floppy.
 - Volume: 25%, 50%, 75%, or 100%.
 
-Select alarm 1, 2, or 3, edit its settings, then tap **Save**. All three alarms
-are stored persistently. **Cancel** discards changes made since opening the
-editor.
+The first page has large square **Alarm** and **Timer** buttons.
+Alarm opens six pages with large touch targets: alarm selection, time, days,
+sound, volume, and actions. Use **Back** and **Next** to move
+between pages. The four time buttons always adjust the selected alarm by
+exactly one hour or one minute. Tap **Save** on the last page to store all
+three alarms persistently. **Close** on the first page discards changes made
+since opening the editor.
 
-`AL` appears at the bottom of the clock when at least one alarm is enabled or
-snoozed. When an alarm rings, press **Alarm**, touch the discrete red-wire
-sensor, or tap **Snooze 9 min** to snooze it. Press **Clock** or tap
+An alarm-clock icon appears to the left of the date when at least one alarm is
+enabled or snoozed. When an alarm rings, press **Alarm**, touch the discrete
+red-wire sensor, or tap **Snooze 9 min** to snooze it. Press **Clock** or tap
 **Dismiss** to stop it for the current occurrence.
 
-### Using The Timer / Pomodoro
+### Using The Timer
 
 1. Press **Alarm** from the main clock screen.
-2. Tap **Timer** in the alarm editor.
-3. Select a 5, 15, 25, or 60-minute preset.
+2. Tap **Timer** on the first page.
+3. Adjust the duration with **-10**, **-1**, **+1**, and **+10**.
 4. Tap **Start**.
 
-Use **-** and **+** to adjust the selected duration by one minute for a custom
-timer between 1 and 99 minutes.
+The duration is limited to 1–99 minutes.
 
 The timer returns to the normal clock and continues counting down in the
 background. While it is active, its remaining time replaces the date on the
@@ -218,8 +222,8 @@ six mounted images. For example, `disk1.dsk` and `disk3.dsk` without
 `disk2.dsk` will mount only `disk1.dsk`.
 
 To start the emulator, open Boot Options and tap **Start Emulator**. To make it
-the normal power-on mode, leave **Remember selection** checked when starting
-it. The physical floppy switch can be either active or inactive.
+the normal power-on mode, select **Remember** before starting it. The physical
+floppy switch can be either active or inactive.
 
 Move a finger on the display to move the Macintosh pointer. Use the discrete
 red-wire touch sensor as the mouse button. In the emulator, the **Clock** button
@@ -277,7 +281,7 @@ Repeat the four-point calibration from Boot Options.
 Confirm all of the following:
 
 - Start it from **Boot Options**, or save Emulator as the default using
-  **Remember selection**.
+  **Remember**.
 - `vMac.ROM` and `disk1.dsk` were included in the uploaded LittleFS image.
 - The ROM is a compatible 128 KiB Macintosh Plus ROM.
 

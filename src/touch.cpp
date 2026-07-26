@@ -20,7 +20,8 @@ static FT6336 ts = FT6336(
     max(TOUCH_MAP_X1, TOUCH_MAP_X2),
     max(TOUCH_MAP_Y1, TOUCH_MAP_Y2));
 
-static const uint32_t kCalibMagic = 0x544F5543; // 'TOUC'
+// Version 2 stores bounds extrapolated to the physical screen edges.
+static const uint32_t kCalibMagic = 0x544F5532; // 'TOU2'
 
 struct TouchCalibData
 {
@@ -64,8 +65,12 @@ bool touch_touched(void)
     ts.read();
     if (ts.isTouched)
     {
-        touch_last_x = map(ts.points[0].x, min_x, max_x, 0, width - 1);
-        touch_last_y = map(ts.points[0].y, min_y, max_y, 0, height - 1);
+        touch_last_x = constrain(
+            map(ts.points[0].x, min_x, max_x, 0, width - 1),
+            0, width - 1);
+        touch_last_y = constrain(
+            map(ts.points[0].y, min_y, max_y, 0, height - 1),
+            0, height - 1);
         return true;
     }
     else

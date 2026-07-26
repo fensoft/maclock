@@ -91,7 +91,7 @@ struct UiImages
     lv_obj_t *gauge_icon;
     lv_obj_t *gauge_line;
     lv_obj_t *gauge_box;
-    lv_obj_t *alarm_status;
+    lv_obj_t *alarm_indicator;
     lv_obj_t *white_bar;
     lv_obj_t *black_line;
     lv_obj_t *plugin_icons[k_plugin_max];
@@ -105,6 +105,7 @@ struct UiImages
     lv_draw_buf_t *menu_right_buf;
     lv_draw_buf_t *icon_buf;
     lv_draw_buf_t *clock_buf;
+    lv_draw_buf_t *alarm_indicator_buf;
     lv_draw_buf_t *plugin_buf;
     lv_draw_buf_t *plugin_missing_buf;
 };
@@ -115,12 +116,26 @@ struct CalibUi
     lv_obj_t *cross;
 };
 
+enum BootOptionsPage
+{
+    BOOT_OPTIONS_PREFERENCES,
+    BOOT_OPTIONS_START,
+    BOOT_OPTIONS_TOOLS,
+    BOOT_OPTIONS_PAGE_COUNT
+};
+
 struct BootOptionsUi
 {
     lv_obj_t *panel;
+    lv_obj_t *title;
+    lv_obj_t *pages[BOOT_OPTIONS_PAGE_COUNT];
     lv_obj_t *brightness_options;
     lv_obj_t *remember_selection;
     lv_obj_t *rtc_status;
+    lv_obj_t *previous;
+    lv_obj_t *previous_label;
+    lv_obj_t *next;
+    lv_obj_t *next_label;
 };
 
 struct DiagnosticsUi
@@ -171,6 +186,7 @@ static int g_active_alarm_index = -1;
 static lv_obj_t *g_cursor = nullptr;
 static lv_timer_t *g_cursor_timer = nullptr;
 static BootBrightness g_boot_brightness = BOOT_BRIGHTNESS_LATEST;
+static BootOptionsPage g_boot_options_page = BOOT_OPTIONS_PREFERENCES;
 static bool g_boot_floppy_emulator = true;
 static int g_last_saved_encoder = -1;
 static TaskHandle_t g_input_task_handle = nullptr;
@@ -379,6 +395,9 @@ static void cursor_show_at(const lv_point_t &p)
 static void screen_touch_event(lv_event_t *e)
 {
     (void)e;
+    if (g_calib_ui.cross &&
+        !lv_obj_has_flag(g_calib_ui.cross, LV_OBJ_FLAG_HIDDEN))
+        return;
     lv_indev_t *indev = lv_indev_get_act();
     if (!indev)
         return;
@@ -408,6 +427,36 @@ static void calib_set_cross_pos(const lv_point_t &pt)
     if (y > sh - h)
         y = sh - h;
     lv_obj_set_pos(g_calib_ui.cross, x, y);
+}
+
+static bool calib_axis_bounds(uint16_t near_a, uint16_t near_b,
+                              uint16_t far_a, uint16_t far_b,
+                              int near_target, int far_target,
+                              int screen_size,
+                              uint16_t &edge_min, uint16_t &edge_max)
+{
+    const int32_t near_raw = ((int32_t)near_a + near_b + 1) / 2;
+    const int32_t far_raw = ((int32_t)far_a + far_b + 1) / 2;
+    const int32_t target_span = far_target - near_target;
+    const int32_t raw_span = far_raw - near_raw;
+    if (target_span <= 0 || raw_span <= 0 || screen_size <= 1)
+        return false;
+
+    int32_t min_raw =
+        near_raw - (raw_span * near_target + target_span / 2) / target_span;
+    int32_t max_raw =
+        far_raw +
+        (raw_span * (screen_size - 1 - far_target) + target_span / 2) /
+            target_span;
+
+    min_raw = constrain(min_raw, 0, UINT16_MAX);
+    max_raw = constrain(max_raw, 0, UINT16_MAX);
+    if (min_raw >= max_raw)
+        return false;
+
+    edge_min = (uint16_t)min_raw;
+    edge_max = (uint16_t)max_raw;
+    return true;
 }
 
 static void apply_boot_brightness(BootBrightness choice, bool save_choice)
@@ -440,8 +489,9 @@ static void boot_brightness_event(lv_event_t *event)
 static bool boot_remember_selection()
 {
     return g_boot_options_ui.remember_selection &&
-           lv_obj_has_state(g_boot_options_ui.remember_selection,
-                            LV_STATE_CHECKED);
+           lv_buttonmatrix_has_button_ctrl(
+               g_boot_options_ui.remember_selection,
+               1, LV_BUTTONMATRIX_CTRL_CHECKED);
 }
 
 static void remember_boot_mode(bool emulator)
@@ -478,6 +528,84 @@ static void diagnostics_back_event(lv_event_t *event)
     request_state(UI_STATE_BOOT_OPTIONS);
 }
 
+static void set_boot_options_page(BootOptionsPage page)
+{
+    if (page >= BOOT_OPTIONS_PAGE_COUNT)
+        return;
+
+    static const char *page_names[BOOT_OPTIONS_PAGE_COUNT] = {
+        "Preferences", "Start", "Tools"};
+    g_boot_options_page = page;
+    for (size_t i = 0; i < BOOT_OPTIONS_PAGE_COUNT; ++i)
+        lv_obj_add_flag(
+            g_boot_options_ui.pages[i], LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(
+        g_boot_options_ui.pages[page], LV_OBJ_FLAG_HIDDEN);
+
+    char title[40];
+    snprintf(title, sizeof(title), "Boot Options - %s (%u/%u)",
+             page_names[page],
+             (unsigned)page + 1,
+             (unsigned)BOOT_OPTIONS_PAGE_COUNT);
+    lv_label_set_text(g_boot_options_ui.title, title);
+
+    if (page == BOOT_OPTIONS_PREFERENCES)
+    {
+        lv_obj_add_flag(
+            g_boot_options_ui.previous, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(
+            g_boot_options_ui.next, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_size(g_boot_options_ui.next, 260, 40);
+        lv_obj_align(
+            g_boot_options_ui.next, LV_ALIGN_BOTTOM_MID, 0, 0);
+    }
+    else if (page == BOOT_OPTIONS_TOOLS)
+    {
+        lv_obj_clear_flag(
+            g_boot_options_ui.previous, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(
+            g_boot_options_ui.next, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_size(g_boot_options_ui.previous, 260, 40);
+        lv_obj_align(
+            g_boot_options_ui.previous, LV_ALIGN_BOTTOM_MID, 0, 0);
+    }
+    else
+    {
+        lv_obj_clear_flag(
+            g_boot_options_ui.previous, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(
+            g_boot_options_ui.next, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_size(g_boot_options_ui.previous, 130, 40);
+        lv_obj_align(
+            g_boot_options_ui.previous,
+            LV_ALIGN_BOTTOM_LEFT, 0, 0);
+        lv_obj_set_size(g_boot_options_ui.next, 130, 40);
+        lv_obj_align(
+            g_boot_options_ui.next,
+            LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    }
+}
+
+static void boot_options_previous_event(lv_event_t *event)
+{
+    (void)event;
+    if (g_boot_options_page > BOOT_OPTIONS_PREFERENCES)
+    {
+        set_boot_options_page(
+            (BootOptionsPage)(g_boot_options_page - 1));
+    }
+}
+
+static void boot_options_next_event(lv_event_t *event)
+{
+    (void)event;
+    if (g_boot_options_page < BOOT_OPTIONS_TOOLS)
+    {
+        set_boot_options_page(
+            (BootOptionsPage)(g_boot_options_page + 1));
+    }
+}
+
 static void boot_options_continue_visual_event(lv_event_t *event)
 {
     lv_obj_t *label = (lv_obj_t *)lv_event_get_user_data(event);
@@ -493,20 +621,29 @@ static void style_boot_options_matrix(lv_obj_t *matrix)
     const lv_style_selector_t checked_items =
         (lv_style_selector_t)LV_PART_ITEMS |
         (lv_style_selector_t)LV_STATE_CHECKED;
+    const lv_style_selector_t pressed_items =
+        (lv_style_selector_t)LV_PART_ITEMS |
+        (lv_style_selector_t)LV_STATE_PRESSED;
 
-    lv_obj_set_style_bg_color(matrix, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(matrix, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(matrix, lv_color_black(), 0);
-    lv_obj_set_style_border_width(matrix, 1, 0);
-    lv_obj_set_style_pad_all(matrix, 2, 0);
-    lv_obj_set_style_pad_column(matrix, 2, 0);
+    lv_obj_set_style_bg_opa(matrix, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(matrix, 0, 0);
+    lv_obj_set_style_radius(matrix, 0, 0);
+    lv_obj_set_style_pad_all(matrix, 0, 0);
+    lv_obj_set_style_pad_row(matrix, 6, 0);
+    lv_obj_set_style_pad_column(matrix, 6, 0);
     lv_obj_set_style_text_font(matrix, &lv_font_chicago_8, LV_PART_ITEMS);
     lv_obj_set_style_bg_color(matrix, lv_color_white(), LV_PART_ITEMS);
+    lv_obj_set_style_bg_opa(matrix, LV_OPA_COVER, LV_PART_ITEMS);
     lv_obj_set_style_text_color(matrix, lv_color_black(), LV_PART_ITEMS);
     lv_obj_set_style_border_color(matrix, lv_color_black(), LV_PART_ITEMS);
     lv_obj_set_style_border_width(matrix, 1, LV_PART_ITEMS);
+    lv_obj_set_style_radius(matrix, 4, LV_PART_ITEMS);
+    lv_obj_set_style_shadow_width(matrix, 0, LV_PART_ITEMS);
+    lv_obj_set_style_outline_width(matrix, 0, LV_PART_ITEMS);
     lv_obj_set_style_bg_color(matrix, lv_color_black(), checked_items);
     lv_obj_set_style_text_color(matrix, lv_color_white(), checked_items);
+    lv_obj_set_style_bg_color(matrix, lv_color_black(), pressed_items);
+    lv_obj_set_style_text_color(matrix, lv_color_white(), pressed_items);
 }
 
 static lv_obj_t *create_action_button(lv_obj_t *parent,
@@ -517,8 +654,10 @@ static lv_obj_t *create_action_button(lv_obj_t *parent,
     lv_obj_set_style_bg_color(button, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(button, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(button, lv_color_black(), 0);
-    lv_obj_set_style_border_width(button, 2, 0);
-    lv_obj_set_style_radius(button, 0, 0);
+    lv_obj_set_style_border_width(button, 1, 0);
+    lv_obj_set_style_radius(button, 4, 0);
+    lv_obj_set_style_shadow_width(button, 0, 0);
+    lv_obj_set_style_outline_width(button, 0, 0);
     lv_obj_set_style_bg_color(button, lv_color_black(), LV_STATE_PRESSED);
 
     lv_obj_t *label = lv_label_create(button);
@@ -537,82 +676,161 @@ static lv_obj_t *create_action_button(lv_obj_t *parent,
     return button;
 }
 
+static lv_obj_t *create_boot_options_page(lv_obj_t *parent)
+{
+    lv_obj_t *page = lv_obj_create(parent);
+    lv_obj_remove_style_all(page);
+    lv_obj_set_size(page, 276, 130);
+    lv_obj_align(page, LV_ALIGN_TOP_MID, 0, 18);
+    lv_obj_add_flag(page, LV_OBJ_FLAG_HIDDEN);
+    return page;
+}
+
 static void init_boot_options_ui(lv_obj_t *screen)
 {
     static const char *brightness_map[] = {"Latest", "Lowest", "Highest", ""};
+    static const char *remember_map[] = {"One time", "Remember", ""};
 
     g_boot_options_ui.panel = lv_obj_create(screen);
-    lv_obj_set_size(g_boot_options_ui.panel, 286, 202);
+    lv_obj_set_size(g_boot_options_ui.panel, 292, 208);
     lv_obj_center(g_boot_options_ui.panel);
     lv_obj_set_style_bg_color(g_boot_options_ui.panel, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(g_boot_options_ui.panel, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(g_boot_options_ui.panel, lv_color_black(), 0);
     lv_obj_set_style_border_width(g_boot_options_ui.panel, 2, 0);
     lv_obj_set_style_radius(g_boot_options_ui.panel, 0, 0);
-    lv_obj_set_style_pad_all(g_boot_options_ui.panel, 8, 0);
+    lv_obj_set_style_pad_all(g_boot_options_ui.panel, 6, 0);
 
-    lv_obj_t *title = lv_label_create(g_boot_options_ui.panel);
-    lv_label_set_text(title, "Boot Options");
-    lv_obj_set_style_text_font(title, &lv_font_chicago_8, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+    g_boot_options_ui.title =
+        lv_label_create(g_boot_options_ui.panel);
+    lv_label_set_text(g_boot_options_ui.title, "Boot Options");
+    lv_obj_set_style_text_font(
+        g_boot_options_ui.title, &lv_font_chicago_8, 0);
+    lv_obj_align(
+        g_boot_options_ui.title, LV_ALIGN_TOP_MID, 0, 0);
 
-    lv_obj_t *brightness_label = lv_label_create(g_boot_options_ui.panel);
+    for (size_t i = 0; i < BOOT_OPTIONS_PAGE_COUNT; ++i)
+    {
+        g_boot_options_ui.pages[i] =
+            create_boot_options_page(g_boot_options_ui.panel);
+    }
+
+    lv_obj_t *preferences_page =
+        g_boot_options_ui.pages[BOOT_OPTIONS_PREFERENCES];
+    lv_obj_t *brightness_label = lv_label_create(preferences_page);
     lv_label_set_text(brightness_label, "Brightness");
     lv_obj_set_style_text_font(brightness_label, &lv_font_chicago_8, 0);
-    lv_obj_align(brightness_label, LV_ALIGN_TOP_LEFT, 0, 18);
+    lv_obj_align(brightness_label, LV_ALIGN_TOP_MID, 0, 0);
 
-    g_boot_options_ui.brightness_options = lv_buttonmatrix_create(g_boot_options_ui.panel);
-    lv_buttonmatrix_set_map(g_boot_options_ui.brightness_options, brightness_map);
-    lv_buttonmatrix_set_button_ctrl_all(g_boot_options_ui.brightness_options, LV_BUTTONMATRIX_CTRL_CHECKABLE);
-    lv_buttonmatrix_set_one_checked(g_boot_options_ui.brightness_options, true);
-    lv_obj_set_size(g_boot_options_ui.brightness_options, lv_pct(100), 28);
-    lv_obj_align(g_boot_options_ui.brightness_options, LV_ALIGN_TOP_MID, 0, 31);
+    g_boot_options_ui.brightness_options =
+        lv_buttonmatrix_create(preferences_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.brightness_options, brightness_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.brightness_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.brightness_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        g_boot_options_ui.brightness_options, true);
+    lv_obj_set_size(
+        g_boot_options_ui.brightness_options, 260, 48);
+    lv_obj_align(
+        g_boot_options_ui.brightness_options,
+        LV_ALIGN_TOP_MID, 0, 13);
     style_boot_options_matrix(g_boot_options_ui.brightness_options);
-    lv_obj_add_event_cb(g_boot_options_ui.brightness_options, boot_brightness_event,
+    lv_obj_add_event_cb(
+        g_boot_options_ui.brightness_options, boot_brightness_event,
                         LV_EVENT_VALUE_CHANGED, nullptr);
 
-    g_boot_options_ui.remember_selection =
-        lv_checkbox_create(g_boot_options_ui.panel);
-    lv_checkbox_set_text(g_boot_options_ui.remember_selection,
-                         "Remember selection");
-    lv_obj_set_style_text_font(g_boot_options_ui.remember_selection,
-                               &lv_font_chicago_8, 0);
-    lv_obj_align(g_boot_options_ui.remember_selection,
-                 LV_ALIGN_TOP_LEFT, 0, 65);
+    lv_obj_t *remember_label = lv_label_create(preferences_page);
+    lv_label_set_text(remember_label, "Default boot mode");
+    lv_obj_set_style_text_font(remember_label, &lv_font_chicago_8, 0);
+    lv_obj_align(remember_label, LV_ALIGN_TOP_MID, 0, 67);
 
+    g_boot_options_ui.remember_selection =
+        lv_buttonmatrix_create(preferences_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.remember_selection, remember_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.remember_selection,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.remember_selection,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        g_boot_options_ui.remember_selection, true);
+    lv_obj_set_size(
+        g_boot_options_ui.remember_selection, 260, 48);
+    lv_obj_align(
+        g_boot_options_ui.remember_selection,
+        LV_ALIGN_BOTTOM_MID, 0, 0);
+    style_boot_options_matrix(
+        g_boot_options_ui.remember_selection);
+
+    lv_obj_t *start_page =
+        g_boot_options_ui.pages[BOOT_OPTIONS_START];
     lv_obj_t *clock_button =
-        create_action_button(g_boot_options_ui.panel, "Start Clock",
+        create_action_button(start_page, "Start Clock",
                              boot_start_clock_event);
-    lv_obj_set_size(clock_button, 128, 28);
-    lv_obj_align(clock_button, LV_ALIGN_TOP_LEFT, 0, 87);
+    lv_obj_set_size(clock_button, 260, 58);
+    lv_obj_align(clock_button, LV_ALIGN_TOP_MID, 0, 0);
 
     lv_obj_t *emulator_button =
-        create_action_button(g_boot_options_ui.panel, "Start Emulator",
+        create_action_button(start_page, "Start Emulator",
                              boot_start_emulator_event);
-    lv_obj_set_size(emulator_button, 128, 28);
-    lv_obj_align(emulator_button, LV_ALIGN_TOP_RIGHT, 0, 87);
+    lv_obj_set_size(emulator_button, 260, 58);
+    lv_obj_align(emulator_button, LV_ALIGN_BOTTOM_MID, 0, 0);
 
+    lv_obj_t *tools_page =
+        g_boot_options_ui.pages[BOOT_OPTIONS_TOOLS];
     lv_obj_t *diagnostics_button =
-        create_action_button(g_boot_options_ui.panel, "Diagnostics",
+        create_action_button(tools_page, "Diagnostics",
                              boot_diagnostics_event);
-    lv_obj_set_size(diagnostics_button, 104, 25);
-    lv_obj_align(diagnostics_button, LV_ALIGN_TOP_MID, 0, 121);
+    lv_obj_set_size(diagnostics_button, 260, 58);
+    lv_obj_align(diagnostics_button, LV_ALIGN_TOP_MID, 0, 0);
 
-    g_boot_options_ui.rtc_status = lv_label_create(g_boot_options_ui.panel);
+    g_boot_options_ui.rtc_status = lv_label_create(tools_page);
     lv_label_set_text(g_boot_options_ui.rtc_status, "RTC: checking...");
-    lv_obj_set_width(g_boot_options_ui.rtc_status, lv_pct(100));
+    lv_obj_set_width(g_boot_options_ui.rtc_status, 260);
     lv_obj_set_style_text_font(g_boot_options_ui.rtc_status,
                                &lv_font_chicago_8, 0);
     lv_obj_set_style_text_align(g_boot_options_ui.rtc_status,
                                 LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(g_boot_options_ui.rtc_status, LV_ALIGN_TOP_MID, 0, 151);
+    lv_obj_align(
+        g_boot_options_ui.rtc_status, LV_ALIGN_TOP_MID, 0, 72);
 
-    lv_obj_t *calibration_label = lv_label_create(g_boot_options_ui.panel);
-    lv_label_set_text(calibration_label, "Press again for screen calibration");
+    lv_obj_t *calibration_label = lv_label_create(tools_page);
+    lv_label_set_text(
+        calibration_label, "Press Clock for screen calibration");
     lv_obj_set_style_text_font(calibration_label, &lv_font_chicago_8, 0);
     lv_obj_align(calibration_label, LV_ALIGN_BOTTOM_MID, 0, 0);
 
+    g_boot_options_ui.previous =
+        create_action_button(
+            g_boot_options_ui.panel, "Back",
+            boot_options_previous_event);
+    lv_obj_set_size(g_boot_options_ui.previous, 130, 40);
+    lv_obj_align(
+        g_boot_options_ui.previous,
+        LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    g_boot_options_ui.previous_label =
+        lv_obj_get_child(g_boot_options_ui.previous, 0);
+
+    g_boot_options_ui.next =
+        create_action_button(
+            g_boot_options_ui.panel, "Next",
+            boot_options_next_event);
+    lv_obj_set_size(g_boot_options_ui.next, 130, 40);
+    lv_obj_align(
+        g_boot_options_ui.next,
+        LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    g_boot_options_ui.next_label =
+        lv_obj_get_child(g_boot_options_ui.next, 0);
+
     lv_obj_add_flag(g_boot_options_ui.panel, LV_OBJ_FLAG_HIDDEN);
+    set_boot_options_page(BOOT_OPTIONS_PREFERENCES);
 }
 
 static void show_boot_options_ui()
@@ -622,7 +840,19 @@ static void show_boot_options_ui()
     lv_buttonmatrix_set_button_ctrl(g_boot_options_ui.brightness_options,
                                     (uint32_t)g_boot_brightness,
                                     LV_BUTTONMATRIX_CTRL_CHECKED);
-    lv_obj_add_state(g_boot_options_ui.remember_selection, LV_STATE_CHECKED);
+    lv_buttonmatrix_set_selected_button(
+        g_boot_options_ui.brightness_options,
+        (uint32_t)g_boot_brightness);
+
+    lv_buttonmatrix_clear_button_ctrl_all(
+        g_boot_options_ui.remember_selection,
+        LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_buttonmatrix_set_button_ctrl(
+        g_boot_options_ui.remember_selection,
+        1, LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_buttonmatrix_set_selected_button(
+        g_boot_options_ui.remember_selection, 1);
+    set_boot_options_page(BOOT_OPTIONS_PREFERENCES);
 
     char rtc_status[64];
     if (format_rtc_health(rtc_status, sizeof(rtc_status)))
@@ -689,7 +919,7 @@ static void hide_all_ui()
     lv_obj_add_flag(g_ui.gauge_icon, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.gauge_line, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(g_ui.alarm_status, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(g_ui.alarm_indicator, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
     if (g_boot_options_ui.panel)
@@ -902,6 +1132,28 @@ static void update_clock_labels()
     lv_obj_move_foreground(g_ui.gauge_box);
 }
 
+static void update_alarm_indicator_layout(bool active)
+{
+    static constexpr int kDateTop = 14 + 4 + 32 + 16;
+    static constexpr int kIndicatorGap = 4;
+    static constexpr int kDateShift = (18 + kIndicatorGap) / 2;
+
+    lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID,
+                 active ? kDateShift : 0, kDateTop);
+    if (!active)
+    {
+        lv_obj_add_flag(
+            g_ui.alarm_indicator, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    lv_obj_update_layout(g_ui.date);
+    lv_obj_align_to(g_ui.alarm_indicator, g_ui.date,
+                    LV_ALIGN_OUT_LEFT_MID, -kIndicatorGap, 0);
+    lv_obj_clear_flag(
+        g_ui.alarm_indicator, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void setup_weather_sensor()
 {
     if (bmp.begin(BMP5XX_ALTERNATIVE_ADDRESS, &Wire))
@@ -942,6 +1194,8 @@ static void init_ui_assets()
     g_ui.menu_right_buf = load_png_once("S:/menu_right.png");
     g_ui.icon_buf = load_png_once("S:/icon.png");
     g_ui.clock_buf = load_png_once("S:/empty.png");
+    g_ui.alarm_indicator_buf =
+        load_png_once("S:/alarm_indicator.png");
     g_ui.plugin_buf = load_png_once("S:/plugin.png");
     g_ui.plugin_missing_buf = make_plugin_missing_buf(g_ui.plugin_buf);
 
@@ -1025,15 +1279,12 @@ static void init_ui_assets()
     lv_obj_set_style_bg_opa(g_ui.gauge_box, LV_OPA_COVER, 0);
     lv_obj_align(g_ui.gauge_box, LV_ALIGN_TOP_RIGHT, -12, 124);
 
-    g_ui.alarm_status = lv_label_create(g_ui.clock);
-    lv_label_set_text(g_ui.alarm_status, "AL");
-    lv_obj_set_style_text_font(g_ui.alarm_status, &lv_font_chicago_8, 0);
-    lv_obj_set_style_text_color(g_ui.alarm_status, lv_color_white(), 0);
-    lv_obj_set_style_bg_color(g_ui.alarm_status, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(g_ui.alarm_status, LV_OPA_COVER, 0);
-    lv_obj_set_style_pad_left(g_ui.alarm_status, 2, 0);
-    lv_obj_set_style_pad_right(g_ui.alarm_status, 2, 0);
-    lv_obj_align(g_ui.alarm_status, LV_ALIGN_BOTTOM_LEFT, 12, -2);
+    g_ui.alarm_indicator = lv_image_create(g_ui.clock);
+    set_image_src(g_ui.alarm_indicator,
+                  g_ui.alarm_indicator_buf,
+                  "S:/alarm_indicator.png");
+    lv_obj_add_flag(
+        g_ui.alarm_indicator, LV_OBJ_FLAG_HIDDEN);
 
     g_ui.disk_missing_1 = lv_image_create(scr);
     set_image_src(g_ui.disk_missing_1, g_ui.disk_missing_1_buf, "S:/disk_missing_1.png");
@@ -1310,14 +1561,16 @@ void setup()
     LittleFS.begin();
     my_lcd.init();
     touch_eeprom_begin();
-    touch_load_calibration();
     touch.begin();
 
     my_lcd.setAddrWindow(0, 0, LCD_W, LCD_H);
     my_lcd.fillScreen(TFT_BLACK);
     my_lcd.setRotation(3);
 
-    touch_init(my_lcd.width(), my_lcd.height(), my_lcd.getRotation());
+    // LVGL renders a 304x224 viewport, not the full 320x240 panel.
+    touch_init(my_lcd.width() - 16, my_lcd.height() - 16,
+               my_lcd.getRotation());
+    touch_load_calibration();
 
     pinMode(GPIO_FLOPPY, INPUT);
     pinMode(GPIO_ALARM, INPUT);
@@ -1388,6 +1641,9 @@ void loop()
     static bool calib_wait_release = false;
     static uint16_t calib_raw_x[4] = {};
     static uint16_t calib_raw_y[4] = {};
+    static uint32_t calib_sum_x = 0;
+    static uint32_t calib_sum_y = 0;
+    static uint16_t calib_sample_count = 0;
     static lv_point_t calib_targets[4] = {};
     static bool boot_options_clock_armed = false;
     static unsigned long last_alarm_check_ms = 0;
@@ -1628,8 +1884,8 @@ void loop()
             lv_obj_clear_flag(g_ui.gauge_icon, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(g_ui.gauge_line, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
-            if (alarms_have_active_indicator())
-                lv_obj_clear_flag(g_ui.alarm_status, LV_OBJ_FLAG_HIDDEN);
+            update_alarm_indicator_layout(
+                alarms_have_active_indicator());
             lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
             lv_timer_handler();
         }
@@ -1639,10 +1895,6 @@ void loop()
                 lv_obj_clear_flag(g_ui.icon, LV_OBJ_FLAG_HIDDEN);
             else
                 lv_obj_add_flag(g_ui.icon, LV_OBJ_FLAG_HIDDEN);
-            if (alarms_have_active_indicator())
-                lv_obj_clear_flag(g_ui.alarm_status, LV_OBJ_FLAG_HIDDEN);
-            else
-                lv_obj_add_flag(g_ui.alarm_status, LV_OBJ_FLAG_HIDDEN);
             update_clock_labels();
             if (timer_is_active())
             {
@@ -1650,6 +1902,8 @@ void loop()
                 timer_format_remaining(now, remaining, sizeof(remaining));
                 lv_label_set_text(g_ui.date, remaining);
             }
+            update_alarm_indicator_layout(
+                alarms_have_active_indicator());
             lv_timer_handler();
             lastClockUpdate = now;
         }
@@ -1838,11 +2092,16 @@ void loop()
             int h = lv_obj_get_height(scr);
             int margin = 16;
             calib_targets[0] = {margin, margin};
-            calib_targets[1] = {w - margin, margin};
-            calib_targets[2] = {w - margin, h - margin};
-            calib_targets[3] = {margin, h - margin};
+            calib_targets[1] = {w - 1 - margin, margin};
+            calib_targets[2] = {w - 1 - margin, h - 1 - margin};
+            calib_targets[3] = {margin, h - 1 - margin};
             calib_step = 0;
             calib_wait_release = false;
+            calib_sum_x = 0;
+            calib_sum_y = 0;
+            calib_sample_count = 0;
+            if (g_cursor)
+                lv_obj_add_flag(g_cursor, LV_OBJ_FLAG_HIDDEN);
             lv_label_set_text(g_calib_ui.label, "Touch the crosshair");
             calib_set_cross_pos(calib_targets[0]);
         }
@@ -1861,13 +2120,28 @@ void loop()
             bool touched = touch_read_raw(raw_x, raw_y);
             if (touched && !calib_wait_release)
             {
-                calib_raw_x[calib_step] = raw_x;
-                calib_raw_y[calib_step] = raw_y;
                 calib_wait_release = true;
+                calib_sum_x = 0;
+                calib_sum_y = 0;
+                calib_sample_count = 0;
+            }
+            if (touched && calib_wait_release && calib_sample_count < 64)
+            {
+                calib_sum_x += raw_x;
+                calib_sum_y += raw_y;
+                calib_sample_count++;
             }
             if (!touched && calib_wait_release)
             {
                 calib_wait_release = false;
+                if (calib_sample_count == 0)
+                    break;
+                calib_raw_x[calib_step] =
+                    (calib_sum_x + calib_sample_count / 2) /
+                    calib_sample_count;
+                calib_raw_y[calib_step] =
+                    (calib_sum_y + calib_sample_count / 2) /
+                    calib_sample_count;
                 calib_step++;
                 if (calib_step < 4)
                 {
@@ -1875,14 +2149,38 @@ void loop()
                 }
                 else
                 {
-                    uint16_t minx = min(calib_raw_x[0], calib_raw_x[3]);
-                    uint16_t maxx = max(calib_raw_x[1], calib_raw_x[2]);
-                    uint16_t miny = min(calib_raw_y[0], calib_raw_y[1]);
-                    uint16_t maxy = max(calib_raw_y[2], calib_raw_y[3]);
-                    touch_set_calibration(minx, maxx, miny, maxy);
-                    touch_save_calibration();
-                    g_requested_state = UI_STATE_NORMAL;
-                    stateStartTime = now;
+                    lv_obj_t *scr = lv_screen_active();
+                    int w = lv_obj_get_width(scr);
+                    int h = lv_obj_get_height(scr);
+                    uint16_t minx = 0;
+                    uint16_t maxx = 0;
+                    uint16_t miny = 0;
+                    uint16_t maxy = 0;
+                    bool valid =
+                        calib_axis_bounds(
+                            calib_raw_x[0], calib_raw_x[3],
+                            calib_raw_x[1], calib_raw_x[2],
+                            calib_targets[0].x, calib_targets[1].x,
+                            w, minx, maxx) &&
+                        calib_axis_bounds(
+                            calib_raw_y[0], calib_raw_y[1],
+                            calib_raw_y[3], calib_raw_y[2],
+                            calib_targets[0].y, calib_targets[3].y,
+                            h, miny, maxy);
+                    if (valid)
+                    {
+                        touch_set_calibration(minx, maxx, miny, maxy);
+                        touch_save_calibration();
+                        g_requested_state = UI_STATE_NORMAL;
+                        stateStartTime = now;
+                    }
+                    else
+                    {
+                        calib_step = 0;
+                        lv_label_set_text(g_calib_ui.label,
+                                          "Calibration failed - try again");
+                        calib_set_cross_pos(calib_targets[0]);
+                    }
                 }
             }
         }

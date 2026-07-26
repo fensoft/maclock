@@ -19,6 +19,18 @@ static constexpr uint8_t kAllWeekdays = 0x7F;
 static constexpr size_t kAlarmSoundCount = 3;
 static constexpr size_t kAlarmVolumeCount = 4;
 
+enum AlarmEditorPage
+{
+    ALARM_PAGE_HOME,
+    ALARM_PAGE_SELECT,
+    ALARM_PAGE_TIME,
+    ALARM_PAGE_DAYS,
+    ALARM_PAGE_SOUND,
+    ALARM_PAGE_VOLUME,
+    ALARM_PAGE_ACTIONS,
+    ALARM_PAGE_COUNT
+};
+
 struct AlarmConfig
 {
     uint8_t enabled;
@@ -39,14 +51,20 @@ struct AlarmStorage
 struct AlarmEditorUi
 {
     lv_obj_t *panel;
+    lv_obj_t *title;
+    lv_obj_t *pages[ALARM_PAGE_COUNT];
     lv_obj_t *slot_matrix;
-    lv_obj_t *hour;
-    lv_obj_t *minute;
-    lv_obj_t *active_time;
-    lv_obj_t *enabled;
+    lv_obj_t *enabled_matrix;
+    lv_obj_t *time_value;
+    lv_obj_t *time_matrix;
     lv_obj_t *days_matrix;
     lv_obj_t *sound_matrix;
     lv_obj_t *volume_matrix;
+    lv_obj_t *summary;
+    lv_obj_t *previous;
+    lv_obj_t *previous_label;
+    lv_obj_t *next;
+    lv_obj_t *next_label;
 };
 
 struct AlarmRingingUi
@@ -64,13 +82,25 @@ static uint32_t g_last_trigger_minute[kAlarmCount] = {};
 static int g_snooze_alarm = -1;
 static uint32_t g_snooze_at = 0;
 static size_t g_selected_alarm = 0;
+static AlarmEditorPage g_editor_page = ALARM_PAGE_HOME;
 static AlarmEditorUi g_editor = {};
 static AlarmRingingUi g_ringing = {};
 
-static const char *g_slot_map[] = {"1", "2", "3", ""};
-static const char *g_days_map[] = {"M", "T", "W", "T", "F", "S", "S", ""};
-static const char *g_sound_map[] = {"Quack", "Startup", "Floppy", ""};
-static const char *g_volume_map[] = {"25", "50", "75", "100", ""};
+static const char *g_slot_map[] = {"Alarm 1", "Alarm 2", "Alarm 3", ""};
+static const char *g_enabled_map[] = {"Disabled", "Enabled", ""};
+static const char *g_time_map[] = {
+    "Hour -", "Hour +", "Minute -", "Minute +", ""};
+static const char *g_days_map[] = {
+    "Mon", "Tue", "Wed", "Thu", "\n", "Fri", "Sat", "Sun", ""};
+static const char *g_sound_map[] = {
+    "Quack", "\n", "Startup", "\n", "Floppy", ""};
+static const char *g_volume_map[] = {
+    "25%", "50%", "\n", "75%", "100%", ""};
+static const char *g_sound_names[kAlarmSoundCount] = {
+    "Quack", "Startup", "Floppy"};
+static const char *g_page_names[ALARM_PAGE_COUNT] = {
+    "Alarm / Timer", "Alarm", "Time", "Days",
+    "Sound", "Volume", "Actions"};
 static const char *g_sound_paths[kAlarmSoundCount] = {
     "/quack.mp3",
     "/startup.mp3",
@@ -140,21 +170,29 @@ static void StyleMatrix(lv_obj_t *matrix)
     const lv_style_selector_t checked_items =
         (lv_style_selector_t)LV_PART_ITEMS |
         (lv_style_selector_t)LV_STATE_CHECKED;
+    const lv_style_selector_t pressed_items =
+        (lv_style_selector_t)LV_PART_ITEMS |
+        (lv_style_selector_t)LV_STATE_PRESSED;
 
-    lv_obj_set_style_bg_color(matrix, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(matrix, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(matrix, lv_color_black(), 0);
-    lv_obj_set_style_border_width(matrix, 1, 0);
+    lv_obj_set_style_bg_opa(matrix, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(matrix, 0, 0);
     lv_obj_set_style_radius(matrix, 0, 0);
-    lv_obj_set_style_pad_all(matrix, 1, 0);
-    lv_obj_set_style_pad_column(matrix, 1, 0);
+    lv_obj_set_style_pad_all(matrix, 0, 0);
+    lv_obj_set_style_pad_row(matrix, 6, 0);
+    lv_obj_set_style_pad_column(matrix, 6, 0);
     lv_obj_set_style_text_font(matrix, &lv_font_chicago_8, LV_PART_ITEMS);
     lv_obj_set_style_bg_color(matrix, lv_color_white(), LV_PART_ITEMS);
+    lv_obj_set_style_bg_opa(matrix, LV_OPA_COVER, LV_PART_ITEMS);
     lv_obj_set_style_text_color(matrix, lv_color_black(), LV_PART_ITEMS);
     lv_obj_set_style_border_color(matrix, lv_color_black(), LV_PART_ITEMS);
     lv_obj_set_style_border_width(matrix, 1, LV_PART_ITEMS);
+    lv_obj_set_style_radius(matrix, 4, LV_PART_ITEMS);
+    lv_obj_set_style_shadow_width(matrix, 0, LV_PART_ITEMS);
+    lv_obj_set_style_outline_width(matrix, 0, LV_PART_ITEMS);
     lv_obj_set_style_bg_color(matrix, lv_color_black(), checked_items);
     lv_obj_set_style_text_color(matrix, lv_color_white(), checked_items);
+    lv_obj_set_style_bg_color(matrix, lv_color_black(), pressed_items);
+    lv_obj_set_style_text_color(matrix, lv_color_white(), pressed_items);
 }
 
 static void ButtonVisualEvent(lv_event_t *event)
@@ -179,8 +217,10 @@ static lv_obj_t *CreateButton(lv_obj_t *parent,
     lv_obj_set_style_bg_color(button, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(button, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(button, lv_color_black(), 0);
-    lv_obj_set_style_border_width(button, 2, 0);
-    lv_obj_set_style_radius(button, 0, 0);
+    lv_obj_set_style_border_width(button, 1, 0);
+    lv_obj_set_style_radius(button, 4, 0);
+    lv_obj_set_style_shadow_width(button, 0, 0);
+    lv_obj_set_style_outline_width(button, 0, 0);
     lv_obj_set_style_bg_color(button, lv_color_black(), LV_STATE_PRESSED);
 
     lv_obj_t *label = lv_label_create(button);
@@ -199,72 +239,97 @@ static lv_obj_t *CreateButton(lv_obj_t *parent,
     return button;
 }
 
-static lv_obj_t *CreateTimeSpinbox(lv_obj_t *parent,
-                                   int maximum,
-                                   lv_event_cb_t callback)
+static void UpdateTimeValue()
 {
-    lv_obj_t *spinbox = lv_spinbox_create(parent);
-    lv_obj_remove_style_all(spinbox);
-    lv_spinbox_set_range(spinbox, 0, maximum);
-    lv_spinbox_set_digit_format(spinbox, 2, 0);
-    lv_spinbox_set_rollover(spinbox, true);
-    lv_spinbox_set_step(spinbox, 1);
-    lv_spinbox_set_cursor_pos(spinbox, 1);
-    lv_obj_set_size(spinbox, 48, 27);
-    lv_obj_set_style_bg_color(spinbox, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(spinbox, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(spinbox, lv_color_black(), 0);
-    lv_obj_set_style_border_width(spinbox, 1, 0);
-    lv_obj_set_style_radius(spinbox, 0, 0);
-    lv_obj_set_style_text_font(spinbox, &lv_font_chicago_8, 0);
-    lv_obj_set_style_text_align(spinbox, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_pad_top(spinbox, 5, 0);
-    lv_obj_set_style_bg_color(
-        spinbox, lv_color_black(), LV_STATE_CHECKED);
-    lv_obj_set_style_text_color(
-        spinbox, lv_color_white(), LV_STATE_CHECKED);
-    lv_obj_add_event_cb(spinbox, callback, LV_EVENT_PRESSED, nullptr);
-    return spinbox;
+    if (!g_editor.time_value || g_selected_alarm >= kAlarmCount)
+        return;
+
+    const AlarmConfig &alarm = g_edit_alarms[g_selected_alarm];
+    char text[8];
+    snprintf(text, sizeof(text), "%02u:%02u",
+             (unsigned)alarm.hour, (unsigned)alarm.minute);
+    lv_label_set_text(g_editor.time_value, text);
 }
 
-static void SelectActiveTime(lv_obj_t *spinbox)
+static void UpdateSummary()
 {
-    g_editor.active_time = spinbox;
-    lv_obj_clear_state(g_editor.hour, LV_STATE_CHECKED);
-    lv_obj_clear_state(g_editor.minute, LV_STATE_CHECKED);
-    lv_obj_add_state(spinbox, LV_STATE_CHECKED);
-    lv_spinbox_set_cursor_pos(spinbox, 1);
+    if (!g_editor.summary || g_selected_alarm >= kAlarmCount)
+        return;
+
+    const AlarmConfig &alarm = g_edit_alarms[g_selected_alarm];
+    static const char day_letters[] = "MTWTFSS";
+    char days[8];
+    size_t day_count = 0;
+    for (size_t i = 0; i < 7; ++i)
+    {
+        if ((alarm.weekdays & (uint8_t)(1U << i)) != 0)
+            days[day_count++] = day_letters[i];
+    }
+    if (day_count == 0)
+        days[day_count++] = '-';
+    days[day_count] = '\0';
+
+    char text[96];
+    snprintf(text, sizeof(text),
+             "Alarm %u: %02u:%02u  %s\nDays: %s\n%s at %u%%",
+             (unsigned)g_selected_alarm + 1,
+             (unsigned)alarm.hour,
+             (unsigned)alarm.minute,
+             alarm.enabled ? "Enabled" : "Disabled",
+             days,
+             g_sound_names[alarm.sound],
+             (unsigned)g_volume_values[alarm.volume]);
+    lv_label_set_text(g_editor.summary, text);
 }
 
-static void TimeFocusEvent(lv_event_t *event)
-{
-    SelectActiveTime((lv_obj_t *)lv_event_get_target(event));
-}
-
-static void MinusEvent(lv_event_t *event)
+static void TimeEvent(lv_event_t *event)
 {
     (void)event;
-    if (g_editor.active_time)
-        lv_spinbox_decrement(g_editor.active_time);
+    if (g_selected_alarm >= kAlarmCount)
+        return;
+
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(g_editor.time_matrix);
+    AlarmConfig &alarm = g_edit_alarms[g_selected_alarm];
+    switch (selected)
+    {
+    case 0:
+        alarm.hour = (uint8_t)((alarm.hour + 23) % 24);
+        break;
+    case 1:
+        alarm.hour = (uint8_t)((alarm.hour + 1) % 24);
+        break;
+    case 2:
+        alarm.minute = (uint8_t)((alarm.minute + 59) % 60);
+        break;
+    case 3:
+        alarm.minute = (uint8_t)((alarm.minute + 1) % 60);
+        break;
+    default:
+        return;
+    }
+    UpdateTimeValue();
 }
 
-static void PlusEvent(lv_event_t *event)
+static void EnabledEvent(lv_event_t *event)
 {
     (void)event;
-    if (g_editor.active_time)
-        lv_spinbox_increment(g_editor.active_time);
+    if (g_selected_alarm >= kAlarmCount)
+        return;
+
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(g_editor.enabled_matrix);
+    if (selected < 2)
+        g_edit_alarms[g_selected_alarm].enabled = selected == 1;
 }
 
-static void StoreCurrentEditorAlarm()
+static void DaysEvent(lv_event_t *event)
 {
+    (void)event;
     if (g_selected_alarm >= kAlarmCount)
         return;
 
     AlarmConfig &alarm = g_edit_alarms[g_selected_alarm];
-    alarm.enabled =
-        lv_obj_has_state(g_editor.enabled, LV_STATE_CHECKED) ? 1 : 0;
-    alarm.hour = (uint8_t)lv_spinbox_get_value(g_editor.hour);
-    alarm.minute = (uint8_t)lv_spinbox_get_value(g_editor.minute);
     alarm.weekdays = 0;
     for (size_t i = 0; i < 7; ++i)
     {
@@ -276,15 +341,30 @@ static void StoreCurrentEditorAlarm()
             alarm.weekdays |= (uint8_t)(1U << i);
         }
     }
+}
 
-    uint32_t sound =
+static void SoundEvent(lv_event_t *event)
+{
+    (void)event;
+    if (g_selected_alarm >= kAlarmCount)
+        return;
+
+    const uint32_t selected =
         lv_buttonmatrix_get_selected_button(g_editor.sound_matrix);
-    uint32_t volume =
+    if (selected < kAlarmSoundCount)
+        g_edit_alarms[g_selected_alarm].sound = (uint8_t)selected;
+}
+
+static void VolumeEvent(lv_event_t *event)
+{
+    (void)event;
+    if (g_selected_alarm >= kAlarmCount)
+        return;
+
+    const uint32_t selected =
         lv_buttonmatrix_get_selected_button(g_editor.volume_matrix);
-    if (sound < kAlarmSoundCount)
-        alarm.sound = (uint8_t)sound;
-    if (volume < kAlarmVolumeCount)
-        alarm.volume = (uint8_t)volume;
+    if (selected < kAlarmVolumeCount)
+        g_edit_alarms[g_selected_alarm].volume = (uint8_t)selected;
 }
 
 static void LoadEditorAlarm(size_t alarm_index)
@@ -293,12 +373,7 @@ static void LoadEditorAlarm(size_t alarm_index)
         return;
 
     const AlarmConfig &alarm = g_edit_alarms[alarm_index];
-    lv_spinbox_set_value(g_editor.hour, alarm.hour);
-    lv_spinbox_set_value(g_editor.minute, alarm.minute);
-    if (alarm.enabled)
-        lv_obj_add_state(g_editor.enabled, LV_STATE_CHECKED);
-    else
-        lv_obj_clear_state(g_editor.enabled, LV_STATE_CHECKED);
+    SetMatrixChecked(g_editor.enabled_matrix, 2, alarm.enabled ? 1 : 0);
 
     lv_buttonmatrix_clear_button_ctrl_all(
         g_editor.days_matrix, LV_BUTTONMATRIX_CTRL_CHECKED);
@@ -316,7 +391,8 @@ static void LoadEditorAlarm(size_t alarm_index)
         g_editor.sound_matrix, kAlarmSoundCount, alarm.sound);
     SetMatrixChecked(
         g_editor.volume_matrix, kAlarmVolumeCount, alarm.volume);
-    SelectActiveTime(g_editor.hour);
+    UpdateTimeValue();
+    UpdateSummary();
 }
 
 static void SlotEvent(lv_event_t *event)
@@ -327,7 +403,6 @@ static void SlotEvent(lv_event_t *event)
     if (selected >= kAlarmCount || selected == g_selected_alarm)
         return;
 
-    StoreCurrentEditorAlarm();
     g_selected_alarm = (size_t)selected;
     LoadEditorAlarm(g_selected_alarm);
 }
@@ -335,7 +410,6 @@ static void SlotEvent(lv_event_t *event)
 static void SaveEvent(lv_event_t *event)
 {
     (void)event;
-    StoreCurrentEditorAlarm();
     memcpy(g_alarms, g_edit_alarms, sizeof(g_alarms));
     if (g_snooze_alarm >= 0 &&
         !g_alarms[(size_t)g_snooze_alarm].enabled)
@@ -353,10 +427,85 @@ static void CancelEvent(lv_event_t *event)
     request_normal_state();
 }
 
+static void SetEditorPage(AlarmEditorPage page);
+
 static void OpenTimerEvent(lv_event_t *event)
 {
     (void)event;
     request_timer_state();
+}
+
+static void OpenAlarmSettingsEvent(lv_event_t *event)
+{
+    (void)event;
+    SetEditorPage(ALARM_PAGE_SELECT);
+}
+
+static void SetEditorPage(AlarmEditorPage page)
+{
+    if (page >= ALARM_PAGE_COUNT)
+        return;
+
+    g_editor_page = page;
+    for (size_t i = 0; i < ALARM_PAGE_COUNT; ++i)
+        lv_obj_add_flag(g_editor.pages[i], LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(g_editor.pages[page], LV_OBJ_FLAG_HIDDEN);
+
+    char title[40];
+    snprintf(title, sizeof(title), "Alarms - %s (%u/%u)",
+             g_page_names[page],
+             (unsigned)page + 1,
+             (unsigned)ALARM_PAGE_COUNT);
+    lv_label_set_text(g_editor.title, title);
+    lv_label_set_text(
+        g_editor.previous_label,
+        page == ALARM_PAGE_HOME ? "Close" : "Back");
+    lv_label_set_text(
+        g_editor.next_label,
+        page == ALARM_PAGE_ACTIONS ? "Save" : "Next");
+
+    if (page == ALARM_PAGE_HOME)
+    {
+        lv_obj_add_flag(g_editor.next, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_size(g_editor.previous, 260, 40);
+        lv_obj_align(g_editor.previous, LV_ALIGN_BOTTOM_MID, 0, 0);
+    }
+    else
+    {
+        lv_obj_clear_flag(g_editor.next, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_size(g_editor.previous, 130, 40);
+        lv_obj_align(g_editor.previous, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+        lv_obj_set_size(g_editor.next, 130, 40);
+        lv_obj_align(g_editor.next, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    }
+
+    if (page == ALARM_PAGE_ACTIONS)
+        UpdateSummary();
+}
+
+static void PreviousPageEvent(lv_event_t *event)
+{
+    if (g_editor_page == ALARM_PAGE_HOME)
+    {
+        CancelEvent(event);
+        return;
+    }
+    SetEditorPage((AlarmEditorPage)(g_editor_page - 1));
+}
+
+static void NextPageEvent(lv_event_t *event)
+{
+    if (g_editor_page == ALARM_PAGE_HOME)
+    {
+        SetEditorPage(ALARM_PAGE_SELECT);
+        return;
+    }
+    if (g_editor_page == ALARM_PAGE_ACTIONS)
+    {
+        SaveEvent(event);
+        return;
+    }
+    SetEditorPage((AlarmEditorPage)(g_editor_page + 1));
 }
 
 static void SnoozeEvent(lv_event_t *event)
@@ -371,6 +520,22 @@ static void DismissEvent(lv_event_t *event)
     alarm_dismiss_current();
 }
 
+static lv_obj_t *CreateEditorPage(lv_obj_t *parent)
+{
+    lv_obj_t *page = lv_obj_create(parent);
+    lv_obj_remove_style_all(page);
+    lv_obj_set_size(page, 276, 130);
+    lv_obj_align(page, LV_ALIGN_TOP_MID, 0, 18);
+    lv_obj_add_flag(page, LV_OBJ_FLAG_HIDDEN);
+    return page;
+}
+
+static void SetClickOnRelease(lv_obj_t *matrix)
+{
+    lv_buttonmatrix_set_button_ctrl_all(
+        matrix, LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+}
+
 static void InitEditorUi(lv_obj_t *screen)
 {
     g_editor.panel = lv_obj_create(screen);
@@ -383,113 +548,144 @@ static void InitEditorUi(lv_obj_t *screen)
     lv_obj_set_style_radius(g_editor.panel, 0, 0);
     lv_obj_set_style_pad_all(g_editor.panel, 6, 0);
 
-    lv_obj_t *title = lv_label_create(g_editor.panel);
-    lv_label_set_text(title, "Alarms");
-    lv_obj_set_style_text_font(title, &lv_font_chicago_8, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+    g_editor.title = lv_label_create(g_editor.panel);
+    lv_label_set_text(g_editor.title, "Alarms");
+    lv_obj_set_style_text_font(g_editor.title, &lv_font_chicago_8, 0);
+    lv_obj_align(g_editor.title, LV_ALIGN_TOP_MID, 0, 0);
 
-    lv_obj_t *timer =
-        CreateButton(g_editor.panel, "Timer", OpenTimerEvent);
-    lv_obj_set_size(timer, 58, 22);
-    lv_obj_align(timer, LV_ALIGN_TOP_RIGHT, 0, -3);
+    for (size_t i = 0; i < ALARM_PAGE_COUNT; ++i)
+        g_editor.pages[i] = CreateEditorPage(g_editor.panel);
 
-    g_editor.slot_matrix = lv_buttonmatrix_create(g_editor.panel);
+    lv_obj_t *home_page = g_editor.pages[ALARM_PAGE_HOME];
+    lv_obj_t *alarm_button =
+        CreateButton(home_page, "Alarm",
+                     OpenAlarmSettingsEvent);
+    lv_obj_set_size(alarm_button, 124, 124);
+    lv_obj_align(alarm_button, LV_ALIGN_LEFT_MID, 8, 0);
+
+    lv_obj_t *timer_button =
+        CreateButton(home_page, "Timer",
+                     OpenTimerEvent);
+    lv_obj_set_size(timer_button, 124, 124);
+    lv_obj_align(timer_button, LV_ALIGN_RIGHT_MID, -8, 0);
+
+    lv_obj_t *select_page = g_editor.pages[ALARM_PAGE_SELECT];
+    g_editor.slot_matrix = lv_buttonmatrix_create(select_page);
     lv_buttonmatrix_set_map(g_editor.slot_matrix, g_slot_map);
     lv_buttonmatrix_set_button_ctrl_all(
         g_editor.slot_matrix, LV_BUTTONMATRIX_CTRL_CHECKABLE);
     lv_buttonmatrix_set_one_checked(g_editor.slot_matrix, true);
-    lv_obj_set_size(g_editor.slot_matrix, 105, 24);
-    lv_obj_align(g_editor.slot_matrix, LV_ALIGN_TOP_MID, 0, 14);
+    SetClickOnRelease(g_editor.slot_matrix);
+    lv_obj_set_size(g_editor.slot_matrix, 260, 58);
+    lv_obj_align(g_editor.slot_matrix, LV_ALIGN_TOP_MID, 0, 0);
     StyleMatrix(g_editor.slot_matrix);
     lv_obj_add_event_cb(
         g_editor.slot_matrix, SlotEvent, LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *minus =
-        CreateButton(g_editor.panel, "-", MinusEvent);
-    lv_obj_set_size(minus, 34, 27);
-    lv_obj_align(minus, LV_ALIGN_TOP_LEFT, 0, 44);
+    g_editor.enabled_matrix = lv_buttonmatrix_create(select_page);
+    lv_buttonmatrix_set_map(g_editor.enabled_matrix, g_enabled_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_editor.enabled_matrix, LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_one_checked(g_editor.enabled_matrix, true);
+    SetClickOnRelease(g_editor.enabled_matrix);
+    lv_obj_set_size(g_editor.enabled_matrix, 260, 58);
+    lv_obj_align(g_editor.enabled_matrix, LV_ALIGN_BOTTOM_MID, 0, 0);
+    StyleMatrix(g_editor.enabled_matrix);
+    lv_obj_add_event_cb(
+        g_editor.enabled_matrix, EnabledEvent,
+        LV_EVENT_VALUE_CHANGED, nullptr);
 
-    g_editor.hour =
-        CreateTimeSpinbox(g_editor.panel, 23, TimeFocusEvent);
-    lv_obj_align(g_editor.hour, LV_ALIGN_TOP_LEFT, 40, 44);
+    lv_obj_t *time_page = g_editor.pages[ALARM_PAGE_TIME];
+    g_editor.time_value = lv_label_create(time_page);
+    lv_label_set_text(g_editor.time_value, "00:00");
+    lv_obj_set_style_text_font(
+        g_editor.time_value, &lv_font_chicago_48, 0);
+    lv_obj_align(g_editor.time_value, LV_ALIGN_TOP_MID, 0, -5);
 
-    lv_obj_t *colon = lv_label_create(g_editor.panel);
-    lv_label_set_text(colon, ":");
-    lv_obj_set_style_text_font(colon, &lv_font_chicago_8, 0);
-    lv_obj_align(colon, LV_ALIGN_TOP_LEFT, 93, 51);
+    g_editor.time_matrix = lv_buttonmatrix_create(time_page);
+    lv_buttonmatrix_set_map(g_editor.time_matrix, g_time_map);
+    SetClickOnRelease(g_editor.time_matrix);
+    lv_obj_set_size(g_editor.time_matrix, 260, 60);
+    lv_obj_align(g_editor.time_matrix, LV_ALIGN_BOTTOM_MID, 0, 0);
+    StyleMatrix(g_editor.time_matrix);
+    lv_obj_add_event_cb(
+        g_editor.time_matrix, TimeEvent,
+        LV_EVENT_VALUE_CHANGED, nullptr);
 
-    g_editor.minute =
-        CreateTimeSpinbox(g_editor.panel, 59, TimeFocusEvent);
-    lv_obj_align(g_editor.minute, LV_ALIGN_TOP_LEFT, 102, 44);
-
-    lv_obj_t *plus =
-        CreateButton(g_editor.panel, "+", PlusEvent);
-    lv_obj_set_size(plus, 34, 27);
-    lv_obj_align(plus, LV_ALIGN_TOP_LEFT, 156, 44);
-
-    g_editor.enabled = lv_checkbox_create(g_editor.panel);
-    lv_checkbox_set_text(g_editor.enabled, "Enabled");
-    lv_obj_set_style_text_font(g_editor.enabled, &lv_font_chicago_8, 0);
-    lv_obj_align(g_editor.enabled, LV_ALIGN_TOP_RIGHT, 0, 49);
-
-    lv_obj_t *days_label = lv_label_create(g_editor.panel);
-    lv_label_set_text(days_label, "Days");
-    lv_obj_set_style_text_font(days_label, &lv_font_chicago_8, 0);
-    lv_obj_align(days_label, LV_ALIGN_TOP_LEFT, 0, 82);
-
-    g_editor.days_matrix = lv_buttonmatrix_create(g_editor.panel);
+    lv_obj_t *days_page = g_editor.pages[ALARM_PAGE_DAYS];
+    g_editor.days_matrix = lv_buttonmatrix_create(days_page);
     lv_buttonmatrix_set_map(g_editor.days_matrix, g_days_map);
     lv_buttonmatrix_set_button_ctrl_all(
         g_editor.days_matrix, LV_BUTTONMATRIX_CTRL_CHECKABLE);
     lv_buttonmatrix_set_one_checked(g_editor.days_matrix, false);
-    lv_obj_set_size(g_editor.days_matrix, 240, 25);
-    lv_obj_align(g_editor.days_matrix, LV_ALIGN_TOP_RIGHT, 0, 76);
+    SetClickOnRelease(g_editor.days_matrix);
+    lv_obj_set_size(g_editor.days_matrix, 260, 124);
+    lv_obj_center(g_editor.days_matrix);
     StyleMatrix(g_editor.days_matrix);
+    lv_obj_add_event_cb(
+        g_editor.days_matrix, DaysEvent,
+        LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *sound_label = lv_label_create(g_editor.panel);
-    lv_label_set_text(sound_label, "Sound");
-    lv_obj_set_style_text_font(sound_label, &lv_font_chicago_8, 0);
-    lv_obj_align(sound_label, LV_ALIGN_TOP_LEFT, 0, 111);
-
-    g_editor.sound_matrix = lv_buttonmatrix_create(g_editor.panel);
+    lv_obj_t *sound_page = g_editor.pages[ALARM_PAGE_SOUND];
+    g_editor.sound_matrix = lv_buttonmatrix_create(sound_page);
     lv_buttonmatrix_set_map(g_editor.sound_matrix, g_sound_map);
     lv_buttonmatrix_set_button_ctrl_all(
         g_editor.sound_matrix, LV_BUTTONMATRIX_CTRL_CHECKABLE);
     lv_buttonmatrix_set_one_checked(g_editor.sound_matrix, true);
-    lv_obj_set_size(g_editor.sound_matrix, 232, 25);
-    lv_obj_align(g_editor.sound_matrix, LV_ALIGN_TOP_RIGHT, 0, 105);
+    SetClickOnRelease(g_editor.sound_matrix);
+    lv_obj_set_size(g_editor.sound_matrix, 260, 124);
+    lv_obj_center(g_editor.sound_matrix);
     StyleMatrix(g_editor.sound_matrix);
+    lv_obj_add_event_cb(
+        g_editor.sound_matrix, SoundEvent,
+        LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *volume_label = lv_label_create(g_editor.panel);
-    lv_label_set_text(volume_label, "Volume");
-    lv_obj_set_style_text_font(volume_label, &lv_font_chicago_8, 0);
-    lv_obj_align(volume_label, LV_ALIGN_TOP_LEFT, 0, 140);
-
-    g_editor.volume_matrix = lv_buttonmatrix_create(g_editor.panel);
+    lv_obj_t *volume_page = g_editor.pages[ALARM_PAGE_VOLUME];
+    g_editor.volume_matrix = lv_buttonmatrix_create(volume_page);
     lv_buttonmatrix_set_map(g_editor.volume_matrix, g_volume_map);
     lv_buttonmatrix_set_button_ctrl_all(
         g_editor.volume_matrix, LV_BUTTONMATRIX_CTRL_CHECKABLE);
     lv_buttonmatrix_set_one_checked(g_editor.volume_matrix, true);
-    lv_obj_set_size(g_editor.volume_matrix, 224, 25);
-    lv_obj_align(g_editor.volume_matrix, LV_ALIGN_TOP_RIGHT, 0, 134);
+    SetClickOnRelease(g_editor.volume_matrix);
+    lv_obj_set_size(g_editor.volume_matrix, 260, 124);
+    lv_obj_center(g_editor.volume_matrix);
     StyleMatrix(g_editor.volume_matrix);
+    lv_obj_add_event_cb(
+        g_editor.volume_matrix, VolumeEvent,
+        LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *save = CreateButton(g_editor.panel, "Save", SaveEvent);
-    lv_obj_set_size(save, 110, 27);
-    lv_obj_align(save, LV_ALIGN_BOTTOM_LEFT, 12, 0);
+    lv_obj_t *actions_page = g_editor.pages[ALARM_PAGE_ACTIONS];
+    g_editor.summary = lv_label_create(actions_page);
+    lv_label_set_text(g_editor.summary, "");
+    lv_obj_set_width(g_editor.summary, 260);
+    lv_obj_set_style_text_font(
+        g_editor.summary, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_align(
+        g_editor.summary, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_line_space(g_editor.summary, 3, 0);
+    lv_obj_align(g_editor.summary, LV_ALIGN_TOP_MID, 0, 4);
 
-    lv_obj_t *cancel =
-        CreateButton(g_editor.panel, "Cancel", CancelEvent);
-    lv_obj_set_size(cancel, 110, 27);
-    lv_obj_align(cancel, LV_ALIGN_BOTTOM_RIGHT, -12, 0);
+    g_editor.previous =
+        CreateButton(g_editor.panel, "Cancel", PreviousPageEvent);
+    lv_obj_set_size(g_editor.previous, 130, 40);
+    lv_obj_align(g_editor.previous, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    g_editor.previous_label =
+        lv_obj_get_child(g_editor.previous, 0);
+
+    g_editor.next =
+        CreateButton(g_editor.panel, "Next", NextPageEvent);
+    lv_obj_set_size(g_editor.next, 130, 40);
+    lv_obj_align(g_editor.next, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    g_editor.next_label = lv_obj_get_child(g_editor.next, 0);
 
     lv_obj_add_flag(g_editor.panel, LV_OBJ_FLAG_HIDDEN);
+    SetEditorPage(ALARM_PAGE_HOME);
 }
 
 static void InitRingingUi(lv_obj_t *screen)
 {
     g_ringing.panel = lv_obj_create(screen);
-    lv_obj_set_size(g_ringing.panel, 286, 180);
+    lv_obj_set_size(g_ringing.panel, 286, 200);
     lv_obj_center(g_ringing.panel);
     lv_obj_set_style_bg_color(g_ringing.panel, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(g_ringing.panel, LV_OPA_COVER, 0);
@@ -515,18 +711,13 @@ static void InitRingingUi(lv_obj_t *screen)
 
     lv_obj_t *snooze =
         CreateButton(g_ringing.panel, "Snooze 9 min", SnoozeEvent);
-    lv_obj_set_size(snooze, 122, 32);
-    lv_obj_align(snooze, LV_ALIGN_TOP_LEFT, 0, 96);
+    lv_obj_set_size(snooze, 260, 42);
+    lv_obj_align(snooze, LV_ALIGN_TOP_MID, 0, 91);
 
     lv_obj_t *dismiss =
         CreateButton(g_ringing.panel, "Dismiss", DismissEvent);
-    lv_obj_set_size(dismiss, 122, 32);
-    lv_obj_align(dismiss, LV_ALIGN_TOP_RIGHT, 0, 96);
-
-    lv_obj_t *help = lv_label_create(g_ringing.panel);
-    lv_label_set_text(help, "Alarm: Snooze    Clock: Dismiss");
-    lv_obj_set_style_text_font(help, &lv_font_chicago_8, 0);
-    lv_obj_align(help, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_size(dismiss, 260, 42);
+    lv_obj_align(dismiss, LV_ALIGN_BOTTOM_MID, 0, 0);
 
     lv_obj_add_flag(g_ringing.panel, LV_OBJ_FLAG_HIDDEN);
 }
@@ -654,6 +845,7 @@ void alarm_ui_enter()
     g_selected_alarm = 0;
     SetMatrixChecked(g_editor.slot_matrix, kAlarmCount, g_selected_alarm);
     LoadEditorAlarm(g_selected_alarm);
+    SetEditorPage(ALARM_PAGE_HOME);
 }
 
 void alarm_ui_show_editor()
@@ -675,6 +867,6 @@ void alarm_ui_show_ringing(size_t alarm_index)
              (unsigned)alarm.hour, (unsigned)alarm.minute);
     lv_label_set_text(g_ringing.title, title);
     lv_label_set_text(g_ringing.time, time);
-    lv_label_set_text(g_ringing.sound, g_sound_map[alarm.sound]);
+    lv_label_set_text(g_ringing.sound, g_sound_names[alarm.sound]);
     lv_obj_clear_flag(g_ringing.panel, LV_OBJ_FLAG_HIDDEN);
 }

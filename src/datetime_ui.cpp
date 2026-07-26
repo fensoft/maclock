@@ -194,7 +194,10 @@ void datetime_ui_init(lv_obj_t *scr)
     lv_style_set_bg_color(&g_btn_style, lv_color_white());
     lv_style_set_bg_opa(&g_btn_style, LV_OPA_COVER);
     lv_style_set_border_color(&g_btn_style, lv_color_black());
-    lv_style_set_border_width(&g_btn_style, 2);
+    lv_style_set_border_width(&g_btn_style, 1);
+    lv_style_set_radius(&g_btn_style, 4);
+    lv_style_set_shadow_width(&g_btn_style, 0);
+    lv_style_set_outline_width(&g_btn_style, 0);
     lv_style_set_text_color(&g_btn_style, lv_color_black());
     lv_style_set_pad_all(&g_btn_style, 2);
 
@@ -203,7 +206,10 @@ void datetime_ui_init(lv_obj_t *scr)
     lv_style_set_bg_opa(&g_btn_style_pressed, LV_OPA_COVER);
     lv_style_set_text_color(&g_btn_style_pressed, lv_color_white());
     lv_style_set_border_color(&g_btn_style_pressed, lv_color_black());
-    lv_style_set_border_width(&g_btn_style_pressed, 2);
+    lv_style_set_border_width(&g_btn_style_pressed, 1);
+    lv_style_set_radius(&g_btn_style_pressed, 4);
+    lv_style_set_shadow_width(&g_btn_style_pressed, 0);
+    lv_style_set_outline_width(&g_btn_style_pressed, 0);
 
     g_dt_ui.panel = lv_obj_create(scr);
     lv_obj_set_size(g_dt_ui.panel, 280, 190);
