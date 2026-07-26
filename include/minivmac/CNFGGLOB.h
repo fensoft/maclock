@@ -21,6 +21,13 @@
 #define cIncludeUnused 0
 #define UnusedParam(p) (void) p
 
+/*
+	Keep recently used 68K decoder entries out of PSRAM. The cache size must
+	be a power of two; its storage is forced into ESP32 internal DRAM.
+*/
+#define M68K_DECODE_CACHE_SIZE 1024
+#define M68K_DECODE_CACHE_ATTR DRAM_ATTR
+
 /* --- integer types ---- */
 
 typedef unsigned char ui3b;

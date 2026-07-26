@@ -1,0 +1,71 @@
+--- src/minivmac/src/MINEM68K.c
++++ src/minivmac/src/MINEM68K.c
+@@ -270,6 +270,28 @@
+ #define V_regs regs
+ #endif
+ 
++#ifndef M68K_DECODE_CACHE_SIZE
++#define M68K_DECODE_CACHE_SIZE 0
++#endif
++
++#if M68K_DECODE_CACHE_SIZE
++#if (M68K_DECODE_CACHE_SIZE & (M68K_DECODE_CACHE_SIZE - 1)) != 0
++#error "M68K_DECODE_CACHE_SIZE must be a power of two"
++#endif
++
++#ifndef M68K_DECODE_CACHE_ATTR
++#define M68K_DECODE_CACHE_ATTR
++#endif
++
++struct M68KDecodeCacheEntry {
++	ui4b Opcode;
++	DecOpR DecOp;
++};
++
++LOCALVAR struct M68KDecodeCacheEntry
++	M68KDecodeCache[M68K_DECODE_CACHE_SIZE] M68K_DECODE_CACHE_ATTR;
++#endif
++
+ #ifdef r_pc_p
+ register ui3p g_pc_p asm (r_pc_p);
+ #define V_pc_p g_pc_p
+@@ -776,7 +798,20 @@
+ 
+ 	opcode = nextiword();
+ 
++#if M68K_DECODE_CACHE_SIZE
++	{
++		struct M68KDecodeCacheEntry *CacheEntry =
++			&M68KDecodeCache[opcode & (M68K_DECODE_CACHE_SIZE - 1)];
++
++		if (CacheEntry->Opcode != opcode) {
++			CacheEntry->Opcode = opcode;
++			CacheEntry->DecOp = V_regs.disp_table[opcode];
++		}
++		p = &CacheEntry->DecOp;
++	}
++#else
+ 	p = &V_regs.disp_table[opcode];
++#endif
+ 
+ #if WantCloserCyc
+ 	V_regs.CurDecOp = p;
+@@ -8915,6 +8950,18 @@
+ GLOBALPROC MINEM68K_Init(
+ 	ui3b *fIPL)
+ {
++#if M68K_DECODE_CACHE_SIZE
++	ui5r i;
++
++	/*
++		Every opcode mapping to slot i has the same low index bits, so the
++		complement of i is an impossible initial tag for that slot.
++	*/
++	for (i = 0; i < M68K_DECODE_CACHE_SIZE; ++i) {
++		M68KDecodeCache[i].Opcode = (ui4b)~i;
++	}
++#endif
++
+ 	regs.fIPL = fIPL;
+ #ifdef r_regs
+ 	regs.save_regs = &regs;
