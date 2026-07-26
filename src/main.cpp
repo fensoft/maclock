@@ -19,6 +19,7 @@
 #include <LittleFS.h>
 #include "datetime_ui.h"
 #include "alarm_ui.h"
+#include "timer_ui.h"
 #include "touch.h"
 #include "Adafruit_BMP5xx.h"
 #include "Adafruit_HTU21DF.h"
@@ -151,7 +152,9 @@ enum UiState
     UI_STATE_EMULATOR = 12,
     UI_STATE_DIAGNOSTICS = 13,
     UI_STATE_ALARM_EDITOR = 14,
-    UI_STATE_ALARM_RINGING = 15
+    UI_STATE_ALARM_RINGING = 15,
+    UI_STATE_TIMER_EDITOR = 16,
+    UI_STATE_TIMER_FINISHED = 17
 };
 
 static InputState g_input_state = {};
@@ -189,6 +192,11 @@ void request_state(int state)
 void request_normal_state()
 {
     request_state(UI_STATE_NORMAL);
+}
+
+void request_timer_state()
+{
+    request_state(UI_STATE_TIMER_EDITOR);
 }
 
 DateTime rtc_now()
@@ -301,6 +309,12 @@ void alarm_dismiss_current()
     stop_mp3_playback();
     alarms_dismiss();
     g_active_alarm_index = -1;
+    request_normal_state();
+}
+
+void timer_dismiss_current()
+{
+    stop_mp3_playback();
     request_normal_state();
 }
 
@@ -689,6 +703,7 @@ static void hide_all_ui()
     }
     datetime_ui_hide();
     alarm_ui_hide();
+    timer_ui_hide();
     if (g_calib_ui.label)
         lv_obj_add_flag(g_calib_ui.label, LV_OBJ_FLAG_HIDDEN);
     if (g_calib_ui.cross)
@@ -1044,6 +1059,7 @@ static void init_ui_assets()
 
     datetime_ui_init(scr);
     alarm_ui_init(scr);
+    timer_ui_init(scr);
 
     g_calib_ui.label = lv_label_create(scr);
     lv_label_set_text(g_calib_ui.label, "Touch the crosshair");
@@ -1380,6 +1396,7 @@ void loop()
 
     unsigned long now = millis();
     InputState inputs = read_input_state();
+    timer_update(now);
 
     if (g_requested_state != 0)
     {
@@ -1390,7 +1407,8 @@ void loop()
 
     if ((currentState == UI_STATE_NORMAL ||
          currentState == UI_STATE_SET_DATETIME ||
-         currentState == UI_STATE_ALARM_EDITOR) &&
+         currentState == UI_STATE_ALARM_EDITOR ||
+         currentState == UI_STATE_TIMER_EDITOR) &&
         (!last_alarm_check_ms || now - last_alarm_check_ms >= 250))
     {
         last_alarm_check_ms = now;
@@ -1401,6 +1419,14 @@ void loop()
             currentState = UI_STATE_ALARM_RINGING;
             stateStartTime = now;
         }
+    }
+
+    if (currentState != UI_STATE_ALARM_RINGING &&
+        currentState != UI_STATE_TIMER_FINISHED &&
+        timer_take_finished())
+    {
+        currentState = UI_STATE_TIMER_FINISHED;
+        stateStartTime = now;
     }
 
     switch (currentState)
@@ -1618,6 +1644,12 @@ void loop()
             else
                 lv_obj_add_flag(g_ui.alarm_status, LV_OBJ_FLAG_HIDDEN);
             update_clock_labels();
+            if (timer_is_active())
+            {
+                char remaining[12];
+                timer_format_remaining(now, remaining, sizeof(remaining));
+                lv_label_set_text(g_ui.date, remaining);
+            }
             lv_timer_handler();
             lastClockUpdate = now;
         }
@@ -1713,7 +1745,7 @@ void loop()
                 alarms_volume((size_t)g_active_alarm_index));
         }
         lv_timer_handler();
-        if (inputs.alarm)
+        if (inputs.alarm || inputs.touch)
             alarm_snooze_current();
         else if (inputs.clock)
             alarm_dismiss_current();
@@ -1723,6 +1755,34 @@ void loop()
                 alarms_sound_path((size_t)g_active_alarm_index),
                 alarms_volume((size_t)g_active_alarm_index));
         }
+        break;
+    case UI_STATE_TIMER_EDITOR:
+        if (currentState != lastState)
+            timer_ui_enter(now);
+        hide_all_ui();
+        lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
+        timer_ui_show(now);
+        lv_timer_handler();
+        break;
+    case UI_STATE_TIMER_FINISHED:
+        if (currentState != lastState)
+        {
+            hide_all_ui();
+            lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
+            timer_ui_show_finished();
+            start_mp3_playback(timer_sound_path(), timer_volume());
+        }
+        lv_timer_handler();
+        if (inputs.clock || inputs.alarm)
+            timer_dismiss_current();
+        else if (consume_mp3_finished())
+            start_mp3_playback(timer_sound_path(), timer_volume());
         break;
     case UI_STATE_BOOT_OPTIONS:
         if (currentState != lastState)

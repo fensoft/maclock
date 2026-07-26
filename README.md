@@ -32,11 +32,11 @@ disassembly, wiring, firmware preparation, and flashing.
 | --- | --- | --- |
 | Rotary encoder | Adjust brightness from off to maximum | Adjust brightness from off to maximum |
 | Clock button | Open the date/time editor; dismiss a ringing alarm | Enter key |
-| Alarm button | Open the alarm editor; snooze a ringing alarm | Escape key |
+| Alarm button | Open alarms and timers; snooze a ringing alarm | Escape key |
 | Clock + Alarm, held for 2 seconds | Open Boot Options | Safely exit to Boot Options |
 | Floppy switch | Advance startup and show the floppy icon | No emulator action |
 | Display touchscreen | Operate menus and show the pointer | Move the Macintosh pointer using relative motion |
-| Discrete touch sensor (red wire) | Force full brightness for 10 seconds | Macintosh mouse button |
+| Discrete touch sensor (red wire) | Force full brightness for 10 seconds; snooze a ringing alarm | Macintosh mouse button |
 
 Brightness uses perceptual steps, so the lower levels change more gradually.
 Brightness, the optional default boot mode, and touchscreen calibration are
@@ -155,8 +155,29 @@ are stored persistently. **Cancel** discards changes made since opening the
 editor.
 
 `AL` appears at the bottom of the clock when at least one alarm is enabled or
-snoozed. When an alarm rings, press **Alarm** or tap **Snooze 9 min** to snooze
-it. Press **Clock** or tap **Dismiss** to stop it for the current occurrence.
+snoozed. When an alarm rings, press **Alarm**, touch the discrete red-wire
+sensor, or tap **Snooze 9 min** to snooze it. Press **Clock** or tap
+**Dismiss** to stop it for the current occurrence.
+
+### Using The Timer / Pomodoro
+
+1. Press **Alarm** from the main clock screen.
+2. Tap **Timer** in the alarm editor.
+3. Select a 5, 15, 25, or 60-minute preset.
+4. Tap **Start**.
+
+Use **-** and **+** to adjust the selected duration by one minute for a custom
+timer between 1 and 99 minutes.
+
+The timer returns to the normal clock and continues counting down in the
+background. While it is active, its remaining time replaces the date on the
+main clock. Opening the timer dialog again shows the live countdown and
+provides **Stop**, **Start** to restart with the selected duration, and
+**Back**.
+
+When the countdown reaches zero, a Macintosh-style completion dialog appears
+and the timer sound repeats. Tap **Dismiss**, or press either **Clock** or
+**Alarm**, to return to the normal clock.
 
 ### Setting The Date And Time
 

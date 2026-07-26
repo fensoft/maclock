@@ -7,6 +7,7 @@ LV_FONT_DECLARE(lv_font_chicago_8);
 LV_FONT_DECLARE(lv_font_chicago_48);
 
 extern void request_normal_state();
+extern void request_timer_state();
 extern void alarm_snooze_current();
 extern void alarm_dismiss_current();
 
@@ -352,6 +353,12 @@ static void CancelEvent(lv_event_t *event)
     request_normal_state();
 }
 
+static void OpenTimerEvent(lv_event_t *event)
+{
+    (void)event;
+    request_timer_state();
+}
+
 static void SnoozeEvent(lv_event_t *event)
 {
     (void)event;
@@ -380,6 +387,11 @@ static void InitEditorUi(lv_obj_t *screen)
     lv_label_set_text(title, "Alarms");
     lv_obj_set_style_text_font(title, &lv_font_chicago_8, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+
+    lv_obj_t *timer =
+        CreateButton(g_editor.panel, "Timer", OpenTimerEvent);
+    lv_obj_set_size(timer, 58, 22);
+    lv_obj_align(timer, LV_ALIGN_TOP_RIGHT, 0, -3);
 
     g_editor.slot_matrix = lv_buttonmatrix_create(g_editor.panel);
     lv_buttonmatrix_set_map(g_editor.slot_matrix, g_slot_map);
