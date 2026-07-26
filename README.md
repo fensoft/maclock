@@ -31,8 +31,8 @@ disassembly, wiring, firmware preparation, and flashing.
 | Control | Clock mode | Mini vMac mode |
 | --- | --- | --- |
 | Rotary encoder | Adjust brightness from off to maximum | Adjust brightness from off to maximum |
-| Clock button | Open the date/time editor | Enter key |
-| Alarm button | Reserved; no software action yet | Escape key |
+| Clock button | Open the date/time editor; dismiss a ringing alarm | Enter key |
+| Alarm button | Open the alarm editor; snooze a ringing alarm | Escape key |
 | Clock + Alarm, held for 2 seconds | Open Boot Options | Safely exit to Boot Options |
 | Floppy switch | Advance startup and show the floppy icon | No emulator action |
 | Display touchscreen | Operate menus and show the pointer | Move the Macintosh pointer using relative motion |
@@ -138,6 +138,25 @@ after two seconds.
 <p align="center">
   <img src="img/final_front_floppy.jpg" alt="Clock interface with the floppy inserted" width="640">
 </p>
+
+### Setting Alarms
+
+Press the **Alarm** button from the main clock screen to configure up to three
+alarms. Each alarm has its own:
+
+- Enabled setting.
+- Hour and minute.
+- Monday-through-Sunday schedule.
+- Sound: Quack, Startup, or Floppy.
+- Volume: 25%, 50%, 75%, or 100%.
+
+Select alarm 1, 2, or 3, edit its settings, then tap **Save**. All three alarms
+are stored persistently. **Cancel** discards changes made since opening the
+editor.
+
+`AL` appears at the bottom of the clock when at least one alarm is enabled or
+snoozed. When an alarm rings, press **Alarm** or tap **Snooze 9 min** to snooze
+it. Press **Clock** or tap **Dismiss** to stop it for the current occurrence.
 
 ### Setting The Date And Time
 

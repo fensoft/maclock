@@ -11,12 +11,14 @@
 #include <TFT_eSPI.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "driver/touch_pad.h"
 #include "TouchSensor.h"
 #include <Wire.h>
 #include <LittleFS.h>
 #include "datetime_ui.h"
+#include "alarm_ui.h"
 #include "touch.h"
 #include "Adafruit_BMP5xx.h"
 #include "Adafruit_HTU21DF.h"
@@ -88,6 +90,7 @@ struct UiImages
     lv_obj_t *gauge_icon;
     lv_obj_t *gauge_line;
     lv_obj_t *gauge_box;
+    lv_obj_t *alarm_status;
     lv_obj_t *white_bar;
     lv_obj_t *black_line;
     lv_obj_t *plugin_icons[k_plugin_max];
@@ -146,7 +149,9 @@ enum UiState
     UI_STATE_CALIBRATION = 10,
     UI_STATE_BOOT_OPTIONS = 11,
     UI_STATE_EMULATOR = 12,
-    UI_STATE_DIAGNOSTICS = 13
+    UI_STATE_DIAGNOSTICS = 13,
+    UI_STATE_ALARM_EDITOR = 14,
+    UI_STATE_ALARM_RINGING = 15
 };
 
 static InputState g_input_state = {};
@@ -157,7 +162,9 @@ static BootOptionsUi g_boot_options_ui = {};
 static DiagnosticsUi g_diagnostics_ui = {};
 static bool g_mp3_finished = false;
 static portMUX_TYPE g_mp3_mux = portMUX_INITIALIZER_UNLOCKED;
+static SemaphoreHandle_t g_mp3_lock = nullptr;
 static int g_requested_state = 0;
+static int g_active_alarm_index = -1;
 static lv_obj_t *g_cursor = nullptr;
 static lv_timer_t *g_cursor_timer = nullptr;
 static BootBrightness g_boot_brightness = BOOT_BRIGHTNESS_LATEST;
@@ -210,6 +217,91 @@ void rtc_adjust_datetime(const DateTime &date_time)
     default:
         break;
     }
+}
+
+static void delete_mp3_locked()
+{
+    if (mp3)
+    {
+        if (mp3->isRunning())
+            mp3->stop();
+        delete mp3;
+        mp3 = nullptr;
+    }
+    if (file)
+    {
+        delete file;
+        file = nullptr;
+    }
+}
+
+static void stop_mp3_playback()
+{
+    if (g_mp3_lock)
+        xSemaphoreTake(g_mp3_lock, portMAX_DELAY);
+    delete_mp3_locked();
+    portENTER_CRITICAL(&g_mp3_mux);
+    g_mp3_finished = false;
+    portEXIT_CRITICAL(&g_mp3_mux);
+    if (g_mp3_lock)
+        xSemaphoreGive(g_mp3_lock);
+}
+
+static bool start_mp3_playback(const char *path, uint8_t volume)
+{
+    if (!path || !audio_out)
+        return false;
+
+    if (g_mp3_lock)
+        xSemaphoreTake(g_mp3_lock, portMAX_DELAY);
+    delete_mp3_locked();
+    if (es8311_handle)
+        es8311_voice_volume_set(es8311_handle, volume, nullptr);
+
+    file = new AudioFileSourceLittleFS(path);
+    mp3 = new AudioGeneratorMP3();
+    const bool started = file && mp3 && mp3->begin(file, audio_out);
+    if (!started)
+        delete_mp3_locked();
+
+    portENTER_CRITICAL(&g_mp3_mux);
+    g_mp3_finished = false;
+    portEXIT_CRITICAL(&g_mp3_mux);
+    if (g_mp3_lock)
+        xSemaphoreGive(g_mp3_lock);
+    return started;
+}
+
+static bool consume_mp3_finished()
+{
+    bool finished = false;
+    portENTER_CRITICAL(&g_mp3_mux);
+    finished = g_mp3_finished;
+    g_mp3_finished = false;
+    portEXIT_CRITICAL(&g_mp3_mux);
+    return finished;
+}
+
+void alarm_snooze_current()
+{
+    if (g_active_alarm_index < 0)
+        return;
+
+    stop_mp3_playback();
+    alarms_snooze((size_t)g_active_alarm_index, rtc_now());
+    g_active_alarm_index = -1;
+    request_normal_state();
+}
+
+void alarm_dismiss_current()
+{
+    if (g_active_alarm_index < 0)
+        return;
+
+    stop_mp3_playback();
+    alarms_dismiss();
+    g_active_alarm_index = -1;
+    request_normal_state();
 }
 
 static bool format_rtc_health(char *text, size_t text_size)
@@ -583,6 +675,7 @@ static void hide_all_ui()
     lv_obj_add_flag(g_ui.gauge_icon, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.gauge_line, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(g_ui.alarm_status, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
     if (g_boot_options_ui.panel)
@@ -595,6 +688,7 @@ static void hide_all_ui()
             lv_obj_add_flag(g_ui.plugin_icons[i], LV_OBJ_FLAG_HIDDEN);
     }
     datetime_ui_hide();
+    alarm_ui_hide();
     if (g_calib_ui.label)
         lv_obj_add_flag(g_calib_ui.label, LV_OBJ_FLAG_HIDDEN);
     if (g_calib_ui.cross)
@@ -916,6 +1010,16 @@ static void init_ui_assets()
     lv_obj_set_style_bg_opa(g_ui.gauge_box, LV_OPA_COVER, 0);
     lv_obj_align(g_ui.gauge_box, LV_ALIGN_TOP_RIGHT, -12, 124);
 
+    g_ui.alarm_status = lv_label_create(g_ui.clock);
+    lv_label_set_text(g_ui.alarm_status, "AL");
+    lv_obj_set_style_text_font(g_ui.alarm_status, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_color(g_ui.alarm_status, lv_color_white(), 0);
+    lv_obj_set_style_bg_color(g_ui.alarm_status, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(g_ui.alarm_status, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_left(g_ui.alarm_status, 2, 0);
+    lv_obj_set_style_pad_right(g_ui.alarm_status, 2, 0);
+    lv_obj_align(g_ui.alarm_status, LV_ALIGN_BOTTOM_LEFT, 12, -2);
+
     g_ui.disk_missing_1 = lv_image_create(scr);
     set_image_src(g_ui.disk_missing_1, g_ui.disk_missing_1_buf, "S:/disk_missing_1.png");
     lv_obj_center(g_ui.disk_missing_1);
@@ -939,6 +1043,7 @@ static void init_ui_assets()
     lv_obj_center(g_ui.corners);
 
     datetime_ui_init(scr);
+    alarm_ui_init(scr);
 
     g_calib_ui.label = lv_label_create(scr);
     lv_label_set_text(g_calib_ui.label, "Touch the crosshair");
@@ -1008,6 +1113,8 @@ static void audio_task(void *param)
     (void)param;
     for (;;)
     {
+        if (g_mp3_lock)
+            xSemaphoreTake(g_mp3_lock, portMAX_DELAY);
         if (mp3 && mp3->isRunning())
         {
             if (!mp3->loop())
@@ -1018,24 +1125,19 @@ static void audio_task(void *param)
                 portEXIT_CRITICAL(&g_mp3_mux);
             }
         }
+        if (g_mp3_lock)
+            xSemaphoreGive(g_mp3_lock);
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
 static void run_emulator()
 {
+    stop_mp3_playback();
     if (g_audio_task_handle)
         vTaskSuspend(g_audio_task_handle);
     if (g_input_task_handle)
         vTaskSuspend(g_input_task_handle);
-
-    if (mp3 && mp3->isRunning())
-    {
-        mp3->stop();
-        portENTER_CRITICAL(&g_mp3_mux);
-        g_mp3_finished = true;
-        portEXIT_CRITICAL(&g_mp3_mux);
-    }
 
     minivmac();
 
@@ -1178,6 +1280,8 @@ void setup()
     Serial.begin(115200);
     analogWrite(TFT_BL_VAR, 0);
     preferences.begin("maclock", false);
+    g_mp3_lock = xSemaphoreCreateMutex();
+    alarms_init(preferences);
 
     uint8_t saved_boot_brightness =
         preferences.getUChar("boot_brightness", BOOT_BRIGHTNESS_LATEST);
@@ -1270,6 +1374,7 @@ void loop()
     static uint16_t calib_raw_y[4] = {};
     static lv_point_t calib_targets[4] = {};
     static bool boot_options_clock_armed = false;
+    static unsigned long last_alarm_check_ms = 0;
     static unsigned long last_encoder_save_ms = 0;
     static unsigned long full_brightness_until = 0;
 
@@ -1283,6 +1388,21 @@ void loop()
         g_requested_state = 0;
     }
 
+    if ((currentState == UI_STATE_NORMAL ||
+         currentState == UI_STATE_SET_DATETIME ||
+         currentState == UI_STATE_ALARM_EDITOR) &&
+        (!last_alarm_check_ms || now - last_alarm_check_ms >= 250))
+    {
+        last_alarm_check_ms = now;
+        const int due_alarm = alarms_due(rtc_now());
+        if (due_alarm >= 0)
+        {
+            g_active_alarm_index = due_alarm;
+            currentState = UI_STATE_ALARM_RINGING;
+            stateStartTime = now;
+        }
+    }
+
     switch (currentState)
     {
     case UI_STATE_EMPTY_SCREEN: //  empty screen, start sound
@@ -1292,27 +1412,14 @@ void loop()
             lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
             lv_timer_handler();
-            if (!mp3 || !mp3->isRunning())
-            {
-                file = new AudioFileSourceLittleFS("/startup.mp3");
-                mp3 = new AudioGeneratorMP3();
-                mp3->begin(file, audio_out);
-                portENTER_CRITICAL(&g_mp3_mux);
-                g_mp3_finished = false;
-                portEXIT_CRITICAL(&g_mp3_mux);
-            }
+            start_mp3_playback("/startup.mp3", 80);
             g_requested_state = currentState + 1;
             stateStartTime = now;
         }
         break;
     case UI_STATE_WAIT_STARTUP_SOUND: // wait for end of startup sound
     {
-        bool finished = false;
-        portENTER_CRITICAL(&g_mp3_mux);
-        finished = g_mp3_finished;
-        g_mp3_finished = false;
-        portEXIT_CRITICAL(&g_mp3_mux);
-        if (finished)
+        if (consume_mp3_finished())
         {
             g_requested_state = currentState + 1;
             stateStartTime = now;
@@ -1360,13 +1467,7 @@ void loop()
         lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
         lv_timer_handler();
-        file = new AudioFileSourceLittleFS("/floppy.mp3");
-        mp3 = new AudioGeneratorMP3();
-        mp3->begin(file, audio_out);
-        es8311_voice_volume_set(es8311_handle, 65, NULL);
-        portENTER_CRITICAL(&g_mp3_mux);
-        g_mp3_finished = false;
-        portEXIT_CRITICAL(&g_mp3_mux);
+        start_mp3_playback("/floppy.mp3", 65);
     }
         g_requested_state = currentState + 1;
         stateStartTime = now;
@@ -1466,12 +1567,7 @@ void loop()
         break;
     case UI_STATE_WAIT_FLOPPY_SOUND: // wait for end of floppy sound
     {
-        bool finished = false;
-        portENTER_CRITICAL(&g_mp3_mux);
-        finished = g_mp3_finished;
-        g_mp3_finished = false;
-        portEXIT_CRITICAL(&g_mp3_mux);
-        if (finished)
+        if (consume_mp3_finished())
         {
             g_requested_state = currentState + 1;
             stateStartTime = now;
@@ -1484,12 +1580,14 @@ void loop()
         static unsigned long dual_key_hold_start = 0;
         static bool dual_key_handled = false;
         static bool clock_press_pending = false;
+        static bool alarm_press_pending = false;
         static constexpr unsigned long kDualKeyHoldMs = 2000;
         if (currentState != lastState)
         {
             dual_key_hold_start = 0;
             dual_key_handled = false;
             clock_press_pending = false;
+            alarm_press_pending = false;
             hide_all_ui();
             lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
@@ -1504,6 +1602,8 @@ void loop()
             lv_obj_clear_flag(g_ui.gauge_icon, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(g_ui.gauge_line, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
+            if (alarms_have_active_indicator())
+                lv_obj_clear_flag(g_ui.alarm_status, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
             lv_timer_handler();
         }
@@ -1513,6 +1613,10 @@ void loop()
                 lv_obj_clear_flag(g_ui.icon, LV_OBJ_FLAG_HIDDEN);
             else
                 lv_obj_add_flag(g_ui.icon, LV_OBJ_FLAG_HIDDEN);
+            if (alarms_have_active_indicator())
+                lv_obj_clear_flag(g_ui.alarm_status, LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_add_flag(g_ui.alarm_status, LV_OBJ_FLAG_HIDDEN);
             update_clock_labels();
             lv_timer_handler();
             lastClockUpdate = now;
@@ -1529,6 +1633,7 @@ void loop()
             {
                 dual_key_handled = true;
                 clock_press_pending = false;
+                alarm_press_pending = false;
                 g_requested_state = UI_STATE_BOOT_OPTIONS;
                 stateStartTime = now;
             }
@@ -1542,13 +1647,26 @@ void loop()
 
         if (inputs.clock && !dual_key_handled)
             clock_press_pending = true;
+        if (inputs.alarm && !dual_key_handled)
+            alarm_press_pending = true;
 
         if (dual_key_handled)
+        {
             clock_press_pending = false;
+            alarm_press_pending = false;
+        }
         else if (clock_press_pending && !clock_button_down)
         {
             clock_press_pending = false;
+            alarm_press_pending = false;
             g_requested_state = UI_STATE_SET_DATETIME;
+            stateStartTime = now;
+        }
+        else if (alarm_press_pending && !alarm_button_down)
+        {
+            clock_press_pending = false;
+            alarm_press_pending = false;
+            g_requested_state = UI_STATE_ALARM_EDITOR;
             stateStartTime = now;
         }
         break;
@@ -1568,6 +1686,42 @@ void loop()
             lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
             datetime_ui_show();
             lv_timer_handler();
+        }
+        break;
+    case UI_STATE_ALARM_EDITOR:
+        if (currentState != lastState)
+            alarm_ui_enter();
+        hide_all_ui();
+        lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
+        alarm_ui_show_editor();
+        lv_timer_handler();
+        break;
+    case UI_STATE_ALARM_RINGING:
+        if (currentState != lastState)
+        {
+            hide_all_ui();
+            lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
+            alarm_ui_show_ringing((size_t)g_active_alarm_index);
+            start_mp3_playback(
+                alarms_sound_path((size_t)g_active_alarm_index),
+                alarms_volume((size_t)g_active_alarm_index));
+        }
+        lv_timer_handler();
+        if (inputs.alarm)
+            alarm_snooze_current();
+        else if (inputs.clock)
+            alarm_dismiss_current();
+        else if (consume_mp3_finished() && g_active_alarm_index >= 0)
+        {
+            start_mp3_playback(
+                alarms_sound_path((size_t)g_active_alarm_index),
+                alarms_volume((size_t)g_active_alarm_index));
         }
         break;
     case UI_STATE_BOOT_OPTIONS:
