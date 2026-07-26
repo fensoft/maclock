@@ -5,6 +5,7 @@
 
 #include <FS.h>
 #include <LittleFS.h>
+#include <freertos/stream_buffer.h>
 
 #ifdef MINIVMAC_PROFILE
 #include <esp_timer.h>
@@ -70,6 +71,9 @@ struct EmulatorProfileStats
     uint64_t AudioUS;
     uint64_t AudioWaitUS;
     uint64_t AudioFrames;
+    uint64_t AudioQueuedFrames;
+    uint64_t AudioDroppedFrames;
+    uint32_t AudioQueueHighWater;
     uint64_t DiskCacheHitBytes;
     uint64_t DiskReadBytes;
     uint64_t DiskWriteBytes;
@@ -106,6 +110,18 @@ static void EmulatorProfileAddAudio(uint64_t duration_us,
     EmulatorProfile.AudioUS += duration_us;
     EmulatorProfile.AudioWaitUS += wait_us;
     EmulatorProfile.AudioFrames += frames;
+    portEXIT_CRITICAL(&EmulatorProfileCrit);
+}
+
+static void EmulatorProfileAddAudioQueue(size_t queued_frames,
+                                         size_t dropped_frames,
+                                         size_t queue_depth)
+{
+    portENTER_CRITICAL(&EmulatorProfileCrit);
+    EmulatorProfile.AudioQueuedFrames += queued_frames;
+    EmulatorProfile.AudioDroppedFrames += dropped_frames;
+    if (queue_depth > EmulatorProfile.AudioQueueHighWater)
+        EmulatorProfile.AudioQueueHighWater = queue_depth;
     portEXIT_CRITICAL(&EmulatorProfileCrit);
 }
 
@@ -175,14 +191,18 @@ static void EmulatorProfileMaybeReport()
         stats.MaxLag);
     Serial.printf(
         "[emu-prof] video=%.1fms regions=%u avg=%.2fms pixels=%llu "
-        "audio=%.1fms blocked=%.1fms frames=%llu\n",
+        "audio=%.1fms blocked=%.1fms frames=%llu queued=%llu "
+        "dropped=%llu qmax=%u\n",
         render_ms,
         stats.RenderRegions,
         render_average_ms,
         (unsigned long long)stats.RenderPixels,
         audio_ms,
         audio_wait_ms,
-        (unsigned long long)stats.AudioFrames);
+        (unsigned long long)stats.AudioFrames,
+        (unsigned long long)stats.AudioQueuedFrames,
+        (unsigned long long)stats.AudioDroppedFrames,
+        stats.AudioQueueHighWater);
     Serial.printf(
         "[emu-prof] disk cache-hit=%lluB misses=%u fs-read=%lluB "
         "write=%lluB\n",
@@ -226,8 +246,89 @@ static uint32_t EmulatorBrightnessSaveMs = 0;
 static uint32_t EmulatorExitHoldStartMs = 0;
 static bool EmulatorExitRequested = false;
 static bool EmulatorSoundInitialized = false;
-static bool EmulatorSoundStarted = false;
+static volatile bool EmulatorSoundStarted = false;
 static uint32_t EmulatorSoundSampleRate = 0;
+static constexpr size_t kEmulatorAudioBlockFrames = 512;
+static constexpr size_t kEmulatorAudioQueueFrames = 4096;
+static constexpr size_t kEmulatorAudioQueueStorageSize =
+    kEmulatorAudioQueueFrames + 1;
+static uint8_t
+    EmulatorAudioQueueStorage[kEmulatorAudioQueueStorageSize];
+static StaticStreamBuffer_t EmulatorAudioQueueState;
+static StreamBufferHandle_t EmulatorAudioQueue = NULL;
+static TaskHandle_t EmulatorAudioTaskHandle = NULL;
+static volatile bool EmulatorAudioTaskShouldStop = false;
+static int16_t
+    EmulatorAudioStereoFrames[kEmulatorAudioBlockFrames * 2];
+
+static void EmulatorAudioTask(void *param)
+{
+    (void)param;
+    uint8_t mono_frames[kEmulatorAudioBlockFrames];
+
+    while (!EmulatorAudioTaskShouldStop)
+    {
+        const size_t frame_count = xStreamBufferReceive(
+            EmulatorAudioQueue,
+            mono_frames,
+            sizeof(mono_frames),
+            pdMS_TO_TICKS(10));
+        if (frame_count == 0)
+            continue;
+
+#ifdef MINIVMAC_PROFILE
+        const uint64_t profile_start_us = (uint64_t)esp_timer_get_time();
+        uint64_t profile_wait_us = 0;
+        size_t profile_frames = 0;
+#endif
+
+        for (size_t i = 0; i < frame_count; ++i)
+        {
+            const int16_t sample =
+                (int16_t)(((int32_t)mono_frames[i] - 128) * 256);
+            EmulatorAudioStereoFrames[i * 2] = sample;
+            EmulatorAudioStereoFrames[i * 2 + 1] = sample;
+        }
+
+        size_t frames_written = 0;
+        while (frames_written < frame_count &&
+               !EmulatorAudioTaskShouldStop)
+        {
+            const size_t written = audio_write_stereo_frames(
+                &EmulatorAudioStereoFrames[frames_written * 2],
+                frame_count - frames_written);
+            if (written == 0)
+            {
+#ifdef MINIVMAC_PROFILE
+                const uint64_t wait_start_us =
+                    (uint64_t)esp_timer_get_time();
+#endif
+                vTaskDelay(1);
+#ifdef MINIVMAC_PROFILE
+                profile_wait_us +=
+                    (uint64_t)esp_timer_get_time() - wait_start_us;
+#endif
+            }
+            else
+            {
+                frames_written += written;
+#ifdef MINIVMAC_PROFILE
+                profile_frames += written;
+#endif
+            }
+        }
+
+#ifdef MINIVMAC_PROFILE
+        EmulatorProfileAddAudio(
+            (uint64_t)esp_timer_get_time() - profile_start_us,
+            profile_wait_us,
+            profile_frames);
+#endif
+    }
+
+    EmulatorAudioTaskHandle = NULL;
+    vTaskDelete(NULL);
+}
 
 static void MergeDirtyRegion(DirtyRegion &region,
                              int top,
@@ -291,6 +392,22 @@ uint8_t ArduinoAPI_Sound_Init(uint32_t sample_rate)
     EmulatorSoundSampleRate = sample_rate;
     EmulatorSoundInitialized = true;
     EmulatorSoundStarted = false;
+    EmulatorAudioTaskShouldStop = false;
+    if (!EmulatorAudioQueue)
+    {
+        EmulatorAudioQueue = xStreamBufferCreateStatic(
+            sizeof(EmulatorAudioQueueStorage),
+            kEmulatorAudioBlockFrames,
+            EmulatorAudioQueueStorage,
+            &EmulatorAudioQueueState);
+    }
+    if (!EmulatorAudioQueue ||
+        xStreamBufferReset(EmulatorAudioQueue) != pdPASS)
+    {
+        EmulatorSoundInitialized = false;
+        EmulatorSoundSampleRate = 0;
+        return 0;
+    }
     return 1;
 }
 
@@ -303,15 +420,54 @@ uint8_t ArduinoAPI_Sound_Start()
 
     audio_out->SetRate((int)EmulatorSoundSampleRate);
     EmulatorSoundStarted = audio_out->begin();
-    return EmulatorSoundStarted ? 1 : 0;
+    if (!EmulatorSoundStarted)
+        return 0;
+
+    if (xStreamBufferReset(EmulatorAudioQueue) != pdPASS)
+    {
+        audio_out->stop();
+        EmulatorSoundStarted = false;
+        return 0;
+    }
+
+    EmulatorAudioTaskShouldStop = false;
+    if (xTaskCreatePinnedToCore(
+            EmulatorAudioTask,
+            "EmulatorAudio",
+            4096,
+            NULL,
+            2,
+            &EmulatorAudioTaskHandle,
+            0) != pdPASS)
+    {
+        audio_out->stop();
+        EmulatorSoundStarted = false;
+        EmulatorAudioTaskHandle = NULL;
+        return 0;
+    }
+
+    return 1;
 }
 
 void ArduinoAPI_Sound_Stop()
 {
-    if (!EmulatorSoundStarted)
+    if (!EmulatorSoundStarted && !EmulatorAudioTaskHandle)
         return;
-    audio_out->stop();
+
     EmulatorSoundStarted = false;
+    EmulatorAudioTaskShouldStop = true;
+    for (int i = 0; EmulatorAudioTaskHandle && i < 50; ++i)
+        vTaskDelay(pdMS_TO_TICKS(10));
+    if (EmulatorAudioTaskHandle)
+    {
+        vTaskDelete(EmulatorAudioTaskHandle);
+        EmulatorAudioTaskHandle = NULL;
+    }
+
+    if (audio_out)
+        audio_out->stop();
+    if (EmulatorAudioQueue)
+        xStreamBufferReset(EmulatorAudioQueue);
 }
 
 void ArduinoAPI_Sound_UnInit()
@@ -339,64 +495,19 @@ void ArduinoAPI_Sound_UnInit()
 
 void ArduinoAPI_Sound_Write(const uint8_t *samples, size_t count)
 {
-    if (!EmulatorSoundStarted || !samples)
-        return;
-
-#ifdef MINIVMAC_PROFILE
-    const uint64_t profile_start_us = (uint64_t)esp_timer_get_time();
-    uint64_t profile_wait_us = 0;
-    size_t profile_frames = 0;
-#endif
-    static constexpr size_t kAudioBlockFrames = 512;
-    static int16_t stereo_frames[kAudioBlockFrames * 2];
-
-    size_t offset = 0;
-    while (offset < count && EmulatorSoundStarted)
+    if (!EmulatorSoundStarted || !EmulatorAudioQueue ||
+        !samples || count == 0)
     {
-        const size_t block_frames =
-            min(count - offset, kAudioBlockFrames);
-        for (size_t i = 0; i < block_frames; ++i)
-        {
-            const int16_t sample =
-                (int16_t)(((int32_t)samples[offset + i] - 128) * 256);
-            stereo_frames[i * 2] = sample;
-            stereo_frames[i * 2 + 1] = sample;
-        }
-
-        size_t frames_written = 0;
-        while (frames_written < block_frames && EmulatorSoundStarted)
-        {
-            const size_t written = audio_write_stereo_frames(
-                &stereo_frames[frames_written * 2],
-                block_frames - frames_written);
-            if (written == 0)
-            {
-#ifdef MINIVMAC_PROFILE
-                const uint64_t wait_start_us =
-                    (uint64_t)esp_timer_get_time();
-#endif
-                vTaskDelay(1);
-#ifdef MINIVMAC_PROFILE
-                profile_wait_us +=
-                    (uint64_t)esp_timer_get_time() - wait_start_us;
-#endif
-            }
-            else
-            {
-                frames_written += written;
-#ifdef MINIVMAC_PROFILE
-                profile_frames += written;
-#endif
-            }
-        }
-        offset += block_frames;
+        return;
     }
 
+    const size_t queued_frames =
+        xStreamBufferSend(EmulatorAudioQueue, samples, count, 0);
 #ifdef MINIVMAC_PROFILE
-    EmulatorProfileAddAudio(
-        (uint64_t)esp_timer_get_time() - profile_start_us,
-        profile_wait_us,
-        profile_frames);
+    EmulatorProfileAddAudioQueue(
+        queued_frames,
+        count - queued_frames,
+        xStreamBufferBytesAvailable(EmulatorAudioQueue));
 #endif
 }
 
