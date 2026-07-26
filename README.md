@@ -98,7 +98,8 @@ The four Chime pages in **Boot Options** configure:
 
 - **Off**, **Hourly**, or **Quarter hour** playback. Quarter-hour mode plays
   at `:00`, `:15`, `:30`, and `:45`.
-- Quack, Startup, or Floppy sound.
+- Any `.mp3` file stored in LittleFS. Select a file and tap **Play** to
+  preview it at a reduced, distortion-safe volume.
 - 25%, 50%, 75%, or 100% volume.
 - Optional quiet hours, including schedules that cross midnight.
 
@@ -215,7 +216,8 @@ alarms. Each alarm has its own:
 - Enabled setting.
 - Hour and minute.
 - Monday-through-Sunday schedule.
-- Sound: Quack, Startup, or Floppy.
+- Sound: any `.mp3` file stored in LittleFS, with a **Play** button for
+  previewing it at a reduced, distortion-safe volume.
 - Volume: 25%, 50%, 75%, or 100%.
 
 The first page has large square **Alarm** and **Timer** buttons.

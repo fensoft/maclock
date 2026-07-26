@@ -1,4 +1,5 @@
 #include "alarm_ui.h"
+#include "sound_selector.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -16,7 +17,7 @@ namespace
 static constexpr uint32_t kAlarmStorageMagic = 0x414C524D; // 'ALRM'
 static constexpr uint8_t kAlarmStorageVersion = 1;
 static constexpr uint8_t kAllWeekdays = 0x7F;
-static constexpr size_t kAlarmSoundCount = 3;
+static constexpr size_t kLegacyAlarmSoundCount = 3;
 static constexpr size_t kAlarmVolumeCount = 4;
 
 enum AlarmEditorPage
@@ -58,7 +59,7 @@ struct AlarmEditorUi
     lv_obj_t *time_value;
     lv_obj_t *time_matrix;
     lv_obj_t *days_matrix;
-    lv_obj_t *sound_matrix;
+    SoundSelector sound_selector;
     lv_obj_t *volume_matrix;
     lv_obj_t *summary;
     lv_obj_t *previous;
@@ -80,6 +81,10 @@ struct AlarmRingingUi
 static Preferences *g_preferences = nullptr;
 static AlarmConfig g_alarms[kAlarmCount] = {};
 static AlarmConfig g_edit_alarms[kAlarmCount] = {};
+static char g_alarm_sound_paths[kAlarmCount]
+                               [SOUND_SELECTOR_PATH_MAX] = {};
+static char g_edit_alarm_sound_paths[kAlarmCount]
+                                    [SOUND_SELECTOR_PATH_MAX] = {};
 static uint32_t g_last_trigger_minute[kAlarmCount] = {};
 static int g_snooze_alarm = -1;
 static uint32_t g_snooze_at = 0;
@@ -94,16 +99,12 @@ static const char *g_time_map[] = {
     "Hour -", "Hour +", "Minute -", "Minute +", ""};
 static const char *g_days_map[] = {
     "Mon", "Tue", "Wed", "Thu", "\n", "Fri", "Sat", "Sun", ""};
-static const char *g_sound_map[] = {
-    "Quack", "\n", "Startup", "\n", "Floppy", ""};
 static const char *g_volume_map[] = {
     "25%", "50%", "\n", "75%", "100%", ""};
-static const char *g_sound_names[kAlarmSoundCount] = {
-    "Quack", "Startup", "Floppy"};
 static const char *g_page_names[ALARM_PAGE_COUNT] = {
     "Alarm / Timer", "Alarm", "Time", "Days",
     "Sound", "Volume", "Actions"};
-static const char *g_sound_paths[kAlarmSoundCount] = {
+static const char *g_legacy_sound_paths[kLegacyAlarmSoundCount] = {
     "/quack.mp3",
     "/startup.mp3",
     "/floppy.mp3"};
@@ -118,6 +119,9 @@ static void SetAlarmDefaults()
         g_alarms[i].weekdays = kAllWeekdays;
         g_alarms[i].sound = 0;
         g_alarms[i].volume = 2;
+        strlcpy(
+            g_alarm_sound_paths[i], "/quack.mp3",
+            SOUND_SELECTOR_PATH_MAX);
         g_last_trigger_minute[i] = UINT32_MAX;
     }
 }
@@ -128,8 +132,28 @@ static bool AlarmConfigIsValid(const AlarmConfig &alarm)
            alarm.hour < 24 &&
            alarm.minute < 60 &&
            (alarm.weekdays & ~kAllWeekdays) == 0 &&
-           alarm.sound < kAlarmSoundCount &&
+           alarm.sound < kLegacyAlarmSoundCount &&
            alarm.volume < kAlarmVolumeCount;
+}
+
+static void LoadAlarmSoundPaths(Preferences &preferences)
+{
+    for (size_t i = 0; i < kAlarmCount; ++i)
+    {
+        char key[20];
+        snprintf(
+            key, sizeof(key), "alarm_sound_%u",
+            (unsigned)i);
+        const uint8_t legacy_sound =
+            g_alarms[i].sound < kLegacyAlarmSoundCount
+                ? g_alarms[i].sound
+                : 0;
+        const String saved = preferences.getString(
+            key, g_legacy_sound_paths[legacy_sound]);
+        strlcpy(
+            g_alarm_sound_paths[i], saved.c_str(),
+            SOUND_SELECTOR_PATH_MAX);
+    }
 }
 
 static void SaveAlarms()
@@ -142,6 +166,15 @@ static void SaveAlarms()
     storage.version = kAlarmStorageVersion;
     memcpy(storage.alarms, g_alarms, sizeof(g_alarms));
     g_preferences->putBytes("alarms_v1", &storage, sizeof(storage));
+    for (size_t i = 0; i < kAlarmCount; ++i)
+    {
+        char key[20];
+        snprintf(
+            key, sizeof(key), "alarm_sound_%u",
+            (unsigned)i);
+        g_preferences->putString(
+            key, g_alarm_sound_paths[i]);
+    }
 }
 
 static uint8_t AlarmWeekdayBit(const DateTime &now)
@@ -271,7 +304,7 @@ static void UpdateSummary()
         days[day_count++] = '-';
     days[day_count] = '\0';
 
-    char text[96];
+    char text[160];
     snprintf(text, sizeof(text),
              "Alarm %u: %02u:%02u  %s\nDays: %s\n%s at %u%%",
              (unsigned)g_selected_alarm + 1,
@@ -279,7 +312,8 @@ static void UpdateSummary()
              (unsigned)alarm.minute,
              alarm.enabled ? "Enabled" : "Disabled",
              days,
-             g_sound_names[alarm.sound],
+             sound_selector_display_name(
+                 g_edit_alarm_sound_paths[g_selected_alarm]),
              (unsigned)g_volume_values[alarm.volume]);
     lv_label_set_text(g_editor.summary, text);
 }
@@ -345,16 +379,14 @@ static void DaysEvent(lv_event_t *event)
     }
 }
 
-static void SoundEvent(lv_event_t *event)
+static void SoundChanged(const char *path, void *user_data)
 {
-    (void)event;
-    if (g_selected_alarm >= kAlarmCount)
+    (void)user_data;
+    if (!path || g_selected_alarm >= kAlarmCount)
         return;
-
-    const uint32_t selected =
-        lv_buttonmatrix_get_selected_button(g_editor.sound_matrix);
-    if (selected < kAlarmSoundCount)
-        g_edit_alarms[g_selected_alarm].sound = (uint8_t)selected;
+    strlcpy(
+        g_edit_alarm_sound_paths[g_selected_alarm], path,
+        SOUND_SELECTOR_PATH_MAX);
 }
 
 static void VolumeEvent(lv_event_t *event)
@@ -366,7 +398,12 @@ static void VolumeEvent(lv_event_t *event)
     const uint32_t selected =
         lv_buttonmatrix_get_selected_button(g_editor.volume_matrix);
     if (selected < kAlarmVolumeCount)
+    {
         g_edit_alarms[g_selected_alarm].volume = (uint8_t)selected;
+        sound_selector_set_preview_volume(
+            &g_editor.sound_selector,
+            g_volume_values[selected]);
+    }
 }
 
 static void LoadEditorAlarm(size_t alarm_index)
@@ -389,8 +426,20 @@ static void LoadEditorAlarm(size_t alarm_index)
                 LV_BUTTONMATRIX_CTRL_CHECKED);
         }
     }
-    SetMatrixChecked(
-        g_editor.sound_matrix, kAlarmSoundCount, alarm.sound);
+    sound_selector_set_path(
+        &g_editor.sound_selector,
+        g_edit_alarm_sound_paths[alarm_index]);
+    const char *resolved_sound =
+        sound_selector_get_path(&g_editor.sound_selector);
+    if (resolved_sound)
+    {
+        strlcpy(
+            g_edit_alarm_sound_paths[alarm_index],
+            resolved_sound, SOUND_SELECTOR_PATH_MAX);
+    }
+    sound_selector_set_preview_volume(
+        &g_editor.sound_selector,
+        g_volume_values[alarm.volume]);
     SetMatrixChecked(
         g_editor.volume_matrix, kAlarmVolumeCount, alarm.volume);
     UpdateTimeValue();
@@ -413,6 +462,9 @@ static void SaveEvent(lv_event_t *event)
 {
     (void)event;
     memcpy(g_alarms, g_edit_alarms, sizeof(g_alarms));
+    memcpy(
+        g_alarm_sound_paths, g_edit_alarm_sound_paths,
+        sizeof(g_alarm_sound_paths));
     if (g_snooze_alarm >= 0 &&
         !g_alarms[(size_t)g_snooze_alarm].enabled)
     {
@@ -607,18 +659,13 @@ static void InitEditorUi(lv_obj_t *screen)
         LV_EVENT_VALUE_CHANGED, nullptr);
 
     lv_obj_t *sound_page = g_editor.pages[ALARM_PAGE_SOUND];
-    g_editor.sound_matrix = lv_buttonmatrix_create(sound_page);
-    lv_buttonmatrix_set_map(g_editor.sound_matrix, g_sound_map);
-    lv_buttonmatrix_set_button_ctrl_all(
-        g_editor.sound_matrix, LV_BUTTONMATRIX_CTRL_CHECKABLE);
-    lv_buttonmatrix_set_one_checked(g_editor.sound_matrix, true);
-    SetClickOnRelease(g_editor.sound_matrix);
-    lv_obj_set_size(g_editor.sound_matrix, 260, 124);
-    lv_obj_center(g_editor.sound_matrix);
-    StyleMatrix(g_editor.sound_matrix);
-    lv_obj_add_event_cb(
-        g_editor.sound_matrix, SoundEvent,
-        LV_EVENT_VALUE_CHANGED, nullptr);
+    sound_selector_create(
+        &g_editor.sound_selector,
+        sound_page,
+        "/quack.mp3",
+        g_volume_values[2],
+        SoundChanged,
+        nullptr);
 
     lv_obj_t *volume_page = g_editor.pages[ALARM_PAGE_VOLUME];
     g_editor.volume_matrix = lv_buttonmatrix_create(volume_page);
@@ -722,26 +769,25 @@ void alarms_init(Preferences &preferences)
     g_snooze_alarm = -1;
     g_snooze_at = 0;
 
-    if (preferences.getBytesLength("alarms_v1") != sizeof(AlarmStorage))
-        return;
-
+    bool storage_valid =
+        preferences.getBytesLength("alarms_v1") ==
+        sizeof(AlarmStorage);
     AlarmStorage storage = {};
-    if (preferences.getBytes(
-            "alarms_v1", &storage, sizeof(storage)) != sizeof(storage))
+    if (storage_valid)
     {
-        return;
+        storage_valid =
+            preferences.getBytes(
+                "alarms_v1", &storage, sizeof(storage)) ==
+                sizeof(storage) &&
+            storage.magic == kAlarmStorageMagic &&
+            storage.version == kAlarmStorageVersion;
     }
-    if (storage.magic != kAlarmStorageMagic ||
-        storage.version != kAlarmStorageVersion)
-    {
-        return;
-    }
-    for (size_t i = 0; i < kAlarmCount; ++i)
-    {
-        if (!AlarmConfigIsValid(storage.alarms[i]))
-            return;
-    }
-    memcpy(g_alarms, storage.alarms, sizeof(g_alarms));
+    for (size_t i = 0; storage_valid && i < kAlarmCount; ++i)
+        storage_valid = AlarmConfigIsValid(storage.alarms[i]);
+    if (storage_valid)
+        memcpy(g_alarms, storage.alarms, sizeof(g_alarms));
+
+    LoadAlarmSoundPaths(preferences);
 }
 
 int alarms_due(const DateTime &now)
@@ -806,8 +852,10 @@ bool alarms_have_active_indicator()
 const char *alarms_sound_path(size_t alarm_index)
 {
     if (alarm_index >= kAlarmCount)
-        return g_sound_paths[0];
-    return g_sound_paths[g_alarms[alarm_index].sound];
+        return sound_selector_resolve_path(
+            "/quack.mp3", "/quack.mp3");
+    return sound_selector_resolve_path(
+        g_alarm_sound_paths[alarm_index], "/quack.mp3");
 }
 
 uint8_t alarms_volume(size_t alarm_index)
@@ -834,6 +882,9 @@ void alarm_ui_hide()
 void alarm_ui_enter()
 {
     memcpy(g_edit_alarms, g_alarms, sizeof(g_edit_alarms));
+    memcpy(
+        g_edit_alarm_sound_paths, g_alarm_sound_paths,
+        sizeof(g_edit_alarm_sound_paths));
     g_selected_alarm = 0;
     SetMatrixChecked(g_editor.slot_matrix, kAlarmCount, g_selected_alarm);
     LoadEditorAlarm(g_selected_alarm);
@@ -859,6 +910,9 @@ void alarm_ui_show_ringing(size_t alarm_index)
              (unsigned)alarm.hour, (unsigned)alarm.minute);
     lv_label_set_text(g_ringing.title, title);
     lv_label_set_text(g_ringing.time, time);
-    lv_label_set_text(g_ringing.sound, g_sound_names[alarm.sound]);
+    lv_label_set_text(
+        g_ringing.sound,
+        sound_selector_display_name(
+            g_alarm_sound_paths[alarm_index]));
     lv_obj_clear_flag(g_ringing.panel, LV_OBJ_FLAG_HIDDEN);
 }

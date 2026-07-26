@@ -25,6 +25,7 @@
 #include "Adafruit_HTU21DF.h"
 #include <Preferences.h>
 #include "brightness.h"
+#include "sound_selector.h"
 #include "wifi_mode.h"
 
 LV_FONT_DECLARE(lv_font_chicago_8);
@@ -145,7 +146,7 @@ struct BootOptionsUi
     lv_obj_t *night_screen_options;
     lv_obj_t *night_off_options;
     lv_obj_t *chime_mode_options;
-    lv_obj_t *chime_sound_options;
+    SoundSelector chime_sound_selector;
     lv_obj_t *chime_volume_options;
     lv_obj_t *chime_quiet_options;
     lv_obj_t *chime_quiet_start_options;
@@ -274,8 +275,10 @@ static const char *g_chime_quiet_start_map[] = {
     "-", g_chime_quiet_start_text, "+", ""};
 static const char *g_chime_quiet_end_map[] = {
     "-", g_chime_quiet_end_text, "+", ""};
-static const char *g_chime_sound_paths[] = {
+static const char *g_legacy_chime_sound_paths[] = {
     "/quack.mp3", "/startup.mp3", "/floppy.mp3"};
+static char g_chime_sound_path[SOUND_SELECTOR_PATH_MAX] =
+    "/quack.mp3";
 static const uint8_t g_chime_volumes[] = {25, 50, 75, 100};
 
 void setup_codec();
@@ -368,6 +371,7 @@ static bool start_mp3_playback(const char *path, uint8_t volume)
     delete_mp3_locked();
     if (es8311_handle)
         es8311_voice_volume_set(es8311_handle, volume, nullptr);
+    audio_out->SetGain(1.0f);
 
     file = new AudioFileSourceLittleFS(path);
     mp3 = new AudioGeneratorMP3();
@@ -664,14 +668,13 @@ static void maybe_start_chime(const DateTime &current)
     if (chime_quiet_now(current) || mp3_playback_running())
         return;
 
-    const size_t sound_count =
-        sizeof(g_chime_sound_paths) / sizeof(g_chime_sound_paths[0]);
     const size_t volume_count =
         sizeof(g_chime_volumes) / sizeof(g_chime_volumes[0]);
-    if (g_chime.sound >= sound_count || g_chime.volume >= volume_count)
+    if (g_chime.volume >= volume_count)
         return;
     start_mp3_playback(
-        g_chime_sound_paths[g_chime.sound],
+        sound_selector_resolve_path(
+            g_chime_sound_path, "/quack.mp3"),
         g_chime_volumes[g_chime.volume]);
 }
 
@@ -733,8 +736,12 @@ static void update_chime_options_ui()
         g_chime_quiet_end_map);
     set_checked_button(
         g_boot_options_ui.chime_mode_options, (uint32_t)g_chime.mode);
-    set_checked_button(
-        g_boot_options_ui.chime_sound_options, g_chime.sound);
+    sound_selector_set_path(
+        &g_boot_options_ui.chime_sound_selector,
+        g_chime_sound_path);
+    sound_selector_set_preview_volume(
+        &g_boot_options_ui.chime_sound_selector,
+        g_chime_volumes[g_chime.volume]);
     set_checked_button(
         g_boot_options_ui.chime_volume_options, g_chime.volume);
     set_checked_button(
@@ -788,18 +795,16 @@ static void chime_mode_event(lv_event_t *event)
     preferences.putUChar("chime_mode", (uint8_t)g_chime.mode);
 }
 
-static void chime_sound_event(lv_event_t *event)
+static void chime_sound_changed(
+    const char *path, void *user_data)
 {
-    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
-    const uint32_t selected =
-        lv_buttonmatrix_get_selected_button(options);
-    if (selected >=
-        sizeof(g_chime_sound_paths) / sizeof(g_chime_sound_paths[0]))
-    {
+    (void)user_data;
+    if (!path)
         return;
-    }
-    g_chime.sound = (uint8_t)selected;
-    preferences.putUChar("chime_sound", g_chime.sound);
+    strlcpy(
+        g_chime_sound_path, path,
+        sizeof(g_chime_sound_path));
+    preferences.putString("chime_path", g_chime_sound_path);
 }
 
 static void chime_volume_event(lv_event_t *event)
@@ -814,6 +819,9 @@ static void chime_volume_event(lv_event_t *event)
     }
     g_chime.volume = (uint8_t)selected;
     preferences.putUChar("chime_volume", g_chime.volume);
+    sound_selector_set_preview_volume(
+        &g_boot_options_ui.chime_sound_selector,
+        g_chime_volumes[g_chime.volume]);
 }
 
 static void chime_quiet_event(lv_event_t *event)
@@ -1143,8 +1151,6 @@ static void init_boot_options_ui(lv_obj_t *screen)
     static const char *night_screen_map[] = {"Dim only", "Screen off", ""};
     static const char *chime_mode_map[] = {
         "Off", "\n", "Hourly", "\n", "Quarter hour", ""};
-    static const char *chime_sound_map[] = {
-        "Quack", "\n", "Startup", "\n", "Floppy", ""};
     static const char *chime_volume_map[] = {
         "25%", "50%", "\n", "75%", "100%", ""};
     static const char *chime_quiet_map[] = {
@@ -1378,26 +1384,13 @@ static void init_boot_options_ui(lv_obj_t *screen)
 
     lv_obj_t *chime_sound_page =
         g_boot_options_ui.pages[BOOT_OPTIONS_CHIME_SOUND];
-    g_boot_options_ui.chime_sound_options =
-        lv_buttonmatrix_create(chime_sound_page);
-    lv_buttonmatrix_set_map(
-        g_boot_options_ui.chime_sound_options, chime_sound_map);
-    lv_buttonmatrix_set_button_ctrl_all(
-        g_boot_options_ui.chime_sound_options,
-        LV_BUTTONMATRIX_CTRL_CHECKABLE);
-    lv_buttonmatrix_set_button_ctrl_all(
-        g_boot_options_ui.chime_sound_options,
-        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
-    lv_buttonmatrix_set_one_checked(
-        g_boot_options_ui.chime_sound_options, true);
-    lv_obj_set_size(
-        g_boot_options_ui.chime_sound_options, 260, 124);
-    lv_obj_center(g_boot_options_ui.chime_sound_options);
-    style_boot_options_matrix(
-        g_boot_options_ui.chime_sound_options);
-    lv_obj_add_event_cb(
-        g_boot_options_ui.chime_sound_options,
-        chime_sound_event, LV_EVENT_VALUE_CHANGED, nullptr);
+    sound_selector_create(
+        &g_boot_options_ui.chime_sound_selector,
+        chime_sound_page,
+        g_chime_sound_path,
+        g_chime_volumes[g_chime.volume],
+        chime_sound_changed,
+        nullptr);
 
     lv_obj_t *chime_volume_page =
         g_boot_options_ui.pages[BOOT_OPTIONS_CHIME_VOLUME];
@@ -2533,10 +2526,17 @@ void setup()
     g_chime.quiet_end_hour =
         preferences.getUChar("quiet_end", 7);
     if (g_chime.sound >=
-        sizeof(g_chime_sound_paths) / sizeof(g_chime_sound_paths[0]))
+        sizeof(g_legacy_chime_sound_paths) /
+            sizeof(g_legacy_chime_sound_paths[0]))
     {
         g_chime.sound = 0;
     }
+    const String saved_chime_path = preferences.getString(
+        "chime_path",
+        g_legacy_chime_sound_paths[g_chime.sound]);
+    strlcpy(
+        g_chime_sound_path, saved_chime_path.c_str(),
+        sizeof(g_chime_sound_path));
     if (g_chime.volume >=
         sizeof(g_chime_volumes) / sizeof(g_chime_volumes[0]))
     {
@@ -2549,6 +2549,7 @@ void setup()
 
     heap_caps_malloc_extmem_enable(0);
     LittleFS.begin();
+    sound_selector_scan();
     my_lcd.init();
     touch_eeprom_begin();
     touch.begin();
@@ -2580,6 +2581,7 @@ void setup()
     }
 
     setup_codec();
+    sound_selector_set_preview_callback(start_mp3_playback);
     setup_lvgl_display();
     setup_lvgl_input();
     lvgl_fs_init_littlefs();
