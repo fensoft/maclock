@@ -1,4 +1,5 @@
 #include "timer_ui.h"
+#include "localization.h"
 
 #include <Arduino.h>
 #include <stdio.h>
@@ -19,6 +20,13 @@ struct TimerUi
     lv_obj_t *status;
     lv_obj_t *stop_button;
     lv_obj_t *finished_panel;
+    lv_obj_t *title;
+    lv_obj_t *start_label;
+    lv_obj_t *stop_label;
+    lv_obj_t *back_label;
+    lv_obj_t *finished_title;
+    lv_obj_t *dismiss_label;
+    lv_obj_t *finished_help;
 };
 
 static bool g_timer_active = false;
@@ -207,10 +215,10 @@ static void InitTimerPanel(lv_obj_t *screen)
     lv_obj_set_style_radius(g_timer_ui.panel, 0, 0);
     lv_obj_set_style_pad_all(g_timer_ui.panel, 8, 0);
 
-    lv_obj_t *title = lv_label_create(g_timer_ui.panel);
-    lv_label_set_text(title, "Timer");
-    lv_obj_set_style_text_font(title, &lv_font_chicago_8, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+    g_timer_ui.title = lv_label_create(g_timer_ui.panel);
+    lv_label_set_text(g_timer_ui.title, tr("Timer"));
+    lv_obj_set_style_text_font(g_timer_ui.title, &lv_font_chicago_8, 0);
+    lv_obj_align(g_timer_ui.title, LV_ALIGN_TOP_MID, 0, 0);
 
     g_timer_ui.countdown = lv_label_create(g_timer_ui.panel);
     lv_label_set_text(g_timer_ui.countdown, "25:00");
@@ -219,7 +227,7 @@ static void InitTimerPanel(lv_obj_t *screen)
     lv_obj_align(g_timer_ui.countdown, LV_ALIGN_TOP_MID, 0, 13);
 
     g_timer_ui.status = lv_label_create(g_timer_ui.panel);
-    lv_label_set_text(g_timer_ui.status, "Adjust duration");
+    lv_label_set_text(g_timer_ui.status, tr("Adjust duration"));
     lv_obj_set_style_text_font(
         g_timer_ui.status, &lv_font_chicago_8, 0);
     lv_obj_align(g_timer_ui.status, LV_ALIGN_TOP_MID, 0, 64);
@@ -240,17 +248,20 @@ static void InitTimerPanel(lv_obj_t *screen)
         nullptr);
 
     lv_obj_t *start =
-        CreateButton(g_timer_ui.panel, "Start", StartEvent);
+        CreateButton(g_timer_ui.panel, tr("Start"), StartEvent);
+    g_timer_ui.start_label = lv_obj_get_child(start, 0);
     lv_obj_set_size(start, 84, 40);
     lv_obj_align(start, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
     g_timer_ui.stop_button =
-        CreateButton(g_timer_ui.panel, "Stop", StopEvent);
+        CreateButton(g_timer_ui.panel, tr("Stop"), StopEvent);
+    g_timer_ui.stop_label = lv_obj_get_child(g_timer_ui.stop_button, 0);
     lv_obj_set_size(g_timer_ui.stop_button, 84, 40);
     lv_obj_align(g_timer_ui.stop_button, LV_ALIGN_BOTTOM_MID, 0, 0);
 
     lv_obj_t *back =
-        CreateButton(g_timer_ui.panel, "Back", BackEvent);
+        CreateButton(g_timer_ui.panel, tr("Back"), BackEvent);
+    g_timer_ui.back_label = lv_obj_get_child(back, 0);
     lv_obj_set_size(back, 84, 40);
     lv_obj_align(back, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
 
@@ -272,10 +283,10 @@ static void InitFinishedPanel(lv_obj_t *screen)
     lv_obj_set_style_radius(g_timer_ui.finished_panel, 0, 0);
     lv_obj_set_style_pad_all(g_timer_ui.finished_panel, 8, 0);
 
-    lv_obj_t *title = lv_label_create(g_timer_ui.finished_panel);
-    lv_label_set_text(title, "Timer Complete");
-    lv_obj_set_style_text_font(title, &lv_font_chicago_8, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+    g_timer_ui.finished_title = lv_label_create(g_timer_ui.finished_panel);
+    lv_label_set_text(g_timer_ui.finished_title, tr("Timer Complete"));
+    lv_obj_set_style_text_font(g_timer_ui.finished_title, &lv_font_chicago_8, 0);
+    lv_obj_align(g_timer_ui.finished_title, LV_ALIGN_TOP_MID, 0, 0);
 
     lv_obj_t *countdown = lv_label_create(g_timer_ui.finished_panel);
     lv_label_set_text(countdown, "00:00");
@@ -283,14 +294,17 @@ static void InitFinishedPanel(lv_obj_t *screen)
     lv_obj_align(countdown, LV_ALIGN_TOP_MID, 0, 25);
 
     lv_obj_t *dismiss =
-        CreateButton(g_timer_ui.finished_panel, "Dismiss", DismissEvent);
+        CreateButton(g_timer_ui.finished_panel, tr("Dismiss"), DismissEvent);
+    g_timer_ui.dismiss_label = lv_obj_get_child(dismiss, 0);
     lv_obj_set_size(dismiss, 260, 52);
     lv_obj_align(dismiss, LV_ALIGN_TOP_MID, 0, 91);
 
-    lv_obj_t *help = lv_label_create(g_timer_ui.finished_panel);
-    lv_label_set_text(help, "Press Clock or Alarm to dismiss");
-    lv_obj_set_style_text_font(help, &lv_font_chicago_8, 0);
-    lv_obj_align(help, LV_ALIGN_BOTTOM_MID, 0, 0);
+    g_timer_ui.finished_help = lv_label_create(g_timer_ui.finished_panel);
+    lv_label_set_text(
+        g_timer_ui.finished_help,
+        tr("Press Clock or Alarm to dismiss"));
+    lv_obj_set_style_text_font(g_timer_ui.finished_help, &lv_font_chicago_8, 0);
+    lv_obj_align(g_timer_ui.finished_help, LV_ALIGN_BOTTOM_MID, 0, 0);
 
     lv_obj_add_flag(g_timer_ui.finished_panel, LV_OBJ_FLAG_HIDDEN);
 }
@@ -375,7 +389,7 @@ void timer_ui_enter(uint32_t now_ms)
     if (timer_is_active())
     {
         SetCountdownSeconds(timer_remaining_seconds(now_ms));
-        lv_label_set_text(g_timer_ui.status, "Running in background");
+        lv_label_set_text(g_timer_ui.status, tr("Running in background"));
         lv_obj_clear_flag(
             g_timer_ui.stop_button, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(
@@ -385,7 +399,7 @@ void timer_ui_enter(uint32_t now_ms)
     {
         SetCountdownSeconds(
             (uint32_t)g_selected_minutes * 60U);
-        lv_label_set_text(g_timer_ui.status, "Adjust duration");
+        lv_label_set_text(g_timer_ui.status, tr("Adjust duration"));
         lv_obj_add_flag(
             g_timer_ui.stop_button, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(
@@ -417,4 +431,24 @@ void timer_ui_show_finished()
         lv_obj_clear_flag(
             g_timer_ui.finished_panel, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+void timer_ui_refresh_language()
+{
+    if (!g_timer_ui.panel)
+        return;
+    lv_label_set_text(g_timer_ui.title, tr("Timer"));
+    lv_label_set_text(g_timer_ui.start_label, tr("Start"));
+    lv_label_set_text(g_timer_ui.stop_label, tr("Stop"));
+    lv_label_set_text(g_timer_ui.back_label, tr("Back"));
+    lv_label_set_text(g_timer_ui.finished_title, tr("Timer Complete"));
+    lv_label_set_text(g_timer_ui.dismiss_label, tr("Dismiss"));
+    lv_label_set_text(
+        g_timer_ui.finished_help,
+        tr("Press Clock or Alarm to dismiss"));
+    lv_label_set_text(
+        g_timer_ui.status,
+        tr(timer_is_active()
+               ? "Running in background"
+               : "Adjust duration"));
 }

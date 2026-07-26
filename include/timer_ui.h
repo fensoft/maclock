@@ -19,3 +19,4 @@ void timer_ui_hide();
 void timer_ui_enter(uint32_t now_ms);
 void timer_ui_show(uint32_t now_ms);
 void timer_ui_show_finished();
+void timer_ui_refresh_language();

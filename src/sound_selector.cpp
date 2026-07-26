@@ -1,4 +1,6 @@
 #include "sound_selector.h"
+#include "localization.h"
+#include "selector_list_style.h"
 
 #include <Arduino.h>
 #include <LittleFS.h>
@@ -188,31 +190,6 @@ static void play_event(lv_event_t *event)
         kPreviewVolume);
 }
 
-static void style_list_item(lv_obj_t *item)
-{
-    const lv_style_selector_t checked =
-        (lv_style_selector_t)LV_STATE_CHECKED;
-    const lv_style_selector_t pressed =
-        (lv_style_selector_t)LV_STATE_PRESSED;
-
-    lv_obj_add_flag(item, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_set_width(item, lv_pct(100));
-    lv_obj_set_height(item, 38);
-    lv_obj_set_style_bg_color(item, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(item, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_color(item, lv_color_black(), 0);
-    lv_obj_set_style_text_font(item, &lv_font_chicago_8, 0);
-    lv_obj_set_style_border_color(item, lv_color_black(), 0);
-    lv_obj_set_style_border_width(item, 1, 0);
-    lv_obj_set_style_radius(item, 4, 0);
-    lv_obj_set_style_shadow_width(item, 0, 0);
-    lv_obj_set_style_outline_width(item, 0, 0);
-    lv_obj_set_style_bg_color(item, lv_color_black(), checked);
-    lv_obj_set_style_text_color(item, lv_color_white(), checked);
-    lv_obj_set_style_bg_color(item, lv_color_black(), pressed);
-    lv_obj_set_style_text_color(item, lv_color_white(), pressed);
-}
-
 static lv_obj_t *create_play_button(
     lv_obj_t *parent, SoundSelector *selector)
 {
@@ -233,12 +210,13 @@ static lv_obj_t *create_play_button(
         button, lv_color_white(), LV_STATE_PRESSED);
 
     lv_obj_t *label = lv_label_create(button);
-    lv_label_set_text(label, "Play");
+    lv_label_set_text(label, tr("Play"));
     lv_obj_set_style_text_font(label, &lv_font_chicago_8, 0);
     lv_obj_center(label);
 
     lv_obj_add_event_cb(
         button, play_event, LV_EVENT_CLICKED, selector);
+    selector->play_label = label;
     return button;
 }
 }
@@ -284,16 +262,7 @@ void sound_selector_create(
     selector->list = lv_list_create(parent);
     lv_obj_set_size(selector->list, 260, 78);
     lv_obj_align(selector->list, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(
-        selector->list, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(
-        selector->list, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(selector->list, 0, 0);
-    lv_obj_set_style_radius(selector->list, 0, 0);
-    lv_obj_set_style_pad_all(selector->list, 0, 0);
-    lv_obj_set_style_pad_row(selector->list, 4, 0);
-    lv_obj_set_scrollbar_mode(
-        selector->list, LV_SCROLLBAR_MODE_AUTO);
+    selector_list_style_container(selector->list);
 
     for (size_t i = 0; i < g_path_count; ++i)
     {
@@ -303,7 +272,7 @@ void sound_selector_create(
         lv_obj_t *item = lv_list_add_button(
             selector->list, nullptr, display_name);
         selector->items[i] = item;
-        style_list_item(item);
+        selector_list_style_item(item);
         lv_obj_set_user_data(item, (void *)(uintptr_t)i);
         lv_obj_add_event_cb(
             item, selection_event, LV_EVENT_CLICKED, selector);
@@ -312,7 +281,8 @@ void sound_selector_create(
     if (g_path_count == 0)
     {
         lv_obj_t *empty = lv_label_create(selector->list);
-        lv_label_set_text(empty, "No MP3 files in LittleFS");
+        selector->empty_label = empty;
+        lv_label_set_text(empty, tr("No MP3 files in LittleFS"));
         lv_obj_set_style_text_font(
             empty, &lv_font_chicago_8, 0);
         lv_obj_center(empty);
@@ -356,6 +326,20 @@ void sound_selector_set_preview_volume(
 {
     if (selector)
         selector->preview_volume = volume;
+}
+
+void sound_selector_refresh_language(SoundSelector *selector)
+{
+    if (!selector)
+        return;
+    if (selector->play_label)
+        lv_label_set_text(selector->play_label, tr("Play"));
+    if (selector->empty_label)
+    {
+        lv_label_set_text(
+            selector->empty_label,
+            tr("No MP3 files in LittleFS"));
+    }
 }
 
 const char *sound_selector_resolve_path(

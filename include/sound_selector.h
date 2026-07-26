@@ -17,6 +17,8 @@ struct SoundSelector
 {
     lv_obj_t *list;
     lv_obj_t *play_button;
+    lv_obj_t *play_label;
+    lv_obj_t *empty_label;
     lv_obj_t *items[SOUND_SELECTOR_MAX_FILES];
     size_t selected;
     uint8_t preview_volume;
@@ -42,6 +44,7 @@ const char *sound_selector_get_path(
     const SoundSelector *selector);
 void sound_selector_set_preview_volume(
     SoundSelector *selector, uint8_t volume);
+void sound_selector_refresh_language(SoundSelector *selector);
 
 const char *sound_selector_resolve_path(
     const char *path, const char *fallback_path);

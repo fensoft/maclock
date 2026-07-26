@@ -55,11 +55,11 @@ To open the boot-options screen:
 2. Turn Maclock off, hold **Clock**, turn Maclock on, and release the button
    when **Boot Options** appears.
 
-Boot Options uses ten pages with large controls. Its first page has
+Boot Options uses eleven pages with large controls. Its first page has
 rounded-square **Clock** and **Emulator** launch buttons. Every page has fixed
 **Previous**, **Exit**, and **Next** footer slots; the unavailable direction
 is left empty on the first or last page. The pages cover Start, Preferences,
-two Night pages, four Chime pages, Wi-Fi, and Tools:
+Language, two Night pages, four Chime pages, Wi-Fi, and Tools:
 
 - **Brightness / Latest** restores the last encoder brightness.
 - **Brightness / Lowest** starts at the lowest visible setting.
@@ -68,6 +68,8 @@ two Night pages, four Chime pages, Wi-Fi, and Tools:
 - **Emulator** launches Mini vMac immediately.
 - **Remember** saves the selected start mode as the next power-on default;
   **One time** starts it without changing the default.
+- **Language** switches the interface immediately between English, French,
+  Spanish, Deutsch, and Italian. The selection is saved persistently.
 - **Diagnostics** opens a live hardware test screen for both buttons, the
   floppy switch, encoder, touch sensor, charging input, known I²C devices, and
   RTC health.

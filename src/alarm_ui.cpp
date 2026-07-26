@@ -1,4 +1,5 @@
 #include "alarm_ui.h"
+#include "localization.h"
 #include "sound_selector.h"
 
 #include <stdio.h>
@@ -68,6 +69,9 @@ struct AlarmEditorUi
     lv_obj_t *exit_label;
     lv_obj_t *next;
     lv_obj_t *next_label;
+    lv_obj_t *home_alarm_label;
+    lv_obj_t *home_timer_label;
+    lv_obj_t *save_label;
 };
 
 struct AlarmRingingUi
@@ -76,6 +80,8 @@ struct AlarmRingingUi
     lv_obj_t *title;
     lv_obj_t *time;
     lv_obj_t *sound;
+    lv_obj_t *snooze_label;
+    lv_obj_t *dismiss_label;
 };
 
 static Preferences *g_preferences = nullptr;
@@ -93,22 +99,50 @@ static AlarmEditorPage g_editor_page = ALARM_PAGE_HOME;
 static AlarmEditorUi g_editor = {};
 static AlarmRingingUi g_ringing = {};
 
-static const char *g_slot_map[] = {"Alarm 1", "Alarm 2", "Alarm 3", ""};
-static const char *g_enabled_map[] = {"Disabled", "Enabled", ""};
-static const char *g_time_map[] = {
-    "Hour -", "Hour +", "Minute -", "Minute +", ""};
-static const char *g_days_map[] = {
-    "Mon", "Tue", "Wed", "Thu", "\n", "Fri", "Sat", "Sun", ""};
+static const char *g_slot_map[4] = {};
+static const char *g_enabled_map[3] = {};
+static const char *g_time_map[5] = {};
+static const char *g_days_map[9] = {};
 static const char *g_volume_map[] = {
     "25%", "50%", "\n", "75%", "100%", ""};
-static const char *g_page_names[ALARM_PAGE_COUNT] = {
-    "Alarm / Timer", "Alarm", "Time", "Days",
-    "Sound", "Volume", "Actions"};
+static const char *g_page_names[ALARM_PAGE_COUNT] = {};
 static const char *g_legacy_sound_paths[kLegacyAlarmSoundCount] = {
     "/quack.mp3",
     "/startup.mp3",
     "/floppy.mp3"};
 static const uint8_t g_volume_values[kAlarmVolumeCount] = {25, 50, 75, 100};
+
+static void UpdateLanguageMaps()
+{
+    g_slot_map[0] = tr("Alarm 1");
+    g_slot_map[1] = tr("Alarm 2");
+    g_slot_map[2] = tr("Alarm 3");
+    g_slot_map[3] = "";
+    g_enabled_map[0] = tr("Disabled");
+    g_enabled_map[1] = tr("Enabled");
+    g_enabled_map[2] = "";
+    g_time_map[0] = tr("Hour -");
+    g_time_map[1] = tr("Hour +");
+    g_time_map[2] = tr("Minute -");
+    g_time_map[3] = tr("Minute +");
+    g_time_map[4] = "";
+    g_days_map[0] = tr("Mon");
+    g_days_map[1] = tr("Tue");
+    g_days_map[2] = tr("Wed");
+    g_days_map[3] = tr("Thu");
+    g_days_map[4] = "\n";
+    g_days_map[5] = tr("Fri");
+    g_days_map[6] = tr("Sat");
+    g_days_map[7] = tr("Sun");
+    g_days_map[8] = "";
+    g_page_names[0] = tr("Alarm / Timer");
+    g_page_names[1] = tr("Alarm");
+    g_page_names[2] = tr("Time");
+    g_page_names[3] = tr("Days");
+    g_page_names[4] = tr("Sound");
+    g_page_names[5] = tr("Volume");
+    g_page_names[6] = tr("Actions");
+}
 
 static void SetAlarmDefaults()
 {
@@ -306,11 +340,13 @@ static void UpdateSummary()
 
     char text[160];
     snprintf(text, sizeof(text),
-             "Alarm %u: %02u:%02u  %s\nDays: %s\n%s at %u%%",
+             "%s %u: %02u:%02u  %s\n%s: %s\n%s  %u%%",
+             tr("Alarm"),
              (unsigned)g_selected_alarm + 1,
              (unsigned)alarm.hour,
              (unsigned)alarm.minute,
-             alarm.enabled ? "Enabled" : "Disabled",
+             alarm.enabled ? tr("Enabled") : tr("Disabled"),
+             tr("Days"),
              days,
              sound_selector_display_name(
                  g_edit_alarm_sound_paths[g_selected_alarm]),
@@ -506,8 +542,8 @@ static void SetEditorPage(AlarmEditorPage page)
     lv_obj_clear_flag(g_editor.pages[page], LV_OBJ_FLAG_HIDDEN);
 
     char title[40];
-    snprintf(title, sizeof(title), "Alarms - %s (%u/%u)",
-             g_page_names[page],
+    snprintf(title, sizeof(title), "%s - %s (%u/%u)",
+             tr("Alarms"), g_page_names[page],
              (unsigned)page + 1,
              (unsigned)ALARM_PAGE_COUNT);
     lv_label_set_text(g_editor.title, title);
@@ -570,6 +606,7 @@ static void SetClickOnRelease(lv_obj_t *matrix)
 
 static void InitEditorUi(lv_obj_t *screen)
 {
+    UpdateLanguageMaps();
     g_editor.panel = lv_obj_create(screen);
     lv_obj_set_size(g_editor.panel, 292, 208);
     lv_obj_center(g_editor.panel);
@@ -581,7 +618,7 @@ static void InitEditorUi(lv_obj_t *screen)
     lv_obj_set_style_pad_all(g_editor.panel, 6, 0);
 
     g_editor.title = lv_label_create(g_editor.panel);
-    lv_label_set_text(g_editor.title, "Alarms");
+    lv_label_set_text(g_editor.title, tr("Alarms"));
     lv_obj_set_style_text_font(g_editor.title, &lv_font_chicago_8, 0);
     lv_obj_align(g_editor.title, LV_ALIGN_TOP_MID, 0, 0);
 
@@ -590,14 +627,16 @@ static void InitEditorUi(lv_obj_t *screen)
 
     lv_obj_t *home_page = g_editor.pages[ALARM_PAGE_HOME];
     lv_obj_t *alarm_button =
-        CreateButton(home_page, "Alarm",
+        CreateButton(home_page, tr("Alarm"),
                      OpenAlarmSettingsEvent);
+    g_editor.home_alarm_label = lv_obj_get_child(alarm_button, 0);
     lv_obj_set_size(alarm_button, 124, 124);
     lv_obj_align(alarm_button, LV_ALIGN_LEFT_MID, 8, 0);
 
     lv_obj_t *timer_button =
-        CreateButton(home_page, "Timer",
+        CreateButton(home_page, tr("Timer"),
                      OpenTimerEvent);
+    g_editor.home_timer_label = lv_obj_get_child(timer_button, 0);
     lv_obj_set_size(timer_button, 124, 124);
     lv_obj_align(timer_button, LV_ALIGN_RIGHT_MID, -8, 0);
 
@@ -693,26 +732,27 @@ static void InitEditorUi(lv_obj_t *screen)
     lv_obj_align(g_editor.summary, LV_ALIGN_TOP_MID, 0, 4);
 
     lv_obj_t *save =
-        CreateButton(actions_page, "Save", SaveEvent);
+        CreateButton(actions_page, tr("Save"), SaveEvent);
+    g_editor.save_label = lv_obj_get_child(save, 0);
     lv_obj_set_size(save, 260, 58);
     lv_obj_align(save, LV_ALIGN_BOTTOM_MID, 0, 0);
 
     g_editor.previous =
-        CreateButton(g_editor.panel, "Previous", PreviousPageEvent);
+        CreateButton(g_editor.panel, tr("Previous"), PreviousPageEvent);
     lv_obj_set_size(g_editor.previous, 84, 40);
     lv_obj_align(g_editor.previous, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     g_editor.previous_label =
         lv_obj_get_child(g_editor.previous, 0);
 
     g_editor.exit =
-        CreateButton(g_editor.panel, "Exit", CancelEvent);
+        CreateButton(g_editor.panel, tr("Exit"), CancelEvent);
     lv_obj_set_size(g_editor.exit, 84, 40);
     lv_obj_align(g_editor.exit, LV_ALIGN_BOTTOM_MID, 0, 0);
     g_editor.exit_label =
         lv_obj_get_child(g_editor.exit, 0);
 
     g_editor.next =
-        CreateButton(g_editor.panel, "Next", NextPageEvent);
+        CreateButton(g_editor.panel, tr("Next"), NextPageEvent);
     lv_obj_set_size(g_editor.next, 84, 40);
     lv_obj_align(g_editor.next, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     g_editor.next_label = lv_obj_get_child(g_editor.next, 0);
@@ -734,7 +774,7 @@ static void InitRingingUi(lv_obj_t *screen)
     lv_obj_set_style_pad_all(g_ringing.panel, 8, 0);
 
     g_ringing.title = lv_label_create(g_ringing.panel);
-    lv_label_set_text(g_ringing.title, "Alarm");
+    lv_label_set_text(g_ringing.title, tr("Alarm"));
     lv_obj_set_style_text_font(g_ringing.title, &lv_font_chicago_8, 0);
     lv_obj_align(g_ringing.title, LV_ALIGN_TOP_MID, 0, 0);
 
@@ -749,12 +789,14 @@ static void InitRingingUi(lv_obj_t *screen)
     lv_obj_align(g_ringing.sound, LV_ALIGN_TOP_MID, 0, 73);
 
     lv_obj_t *snooze =
-        CreateButton(g_ringing.panel, "Snooze 9 min", SnoozeEvent);
+        CreateButton(g_ringing.panel, tr("Snooze 9 min"), SnoozeEvent);
+    g_ringing.snooze_label = lv_obj_get_child(snooze, 0);
     lv_obj_set_size(snooze, 260, 42);
     lv_obj_align(snooze, LV_ALIGN_TOP_MID, 0, 91);
 
     lv_obj_t *dismiss =
-        CreateButton(g_ringing.panel, "Dismiss", DismissEvent);
+        CreateButton(g_ringing.panel, tr("Dismiss"), DismissEvent);
+    g_ringing.dismiss_label = lv_obj_get_child(dismiss, 0);
     lv_obj_set_size(dismiss, 260, 42);
     lv_obj_align(dismiss, LV_ALIGN_BOTTOM_MID, 0, 0);
 
@@ -905,7 +947,8 @@ void alarm_ui_show_ringing(size_t alarm_index)
     const AlarmConfig &alarm = g_alarms[alarm_index];
     char title[24];
     char time[8];
-    snprintf(title, sizeof(title), "Alarm %u", (unsigned)alarm_index + 1);
+    snprintf(title, sizeof(title), "%s %u", tr("Alarm"),
+             (unsigned)alarm_index + 1);
     snprintf(time, sizeof(time), "%02u:%02u",
              (unsigned)alarm.hour, (unsigned)alarm.minute);
     lv_label_set_text(g_ringing.title, title);
@@ -915,4 +958,27 @@ void alarm_ui_show_ringing(size_t alarm_index)
         sound_selector_display_name(
             g_alarm_sound_paths[alarm_index]));
     lv_obj_clear_flag(g_ringing.panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+void alarm_ui_refresh_language()
+{
+    UpdateLanguageMaps();
+    if (!g_editor.panel)
+        return;
+
+    lv_buttonmatrix_set_map(g_editor.slot_matrix, g_slot_map);
+    lv_buttonmatrix_set_map(g_editor.enabled_matrix, g_enabled_map);
+    lv_buttonmatrix_set_map(g_editor.time_matrix, g_time_map);
+    lv_buttonmatrix_set_map(g_editor.days_matrix, g_days_map);
+    lv_label_set_text(g_editor.home_alarm_label, tr("Alarm"));
+    lv_label_set_text(g_editor.home_timer_label, tr("Timer"));
+    lv_label_set_text(g_editor.save_label, tr("Save"));
+    lv_label_set_text(g_editor.previous_label, tr("Previous"));
+    lv_label_set_text(g_editor.exit_label, tr("Exit"));
+    lv_label_set_text(g_editor.next_label, tr("Next"));
+    lv_label_set_text(g_ringing.snooze_label, tr("Snooze 9 min"));
+    lv_label_set_text(g_ringing.dismiss_label, tr("Dismiss"));
+    sound_selector_refresh_language(&g_editor.sound_selector);
+    SetEditorPage(g_editor_page);
+    UpdateSummary();
 }

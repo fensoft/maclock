@@ -25,6 +25,8 @@
 #include "Adafruit_HTU21DF.h"
 #include <Preferences.h>
 #include "brightness.h"
+#include "localization.h"
+#include "selector_list_style.h"
 #include "sound_selector.h"
 #include "wifi_mode.h"
 
@@ -122,6 +124,7 @@ enum BootOptionsPage
 {
     BOOT_OPTIONS_START,
     BOOT_OPTIONS_PREFERENCES,
+    BOOT_OPTIONS_LANGUAGE,
     BOOT_OPTIONS_NIGHT_SCHEDULE,
     BOOT_OPTIONS_NIGHT_SCREEN,
     BOOT_OPTIONS_CHIME,
@@ -140,6 +143,8 @@ struct BootOptionsUi
     lv_obj_t *pages[BOOT_OPTIONS_PAGE_COUNT];
     lv_obj_t *brightness_options;
     lv_obj_t *remember_selection;
+    lv_obj_t *language_options;
+    lv_obj_t *language_items[UI_LANGUAGE_COUNT];
     lv_obj_t *night_enabled_options;
     lv_obj_t *night_start_options;
     lv_obj_t *night_end_options;
@@ -160,18 +165,34 @@ struct BootOptionsUi
     lv_obj_t *exit_label;
     lv_obj_t *next;
     lv_obj_t *next_label;
+    lv_obj_t *brightness_label;
+    lv_obj_t *remember_label;
+    lv_obj_t *dim_from_label;
+    lv_obj_t *normal_at_label;
+    lv_obj_t *screen_off_label;
+    lv_obj_t *quiet_from_label;
+    lv_obj_t *quiet_end_label;
+    lv_obj_t *wifi_setup_label;
+    lv_obj_t *clock_button_label;
+    lv_obj_t *emulator_button_label;
+    lv_obj_t *diagnostics_button_label;
+    lv_obj_t *calibration_label;
 };
 
 struct DiagnosticsUi
 {
     lv_obj_t *panel;
+    lv_obj_t *title;
     lv_obj_t *status;
+    lv_obj_t *back_label;
 };
 
 struct WifiSetupUi
 {
     lv_obj_t *panel;
+    lv_obj_t *title;
     lv_obj_t *status;
+    lv_obj_t *back_label;
 };
 
 enum BootBrightness
@@ -280,6 +301,15 @@ static const char *g_legacy_chime_sound_paths[] = {
 static char g_chime_sound_path[SOUND_SELECTOR_PATH_MAX] =
     "/quack.mp3";
 static const uint8_t g_chime_volumes[] = {25, 50, 75, 100};
+static const char *g_brightness_map[4] = {};
+static const char *g_remember_map[3] = {};
+static const char *g_night_enabled_map[3] = {};
+static const char *g_night_screen_map[3] = {};
+static const char *g_chime_mode_map[6] = {};
+static const char *g_chime_volume_map[] = {
+    "25%", "50%", "\n", "75%", "100%", ""};
+static const char *g_chime_quiet_map[3] = {};
+static const char *g_wifi_enabled_map[3] = {};
 
 void setup_codec();
 void setup_lvgl_display();
@@ -289,6 +319,7 @@ void minivmac();
 static void run_emulator();
 static void update_diagnostics_ui();
 static void update_wifi_options_ui();
+static void refresh_language_ui();
 
 void request_state(int state)
 {
@@ -439,34 +470,37 @@ static bool format_rtc_health(char *text, size_t text_size)
 {
     if (g_rtc_type == RTC_TYPE_NONE)
     {
-        snprintf(text, text_size, "RTC: not detected");
+        snprintf(text, text_size, "%s", tr("RTC: not detected"));
         return false;
     }
 
     if (g_rtc_type == RTC_TYPE_DS1307 && !rtc_ds1307.isrunning())
     {
-        snprintf(text, text_size, "RTC: DS1307 stopped - check battery");
+        snprintf(text, text_size, "%s",
+                 tr("RTC: DS1307 stopped - check battery"));
         return false;
     }
     if (g_rtc_type == RTC_TYPE_DS3231 && rtc_ds3231.lostPower())
     {
-        snprintf(text, text_size, "RTC: DS3231 lost power - check battery");
+        snprintf(text, text_size, "%s",
+                 tr("RTC: DS3231 lost power - check battery"));
         return false;
     }
 
     const DateTime current = rtc_now();
     if (!current.isValid())
     {
-        snprintf(text, text_size, "RTC: invalid date");
+        snprintf(text, text_size, "%s", tr("RTC: invalid date"));
         return false;
     }
     if (current.year() < 2024)
     {
-        snprintf(text, text_size, "RTC: date not set (%04d)", current.year());
+        snprintf(text, text_size, tr("RTC: date not set (%04d)"),
+                 current.year());
         return false;
     }
 
-    snprintf(text, text_size, "RTC: %s OK",
+    snprintf(text, text_size, tr("RTC: %s OK"),
              g_rtc_type == RTC_TYPE_DS1307 ? "DS1307" : "DS3231");
     return true;
 }
@@ -689,6 +723,60 @@ static void set_checked_button(lv_obj_t *matrix, uint32_t selected)
     lv_buttonmatrix_set_selected_button(matrix, selected);
 }
 
+static void update_language_selection(bool scroll_to_selected)
+{
+    const uint32_t selected =
+        (uint32_t)localization_get_language();
+    for (uint32_t i = 0; i < UI_LANGUAGE_COUNT; ++i)
+    {
+        lv_obj_t *item = g_boot_options_ui.language_items[i];
+        if (!item)
+            continue;
+        if (i == selected)
+            lv_obj_add_state(item, LV_STATE_CHECKED);
+        else
+            lv_obj_remove_state(item, LV_STATE_CHECKED);
+    }
+
+    if (scroll_to_selected &&
+        selected < UI_LANGUAGE_COUNT &&
+        g_boot_options_ui.language_items[selected])
+    {
+        lv_obj_scroll_to_view(
+            g_boot_options_ui.language_items[selected],
+            LV_ANIM_OFF);
+    }
+}
+
+static void update_boot_translation_maps()
+{
+    g_brightness_map[0] = tr("Latest");
+    g_brightness_map[1] = tr("Lowest");
+    g_brightness_map[2] = tr("Highest");
+    g_brightness_map[3] = "";
+    g_remember_map[0] = tr("One time");
+    g_remember_map[1] = tr("Remember");
+    g_remember_map[2] = "";
+    g_night_enabled_map[0] = tr("Disabled");
+    g_night_enabled_map[1] = tr("Enabled");
+    g_night_enabled_map[2] = "";
+    g_night_screen_map[0] = tr("Dim only");
+    g_night_screen_map[1] = tr("Screen off");
+    g_night_screen_map[2] = "";
+    g_chime_mode_map[0] = tr("Off");
+    g_chime_mode_map[1] = "\n";
+    g_chime_mode_map[2] = tr("Hourly");
+    g_chime_mode_map[3] = "\n";
+    g_chime_mode_map[4] = tr("Quarter hour");
+    g_chime_mode_map[5] = "";
+    g_chime_quiet_map[0] = tr("Disabled");
+    g_chime_quiet_map[1] = tr("Enabled");
+    g_chime_quiet_map[2] = "";
+    g_wifi_enabled_map[0] = tr("Off");
+    g_wifi_enabled_map[1] = tr("On");
+    g_wifi_enabled_map[2] = "";
+}
+
 static void update_night_options_ui()
 {
     snprintf(g_night_start_text, sizeof(g_night_start_text),
@@ -762,17 +850,17 @@ static void update_wifi_options_ui()
     char status[144];
     if (!wifi.enabled)
     {
-        snprintf(status, sizeof(status),
-                 "Wi-Fi disabled\nClock remains fully offline");
+        snprintf(status, sizeof(status), "%s",
+                 tr("Wi-Fi disabled\nClock remains fully offline"));
     }
     else if (!wifi.configured)
     {
-        snprintf(status, sizeof(status),
-                 "Setup required\nChoose Setup Wi-Fi below");
+        snprintf(status, sizeof(status), "%s",
+                 tr("Setup required\nChoose Setup Wi-Fi below"));
     }
     else if (wifi.connected)
     {
-        snprintf(status, sizeof(status), "Online: %s\n%s",
+        snprintf(status, sizeof(status), tr("Online: %s\n%s"),
                  wifi.location[0] ? wifi.location : wifi.city,
                  wifi.timezone[0] ? wifi.timezone : wifi.status);
     }
@@ -782,6 +870,18 @@ static void update_wifi_options_ui()
                  wifi.ssid, wifi.status);
     }
     lv_label_set_text(g_boot_options_ui.wifi_status, status);
+}
+
+static void language_event(lv_event_t *event)
+{
+    lv_obj_t *item = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        (uint32_t)(uintptr_t)lv_obj_get_user_data(item);
+    if (selected >= UI_LANGUAGE_COUNT)
+        return;
+    localization_set_language((UiLanguage)selected);
+    preferences.putUChar("language", (uint8_t)selected);
+    refresh_language_ui();
 }
 
 static void chime_mode_event(lv_event_t *event)
@@ -1010,10 +1110,11 @@ static void set_boot_options_page(BootOptionsPage page)
     if (page >= BOOT_OPTIONS_PAGE_COUNT)
         return;
 
-    static const char *page_names[BOOT_OPTIONS_PAGE_COUNT] = {
-        "Start", "Preferences", "Night Schedule",
-        "Night Screen", "Chime", "Chime Sound",
-        "Chime Volume", "Quiet Hours", "Wi-Fi", "Tools"};
+    const char *page_names[BOOT_OPTIONS_PAGE_COUNT] = {
+        tr("Start"), tr("Preferences"), tr("Language"),
+        tr("Night Schedule"), tr("Night Screen"), tr("Chime"),
+        tr("Chime Sound"), tr("Chime Volume"), tr("Quiet Hours"),
+        "Wi-Fi", tr("Tools")};
     g_boot_options_page = page;
     for (size_t i = 0; i < BOOT_OPTIONS_PAGE_COUNT; ++i)
         lv_obj_add_flag(
@@ -1021,9 +1122,9 @@ static void set_boot_options_page(BootOptionsPage page)
     lv_obj_clear_flag(
         g_boot_options_ui.pages[page], LV_OBJ_FLAG_HIDDEN);
 
-    char title[40];
-    snprintf(title, sizeof(title), "Boot Options - %s (%u/%u)",
-             page_names[page],
+    char title[72];
+    snprintf(title, sizeof(title), "%s - %s (%u/%u)",
+             tr("Boot Options"), page_names[page],
              (unsigned)page + 1,
              (unsigned)BOOT_OPTIONS_PAGE_COUNT);
     lv_label_set_text(g_boot_options_ui.title, title);
@@ -1145,18 +1246,7 @@ static lv_obj_t *create_boot_options_page(lv_obj_t *parent)
 
 static void init_boot_options_ui(lv_obj_t *screen)
 {
-    static const char *brightness_map[] = {"Latest", "Lowest", "Highest", ""};
-    static const char *remember_map[] = {"One time", "Remember", ""};
-    static const char *night_enabled_map[] = {"Disabled", "Enabled", ""};
-    static const char *night_screen_map[] = {"Dim only", "Screen off", ""};
-    static const char *chime_mode_map[] = {
-        "Off", "\n", "Hourly", "\n", "Quarter hour", ""};
-    static const char *chime_volume_map[] = {
-        "25%", "50%", "\n", "75%", "100%", ""};
-    static const char *chime_quiet_map[] = {
-        "Disabled", "Enabled", ""};
-    static const char *wifi_enabled_map[] = {
-        "Off", "On", ""};
+    update_boot_translation_maps();
 
     g_boot_options_ui.panel = lv_obj_create(screen);
     lv_obj_set_size(g_boot_options_ui.panel, 292, 208);
@@ -1170,7 +1260,7 @@ static void init_boot_options_ui(lv_obj_t *screen)
 
     g_boot_options_ui.title =
         lv_label_create(g_boot_options_ui.panel);
-    lv_label_set_text(g_boot_options_ui.title, "Boot Options");
+    lv_label_set_text(g_boot_options_ui.title, tr("Boot Options"));
     lv_obj_set_style_text_font(
         g_boot_options_ui.title, &lv_font_chicago_8, 0);
     lv_obj_align(
@@ -1184,15 +1274,15 @@ static void init_boot_options_ui(lv_obj_t *screen)
 
     lv_obj_t *preferences_page =
         g_boot_options_ui.pages[BOOT_OPTIONS_PREFERENCES];
-    lv_obj_t *brightness_label = lv_label_create(preferences_page);
-    lv_label_set_text(brightness_label, "Brightness");
-    lv_obj_set_style_text_font(brightness_label, &lv_font_chicago_8, 0);
-    lv_obj_align(brightness_label, LV_ALIGN_TOP_MID, 0, 0);
+    g_boot_options_ui.brightness_label = lv_label_create(preferences_page);
+    lv_label_set_text(g_boot_options_ui.brightness_label, tr("Brightness"));
+    lv_obj_set_style_text_font(g_boot_options_ui.brightness_label, &lv_font_chicago_8, 0);
+    lv_obj_align(g_boot_options_ui.brightness_label, LV_ALIGN_TOP_MID, 0, 0);
 
     g_boot_options_ui.brightness_options =
         lv_buttonmatrix_create(preferences_page);
     lv_buttonmatrix_set_map(
-        g_boot_options_ui.brightness_options, brightness_map);
+        g_boot_options_ui.brightness_options, g_brightness_map);
     lv_buttonmatrix_set_button_ctrl_all(
         g_boot_options_ui.brightness_options,
         LV_BUTTONMATRIX_CTRL_CHECKABLE);
@@ -1211,15 +1301,15 @@ static void init_boot_options_ui(lv_obj_t *screen)
         g_boot_options_ui.brightness_options, boot_brightness_event,
                         LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *remember_label = lv_label_create(preferences_page);
-    lv_label_set_text(remember_label, "Default boot mode");
-    lv_obj_set_style_text_font(remember_label, &lv_font_chicago_8, 0);
-    lv_obj_align(remember_label, LV_ALIGN_TOP_MID, 0, 67);
+    g_boot_options_ui.remember_label = lv_label_create(preferences_page);
+    lv_label_set_text(g_boot_options_ui.remember_label, tr("Default boot mode"));
+    lv_obj_set_style_text_font(g_boot_options_ui.remember_label, &lv_font_chicago_8, 0);
+    lv_obj_align(g_boot_options_ui.remember_label, LV_ALIGN_TOP_MID, 0, 67);
 
     g_boot_options_ui.remember_selection =
         lv_buttonmatrix_create(preferences_page);
     lv_buttonmatrix_set_map(
-        g_boot_options_ui.remember_selection, remember_map);
+        g_boot_options_ui.remember_selection, g_remember_map);
     lv_buttonmatrix_set_button_ctrl_all(
         g_boot_options_ui.remember_selection,
         LV_BUTTONMATRIX_CTRL_CHECKABLE);
@@ -1236,12 +1326,33 @@ static void init_boot_options_ui(lv_obj_t *screen)
     style_boot_options_matrix(
         g_boot_options_ui.remember_selection);
 
+    lv_obj_t *language_page =
+        g_boot_options_ui.pages[BOOT_OPTIONS_LANGUAGE];
+    g_boot_options_ui.language_options =
+        lv_list_create(language_page);
+    lv_obj_set_size(
+        g_boot_options_ui.language_options, 260, 124);
+    lv_obj_center(g_boot_options_ui.language_options);
+    selector_list_style_container(
+        g_boot_options_ui.language_options);
+    for (uint32_t i = 0; i < UI_LANGUAGE_COUNT; ++i)
+    {
+        lv_obj_t *item = lv_list_add_button(
+            g_boot_options_ui.language_options, nullptr,
+            localization_language_name((UiLanguage)i));
+        g_boot_options_ui.language_items[i] = item;
+        selector_list_style_item(item);
+        lv_obj_set_user_data(item, (void *)(uintptr_t)i);
+        lv_obj_add_event_cb(
+            item, language_event, LV_EVENT_CLICKED, nullptr);
+    }
+
     lv_obj_t *night_schedule_page =
         g_boot_options_ui.pages[BOOT_OPTIONS_NIGHT_SCHEDULE];
     g_boot_options_ui.night_enabled_options =
         lv_buttonmatrix_create(night_schedule_page);
     lv_buttonmatrix_set_map(
-        g_boot_options_ui.night_enabled_options, night_enabled_map);
+        g_boot_options_ui.night_enabled_options, g_night_enabled_map);
     lv_buttonmatrix_set_button_ctrl_all(
         g_boot_options_ui.night_enabled_options,
         LV_BUTTONMATRIX_CTRL_CHECKABLE);
@@ -1261,10 +1372,10 @@ static void init_boot_options_ui(lv_obj_t *screen)
         g_boot_options_ui.night_enabled_options,
         night_enabled_event, LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *dim_from_label = lv_label_create(night_schedule_page);
-    lv_label_set_text(dim_from_label, "Dim from");
-    lv_obj_set_style_text_font(dim_from_label, &lv_font_chicago_8, 0);
-    lv_obj_align(dim_from_label, LV_ALIGN_TOP_MID, 0, 34);
+    g_boot_options_ui.dim_from_label = lv_label_create(night_schedule_page);
+    lv_label_set_text(g_boot_options_ui.dim_from_label, tr("Dim from"));
+    lv_obj_set_style_text_font(g_boot_options_ui.dim_from_label, &lv_font_chicago_8, 0);
+    lv_obj_align(g_boot_options_ui.dim_from_label, LV_ALIGN_TOP_MID, 0, 34);
 
     g_boot_options_ui.night_start_options =
         lv_buttonmatrix_create(night_schedule_page);
@@ -1286,10 +1397,10 @@ static void init_boot_options_ui(lv_obj_t *screen)
         g_boot_options_ui.night_start_options,
         night_start_event, LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *normal_at_label = lv_label_create(night_schedule_page);
-    lv_label_set_text(normal_at_label, "Normal at");
-    lv_obj_set_style_text_font(normal_at_label, &lv_font_chicago_8, 0);
-    lv_obj_align(normal_at_label, LV_ALIGN_TOP_MID, 0, 84);
+    g_boot_options_ui.normal_at_label = lv_label_create(night_schedule_page);
+    lv_label_set_text(g_boot_options_ui.normal_at_label, tr("Normal at"));
+    lv_obj_set_style_text_font(g_boot_options_ui.normal_at_label, &lv_font_chicago_8, 0);
+    lv_obj_align(g_boot_options_ui.normal_at_label, LV_ALIGN_TOP_MID, 0, 84);
 
     g_boot_options_ui.night_end_options =
         lv_buttonmatrix_create(night_schedule_page);
@@ -1316,7 +1427,7 @@ static void init_boot_options_ui(lv_obj_t *screen)
     g_boot_options_ui.night_screen_options =
         lv_buttonmatrix_create(night_screen_page);
     lv_buttonmatrix_set_map(
-        g_boot_options_ui.night_screen_options, night_screen_map);
+        g_boot_options_ui.night_screen_options, g_night_screen_map);
     lv_buttonmatrix_set_button_ctrl_all(
         g_boot_options_ui.night_screen_options,
         LV_BUTTONMATRIX_CTRL_CHECKABLE);
@@ -1336,10 +1447,10 @@ static void init_boot_options_ui(lv_obj_t *screen)
         g_boot_options_ui.night_screen_options,
         night_screen_event, LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *screen_off_label = lv_label_create(night_screen_page);
-    lv_label_set_text(screen_off_label, "Screen off at");
-    lv_obj_set_style_text_font(screen_off_label, &lv_font_chicago_8, 0);
-    lv_obj_align(screen_off_label, LV_ALIGN_TOP_MID, 0, 59);
+    g_boot_options_ui.screen_off_label = lv_label_create(night_screen_page);
+    lv_label_set_text(g_boot_options_ui.screen_off_label, tr("Screen off at"));
+    lv_obj_set_style_text_font(g_boot_options_ui.screen_off_label, &lv_font_chicago_8, 0);
+    lv_obj_align(g_boot_options_ui.screen_off_label, LV_ALIGN_TOP_MID, 0, 59);
 
     g_boot_options_ui.night_off_options =
         lv_buttonmatrix_create(night_screen_page);
@@ -1364,7 +1475,7 @@ static void init_boot_options_ui(lv_obj_t *screen)
     g_boot_options_ui.chime_mode_options =
         lv_buttonmatrix_create(chime_page);
     lv_buttonmatrix_set_map(
-        g_boot_options_ui.chime_mode_options, chime_mode_map);
+        g_boot_options_ui.chime_mode_options, g_chime_mode_map);
     lv_buttonmatrix_set_button_ctrl_all(
         g_boot_options_ui.chime_mode_options,
         LV_BUTTONMATRIX_CTRL_CHECKABLE);
@@ -1397,7 +1508,7 @@ static void init_boot_options_ui(lv_obj_t *screen)
     g_boot_options_ui.chime_volume_options =
         lv_buttonmatrix_create(chime_volume_page);
     lv_buttonmatrix_set_map(
-        g_boot_options_ui.chime_volume_options, chime_volume_map);
+        g_boot_options_ui.chime_volume_options, g_chime_volume_map);
     lv_buttonmatrix_set_button_ctrl_all(
         g_boot_options_ui.chime_volume_options,
         LV_BUTTONMATRIX_CTRL_CHECKABLE);
@@ -1420,7 +1531,7 @@ static void init_boot_options_ui(lv_obj_t *screen)
     g_boot_options_ui.chime_quiet_options =
         lv_buttonmatrix_create(chime_quiet_page);
     lv_buttonmatrix_set_map(
-        g_boot_options_ui.chime_quiet_options, chime_quiet_map);
+        g_boot_options_ui.chime_quiet_options, g_chime_quiet_map);
     lv_buttonmatrix_set_button_ctrl_all(
         g_boot_options_ui.chime_quiet_options,
         LV_BUTTONMATRIX_CTRL_CHECKABLE);
@@ -1440,10 +1551,10 @@ static void init_boot_options_ui(lv_obj_t *screen)
         g_boot_options_ui.chime_quiet_options,
         chime_quiet_event, LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *quiet_from_label = lv_label_create(chime_quiet_page);
-    lv_label_set_text(quiet_from_label, "Quiet from");
-    lv_obj_set_style_text_font(quiet_from_label, &lv_font_chicago_8, 0);
-    lv_obj_align(quiet_from_label, LV_ALIGN_TOP_MID, 0, 34);
+    g_boot_options_ui.quiet_from_label = lv_label_create(chime_quiet_page);
+    lv_label_set_text(g_boot_options_ui.quiet_from_label, tr("Quiet from"));
+    lv_obj_set_style_text_font(g_boot_options_ui.quiet_from_label, &lv_font_chicago_8, 0);
+    lv_obj_align(g_boot_options_ui.quiet_from_label, LV_ALIGN_TOP_MID, 0, 34);
 
     g_boot_options_ui.chime_quiet_start_options =
         lv_buttonmatrix_create(chime_quiet_page);
@@ -1466,10 +1577,10 @@ static void init_boot_options_ui(lv_obj_t *screen)
         g_boot_options_ui.chime_quiet_start_options,
         chime_quiet_start_event, LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *quiet_end_label = lv_label_create(chime_quiet_page);
-    lv_label_set_text(quiet_end_label, "Quiet ends");
-    lv_obj_set_style_text_font(quiet_end_label, &lv_font_chicago_8, 0);
-    lv_obj_align(quiet_end_label, LV_ALIGN_TOP_MID, 0, 84);
+    g_boot_options_ui.quiet_end_label = lv_label_create(chime_quiet_page);
+    lv_label_set_text(g_boot_options_ui.quiet_end_label, tr("Quiet ends"));
+    lv_obj_set_style_text_font(g_boot_options_ui.quiet_end_label, &lv_font_chicago_8, 0);
+    lv_obj_align(g_boot_options_ui.quiet_end_label, LV_ALIGN_TOP_MID, 0, 84);
 
     g_boot_options_ui.chime_quiet_end_options =
         lv_buttonmatrix_create(chime_quiet_page);
@@ -1497,7 +1608,7 @@ static void init_boot_options_ui(lv_obj_t *screen)
     g_boot_options_ui.wifi_enabled_options =
         lv_buttonmatrix_create(wifi_page);
     lv_buttonmatrix_set_map(
-        g_boot_options_ui.wifi_enabled_options, wifi_enabled_map);
+        g_boot_options_ui.wifi_enabled_options, g_wifi_enabled_map);
     lv_buttonmatrix_set_button_ctrl_all(
         g_boot_options_ui.wifi_enabled_options,
         LV_BUTTONMATRIX_CTRL_CHECKABLE);
@@ -1519,7 +1630,8 @@ static void init_boot_options_ui(lv_obj_t *screen)
 
     g_boot_options_ui.wifi_status = lv_label_create(wifi_page);
     lv_label_set_text(
-        g_boot_options_ui.wifi_status, "Wi-Fi disabled");
+        g_boot_options_ui.wifi_status,
+        tr("Wi-Fi disabled\nClock remains fully offline"));
     lv_obj_set_width(g_boot_options_ui.wifi_status, 260);
     lv_obj_set_style_text_font(
         g_boot_options_ui.wifi_status, &lv_font_chicago_8, 0);
@@ -1531,7 +1643,9 @@ static void init_boot_options_ui(lv_obj_t *screen)
 
     lv_obj_t *wifi_setup_button =
         create_action_button(
-            wifi_page, "Setup Wi-Fi", boot_wifi_setup_event);
+            wifi_page, tr("Setup Wi-Fi"), boot_wifi_setup_event);
+    g_boot_options_ui.wifi_setup_label =
+        lv_obj_get_child(wifi_setup_button, 0);
     lv_obj_set_size(wifi_setup_button, 260, 46);
     lv_obj_align(
         wifi_setup_button, LV_ALIGN_BOTTOM_MID, 0, 0);
@@ -1541,25 +1655,33 @@ static void init_boot_options_ui(lv_obj_t *screen)
     lv_obj_t *clock_button =
         create_action_button(start_page, "Clock",
                              boot_start_clock_event);
+    g_boot_options_ui.clock_button_label =
+        lv_obj_get_child(clock_button, 0);
+    lv_label_set_text(
+        g_boot_options_ui.clock_button_label, tr("Clock"));
     lv_obj_set_size(clock_button, 122, 124);
     lv_obj_align(clock_button, LV_ALIGN_LEFT_MID, 8, 0);
 
     lv_obj_t *emulator_button =
-        create_action_button(start_page, "Emulator",
+        create_action_button(start_page, tr("Emulator"),
                              boot_start_emulator_event);
+    g_boot_options_ui.emulator_button_label =
+        lv_obj_get_child(emulator_button, 0);
     lv_obj_set_size(emulator_button, 122, 124);
     lv_obj_align(emulator_button, LV_ALIGN_RIGHT_MID, -8, 0);
 
     lv_obj_t *tools_page =
         g_boot_options_ui.pages[BOOT_OPTIONS_TOOLS];
     lv_obj_t *diagnostics_button =
-        create_action_button(tools_page, "Diagnostics",
+        create_action_button(tools_page, tr("Diagnostics"),
                              boot_diagnostics_event);
+    g_boot_options_ui.diagnostics_button_label =
+        lv_obj_get_child(diagnostics_button, 0);
     lv_obj_set_size(diagnostics_button, 260, 58);
     lv_obj_align(diagnostics_button, LV_ALIGN_TOP_MID, 0, 0);
 
     g_boot_options_ui.rtc_status = lv_label_create(tools_page);
-    lv_label_set_text(g_boot_options_ui.rtc_status, "RTC: checking...");
+    lv_label_set_text(g_boot_options_ui.rtc_status, tr("RTC: checking..."));
     lv_obj_set_width(g_boot_options_ui.rtc_status, 260);
     lv_obj_set_style_text_font(g_boot_options_ui.rtc_status,
                                &lv_font_chicago_8, 0);
@@ -1569,14 +1691,15 @@ static void init_boot_options_ui(lv_obj_t *screen)
         g_boot_options_ui.rtc_status, LV_ALIGN_TOP_MID, 0, 72);
 
     lv_obj_t *calibration_label = lv_label_create(tools_page);
+    g_boot_options_ui.calibration_label = calibration_label;
     lv_label_set_text(
-        calibration_label, "Press Clock for screen calibration");
+        calibration_label, tr("Press Clock for screen calibration"));
     lv_obj_set_style_text_font(calibration_label, &lv_font_chicago_8, 0);
     lv_obj_align(calibration_label, LV_ALIGN_BOTTOM_MID, 0, 0);
 
     g_boot_options_ui.previous =
         create_action_button(
-            g_boot_options_ui.panel, "Previous",
+            g_boot_options_ui.panel, tr("Previous"),
             boot_options_previous_event);
     lv_obj_set_size(g_boot_options_ui.previous, 84, 40);
     lv_obj_align(
@@ -1587,7 +1710,7 @@ static void init_boot_options_ui(lv_obj_t *screen)
 
     g_boot_options_ui.exit =
         create_action_button(
-            g_boot_options_ui.panel, "Exit",
+            g_boot_options_ui.panel, tr("Exit"),
             boot_exit_event);
     lv_obj_set_size(g_boot_options_ui.exit, 84, 40);
     lv_obj_align(
@@ -1598,7 +1721,7 @@ static void init_boot_options_ui(lv_obj_t *screen)
 
     g_boot_options_ui.next =
         create_action_button(
-            g_boot_options_ui.panel, "Next",
+            g_boot_options_ui.panel, tr("Next"),
             boot_options_next_event);
     lv_obj_set_size(g_boot_options_ui.next, 84, 40);
     lv_obj_align(
@@ -1630,6 +1753,7 @@ static void show_boot_options_ui()
         1, LV_BUTTONMATRIX_CTRL_CHECKED);
     lv_buttonmatrix_set_selected_button(
         g_boot_options_ui.remember_selection, 1);
+    update_language_selection(true);
     update_night_options_ui();
     update_chime_options_ui();
     update_wifi_options_ui();
@@ -1660,13 +1784,13 @@ static void init_diagnostics_ui(lv_obj_t *screen)
     lv_obj_set_style_radius(g_diagnostics_ui.panel, 0, 0);
     lv_obj_set_style_pad_all(g_diagnostics_ui.panel, 6, 0);
 
-    lv_obj_t *title = lv_label_create(g_diagnostics_ui.panel);
-    lv_label_set_text(title, "Hardware Diagnostics");
-    lv_obj_set_style_text_font(title, &lv_font_chicago_8, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+    g_diagnostics_ui.title = lv_label_create(g_diagnostics_ui.panel);
+    lv_label_set_text(g_diagnostics_ui.title, tr("Hardware Diagnostics"));
+    lv_obj_set_style_text_font(g_diagnostics_ui.title, &lv_font_chicago_8, 0);
+    lv_obj_align(g_diagnostics_ui.title, LV_ALIGN_TOP_MID, 0, 0);
 
     g_diagnostics_ui.status = lv_label_create(g_diagnostics_ui.panel);
-    lv_label_set_text(g_diagnostics_ui.status, "Checking hardware...");
+    lv_label_set_text(g_diagnostics_ui.status, tr("Checking hardware..."));
     lv_obj_set_width(g_diagnostics_ui.status, lv_pct(100));
     lv_obj_set_style_text_font(g_diagnostics_ui.status,
                                &lv_font_chicago_8, 0);
@@ -1674,8 +1798,9 @@ static void init_diagnostics_ui(lv_obj_t *screen)
     lv_obj_align(g_diagnostics_ui.status, LV_ALIGN_TOP_LEFT, 0, 18);
 
     lv_obj_t *back_button =
-        create_action_button(g_diagnostics_ui.panel, "Back",
+        create_action_button(g_diagnostics_ui.panel, tr("Back"),
                              diagnostics_back_event);
+    g_diagnostics_ui.back_label = lv_obj_get_child(back_button, 0);
     lv_obj_set_size(back_button, 80, 24);
     lv_obj_align(back_button, LV_ALIGN_BOTTOM_MID, 0, 0);
 
@@ -1697,17 +1822,16 @@ static void init_wifi_setup_ui(lv_obj_t *screen)
     lv_obj_set_style_radius(g_wifi_setup_ui.panel, 0, 0);
     lv_obj_set_style_pad_all(g_wifi_setup_ui.panel, 8, 0);
 
-    lv_obj_t *title = lv_label_create(g_wifi_setup_ui.panel);
-    lv_label_set_text(title, "Wi-Fi Setup");
-    lv_obj_set_style_text_font(title, &lv_font_chicago_8, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+    g_wifi_setup_ui.title = lv_label_create(g_wifi_setup_ui.panel);
+    lv_label_set_text(g_wifi_setup_ui.title, tr("Wi-Fi Setup"));
+    lv_obj_set_style_text_font(g_wifi_setup_ui.title, &lv_font_chicago_8, 0);
+    lv_obj_align(g_wifi_setup_ui.title, LV_ALIGN_TOP_MID, 0, 0);
 
     g_wifi_setup_ui.status =
         lv_label_create(g_wifi_setup_ui.panel);
     lv_label_set_text(
         g_wifi_setup_ui.status,
-        "Connect to: Maclock Setup\n"
-        "Then open: 192.168.4.1");
+        tr("Connect to: Maclock Setup\nThen open: 192.168.4.1"));
     lv_obj_set_width(g_wifi_setup_ui.status, 250);
     lv_obj_set_style_text_font(
         g_wifi_setup_ui.status, &lv_font_chicago_8, 0);
@@ -1720,13 +1844,86 @@ static void init_wifi_setup_ui(lv_obj_t *screen)
 
     lv_obj_t *back_button =
         create_action_button(
-            g_wifi_setup_ui.panel, "Back",
+            g_wifi_setup_ui.panel, tr("Back"),
             wifi_setup_back_event);
+    g_wifi_setup_ui.back_label = lv_obj_get_child(back_button, 0);
     lv_obj_set_size(back_button, 100, 38);
     lv_obj_align(back_button, LV_ALIGN_BOTTOM_MID, 0, 0);
 
     lv_obj_add_flag(
         g_wifi_setup_ui.panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void refresh_language_ui()
+{
+    update_boot_translation_maps();
+    if (!g_boot_options_ui.panel)
+        return;
+
+    const uint32_t remember_selected =
+        lv_buttonmatrix_get_selected_button(
+            g_boot_options_ui.remember_selection);
+
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.brightness_options, g_brightness_map);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.remember_selection, g_remember_map);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.night_enabled_options, g_night_enabled_map);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.night_screen_options, g_night_screen_map);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.chime_mode_options, g_chime_mode_map);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.chime_quiet_options, g_chime_quiet_map);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.wifi_enabled_options, g_wifi_enabled_map);
+
+    lv_label_set_text(g_boot_options_ui.brightness_label, tr("Brightness"));
+    lv_label_set_text(g_boot_options_ui.remember_label, tr("Default boot mode"));
+    lv_label_set_text(g_boot_options_ui.dim_from_label, tr("Dim from"));
+    lv_label_set_text(g_boot_options_ui.normal_at_label, tr("Normal at"));
+    lv_label_set_text(g_boot_options_ui.screen_off_label, tr("Screen off at"));
+    lv_label_set_text(g_boot_options_ui.quiet_from_label, tr("Quiet from"));
+    lv_label_set_text(g_boot_options_ui.quiet_end_label, tr("Quiet ends"));
+    lv_label_set_text(g_boot_options_ui.wifi_setup_label, tr("Setup Wi-Fi"));
+    lv_label_set_text(g_boot_options_ui.clock_button_label, tr("Clock"));
+    lv_label_set_text(g_boot_options_ui.emulator_button_label, tr("Emulator"));
+    lv_label_set_text(g_boot_options_ui.diagnostics_button_label, tr("Diagnostics"));
+    lv_label_set_text(
+        g_boot_options_ui.calibration_label,
+        tr("Press Clock for screen calibration"));
+    lv_label_set_text(g_boot_options_ui.previous_label, tr("Previous"));
+    lv_label_set_text(g_boot_options_ui.exit_label, tr("Exit"));
+    lv_label_set_text(g_boot_options_ui.next_label, tr("Next"));
+    sound_selector_refresh_language(
+        &g_boot_options_ui.chime_sound_selector);
+
+    lv_label_set_text(g_diagnostics_ui.title, tr("Hardware Diagnostics"));
+    lv_label_set_text(g_diagnostics_ui.back_label, tr("Back"));
+    lv_label_set_text(g_wifi_setup_ui.title, tr("Wi-Fi Setup"));
+    lv_label_set_text(g_wifi_setup_ui.back_label, tr("Back"));
+    lv_label_set_text(
+        g_wifi_setup_ui.status,
+        tr("Connect to: Maclock Setup\nThen open: 192.168.4.1"));
+    lv_label_set_text(g_ui.clock_label, tr("Clock"));
+    lv_label_set_text(g_calib_ui.label, tr("Touch the crosshair"));
+
+    alarm_ui_refresh_language();
+    timer_ui_refresh_language();
+    datetime_ui_refresh_language();
+    update_language_selection(true);
+    set_checked_button(
+        g_boot_options_ui.brightness_options,
+        (uint32_t)g_boot_brightness);
+    set_checked_button(
+        g_boot_options_ui.remember_selection,
+        remember_selected < 2 ? remember_selected : 1);
+    update_night_options_ui();
+    update_chime_options_ui();
+    update_wifi_options_ui();
+    set_boot_options_page(g_boot_options_page);
+    update_diagnostics_ui();
 }
 
 static void hide_all_ui()
@@ -1955,9 +2152,10 @@ static void update_clock_labels()
         char weather[112];
         snprintf(
             weather, sizeof(weather),
-            "In: %s   Out: %.1f°   Today: %.0f-%.0f°",
-            internal,
+            "%s: %s   %s: %.1f°   %s: %.0f-%.0f°",
+            tr("In"), internal, tr("Out"),
             online.current_temperature,
+            tr("Today"),
             online.minimum_temperature,
             online.maximum_temperature);
 
@@ -2009,7 +2207,7 @@ static void update_clock_labels()
 
     if (!sensor_valid)
     {
-        lv_label_set_text(g_ui.temp, "Internal=--");
+        lv_label_set_text(g_ui.temp, "--");
         lv_obj_add_flag(g_ui.gauge_line, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
         return;
@@ -2140,14 +2338,14 @@ static void init_ui_assets()
     lv_obj_center(g_ui.clock);
 
     g_ui.clock_label = lv_label_create(g_ui.clock);
-    lv_label_set_text(g_ui.clock_label, "Clock");
+    lv_label_set_text(g_ui.clock_label, tr("Clock"));
     lv_obj_set_style_text_font(g_ui.clock_label, &lv_font_chicago_8, 0);
     lv_obj_set_style_text_letter_space(g_ui.clock_label, 1, 0);
     lv_obj_set_style_bg_color(g_ui.clock_label, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(g_ui.clock_label, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_left(g_ui.clock_label, 12, 0);
     lv_obj_set_style_pad_right(g_ui.clock_label, 12, 0);
-    lv_obj_align(g_ui.clock_label, LV_ALIGN_TOP_MID, 0, 3);
+    lv_obj_align(g_ui.clock_label, LV_ALIGN_TOP_MID, 0, 2);
 
     g_ui.time = lv_label_create(g_ui.clock);
     lv_label_set_text(g_ui.time, "00:00:00");
@@ -2222,7 +2420,7 @@ static void init_ui_assets()
     timer_ui_init(scr);
 
     g_calib_ui.label = lv_label_create(scr);
-    lv_label_set_text(g_calib_ui.label, "Touch the crosshair");
+    lv_label_set_text(g_calib_ui.label, tr("Touch the crosshair"));
     lv_obj_set_style_text_font(g_calib_ui.label, &lv_font_chicago_8, 0);
     lv_obj_set_style_text_letter_space(g_calib_ui.label, 1, 0);
     lv_obj_align(g_calib_ui.label, LV_ALIGN_TOP_MID, 0, 24);
@@ -2290,13 +2488,16 @@ static void audio_task(void *param)
     (void)param;
     for (;;)
     {
+        bool running = false;
         if (g_mp3_lock)
             xSemaphoreTake(g_mp3_lock, portMAX_DELAY);
         if (mp3 && mp3->isRunning())
         {
+            running = true;
             if (!mp3->loop())
             {
                 mp3->stop();
+                running = false;
                 portENTER_CRITICAL(&g_mp3_mux);
                 g_mp3_finished = true;
                 portEXIT_CRITICAL(&g_mp3_mux);
@@ -2304,7 +2505,7 @@ static void audio_task(void *param)
         }
         if (g_mp3_lock)
             xSemaphoreGive(g_mp3_lock);
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(running ? 1 : 10));
     }
 }
 
@@ -2428,7 +2629,7 @@ static void update_diagnostics_ui()
         }
     }
     if (i2c_length == 0)
-        snprintf(i2c_devices, sizeof(i2c_devices), "none");
+        snprintf(i2c_devices, sizeof(i2c_devices), "%s", tr("None"));
 
     char rtc_status[64];
     format_rtc_health(rtc_status, sizeof(rtc_status));
@@ -2436,12 +2637,14 @@ static void update_diagnostics_ui()
     const WifiModeSnapshot wifi = wifi_mode_snapshot();
     const char *network_state =
         !wifi.enabled
-            ? "disabled"
+            ? tr("Disabled")
             : (wifi.portal_active
-                   ? "setup portal"
+                   ? tr("Setup portal")
                    : (!wifi.configured
-                          ? "not configured"
-                          : (wifi.connected ? "online" : "offline")));
+                          ? tr("Not configured")
+                          : (wifi.connected
+                                 ? tr("Online")
+                                 : tr("Offline"))));
     const char *network_ssid =
         wifi.ssid[0] ? wifi.ssid : "--";
     char network_address[40];
@@ -2458,23 +2661,35 @@ static void update_diagnostics_ui()
 
     char status[480];
     snprintf(status, sizeof(status),
-             "Clock  : %s\n"
-             "Alarm  : %s\n"
-             "Floppy : %s\n"
-             "Encoder: %lld/%u\n"
-             "Touch  : %s\n"
-             "Charging: %s\n"
+             "%s: %s\n"
+             "%s: %s\n"
+             "%s: %s\n"
+             "%s: %lld/%u\n"
+             "%s: %s\n"
+             "%s: %s\n"
              "I2C    : %s\n"
              "Wi-Fi  : %s\n"
              "SSID   : %s\n"
              "IP/RSSI: %s\n"
              "%s",
-             digitalRead(GPIO_CLOCK) == LOW ? "pressed" : "released",
-             digitalRead(GPIO_ALARM) == LOW ? "pressed" : "released",
-             digitalRead(GPIO_FLOPPY) == LOW ? "inserted" : "empty",
+             tr("Clock"),
+             digitalRead(GPIO_CLOCK) == LOW
+                 ? tr("Pressed")
+                 : tr("Released"),
+             tr("Alarm"),
+             digitalRead(GPIO_ALARM) == LOW
+                 ? tr("Pressed")
+                 : tr("Released"),
+             tr("Floppy"),
+             digitalRead(GPIO_FLOPPY) == LOW
+                 ? tr("Inserted")
+                 : tr("Empty"),
+             tr("Encoder"),
              (long long)encoder.getCount(), (unsigned)kBrightnessMax,
-             touch.touched() ? "pressed" : "released",
-             digitalRead(GPIO_CHARGING) == HIGH ? "yes" : "no",
+             tr("Touch"),
+             touch.touched() ? tr("Pressed") : tr("Released"),
+             tr("Charging"),
+             digitalRead(GPIO_CHARGING) == HIGH ? tr("Yes") : tr("No"),
              i2c_devices,
              network_state,
              network_ssid,
@@ -2488,6 +2703,12 @@ void setup()
     Serial.begin(115200);
     analogWrite(TFT_BL_VAR, 0);
     preferences.begin("maclock", false);
+    const uint8_t saved_language = preferences.getUChar(
+        "language", UI_LANGUAGE_ENGLISH);
+    localization_set_language(
+        saved_language < UI_LANGUAGE_COUNT
+            ? (UiLanguage)saved_language
+            : UI_LANGUAGE_ENGLISH);
     g_mp3_lock = xSemaphoreCreateMutex();
     alarms_init(preferences);
     wifi_mode_begin(preferences);
@@ -2612,7 +2833,7 @@ void setup()
         "audio_task",
         4096,
         nullptr,
-        1,
+        2,
         &g_audio_task_handle,
         0);
     setup_weather_sensor();
@@ -3146,8 +3367,8 @@ void loop()
             char setup_status[180];
             snprintf(
                 setup_status, sizeof(setup_status),
-                "1. Connect to Wi-Fi:\nMaclock Setup\n\n"
-                "2. Open 192.168.4.1\n\n%s",
+                tr("1. Connect to Wi-Fi:\nMaclock Setup\n\n"
+                   "2. Open 192.168.4.1\n\n%s"),
                 wifi.status);
             lv_label_set_text(
                 g_wifi_setup_ui.status, setup_status);
@@ -3180,7 +3401,7 @@ void loop()
             calib_sample_count = 0;
             if (g_cursor)
                 lv_obj_add_flag(g_cursor, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(g_calib_ui.label, "Touch the crosshair");
+            lv_label_set_text(g_calib_ui.label, tr("Touch the crosshair"));
             calib_set_cross_pos(calib_targets[0]);
         }
         if (now - stateStartTime >= 0)
@@ -3255,8 +3476,9 @@ void loop()
                     else
                     {
                         calib_step = 0;
-                        lv_label_set_text(g_calib_ui.label,
-                                          "Calibration failed - try again");
+                        lv_label_set_text(
+                            g_calib_ui.label,
+                            tr("Calibration failed - try again"));
                         calib_set_cross_pos(calib_targets[0]);
                     }
                 }

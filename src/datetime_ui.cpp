@@ -1,4 +1,5 @@
 #include "datetime_ui.h"
+#include "localization.h"
 
 LV_FONT_DECLARE(lv_font_chicago_8);
 LV_FONT_DECLARE(lv_font_chicago_32);
@@ -23,6 +24,8 @@ struct DateTimeUi
     lv_obj_t *save_btn;
     lv_obj_t *cancel_btn;
     lv_obj_t *active_spinbox;
+    lv_obj_t *save_label;
+    lv_obj_t *cancel_label;
 };
 
 static DateTimeUi g_dt_ui = {};
@@ -222,7 +225,7 @@ void datetime_ui_init(lv_obj_t *scr)
     lv_obj_set_style_pad_row(g_dt_ui.panel, 6, 0);
 
     g_dt_ui.title = lv_label_create(g_dt_ui.panel);
-    lv_label_set_text(g_dt_ui.title, "Set Date/Time");
+    lv_label_set_text(g_dt_ui.title, tr("Set Date/Time"));
     lv_obj_set_style_text_font(g_dt_ui.title, &lv_font_chicago_8, 0);
     lv_obj_set_style_text_letter_space(g_dt_ui.title, 1, 0);
     lv_obj_set_style_text_align(g_dt_ui.title, LV_TEXT_ALIGN_CENTER, 0);
@@ -337,7 +340,8 @@ void datetime_ui_init(lv_obj_t *scr)
     lv_obj_add_style(g_dt_ui.save_btn, &g_btn_style, 0);
     lv_obj_add_style(g_dt_ui.save_btn, &g_btn_style_pressed, LV_STATE_PRESSED);
     lv_obj_t *save_lbl = lv_label_create(g_dt_ui.save_btn);
-    lv_label_set_text(save_lbl, "Save");
+    g_dt_ui.save_label = save_lbl;
+    lv_label_set_text(save_lbl, tr("Save"));
     lv_obj_center(save_lbl);
     lv_obj_set_style_text_font(save_lbl, &lv_font_chicago_8, 0);
     lv_obj_add_event_cb(g_dt_ui.save_btn, datetime_save_event, LV_EVENT_CLICKED, NULL);
@@ -347,7 +351,8 @@ void datetime_ui_init(lv_obj_t *scr)
     lv_obj_add_style(g_dt_ui.cancel_btn, &g_btn_style, 0);
     lv_obj_add_style(g_dt_ui.cancel_btn, &g_btn_style_pressed, LV_STATE_PRESSED);
     lv_obj_t *cancel_lbl = lv_label_create(g_dt_ui.cancel_btn);
-    lv_label_set_text(cancel_lbl, "Cancel");
+    g_dt_ui.cancel_label = cancel_lbl;
+    lv_label_set_text(cancel_lbl, tr("Cancel"));
     lv_obj_center(cancel_lbl);
     lv_obj_set_style_text_font(cancel_lbl, &lv_font_chicago_8, 0);
     lv_obj_add_event_cb(g_dt_ui.cancel_btn, datetime_cancel_event, LV_EVENT_CLICKED, NULL);
@@ -383,4 +388,13 @@ void datetime_ui_enter(const DateTime &current)
         lv_obj_clear_state(g_dt_spinboxes[i], LV_STATE_CHECKED);
     lv_obj_add_state(g_dt_ui.active_spinbox, LV_STATE_CHECKED);
     select_last_digit(g_dt_ui.active_spinbox);
+}
+
+void datetime_ui_refresh_language()
+{
+    if (!g_dt_ui.panel)
+        return;
+    lv_label_set_text(g_dt_ui.title, tr("Set Date/Time"));
+    lv_label_set_text(g_dt_ui.save_label, tr("Save"));
+    lv_label_set_text(g_dt_ui.cancel_label, tr("Cancel"));
 }

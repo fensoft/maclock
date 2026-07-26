@@ -23,3 +23,4 @@ void alarm_ui_hide();
 void alarm_ui_enter();
 void alarm_ui_show_editor();
 void alarm_ui_show_ringing(size_t alarm_index);
+void alarm_ui_refresh_language();
