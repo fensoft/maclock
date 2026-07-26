@@ -11,6 +11,8 @@ static unsigned short int min_x = 0;
 static unsigned short int max_x = 0;
 static unsigned short int min_y = 0;
 static unsigned short int max_y = 0;
+static bool last_touched = false;
+static bool press_edge = false;
 
 static FT6336 ts = FT6336(
     I2C_SDA,
@@ -65,6 +67,9 @@ bool touch_touched(void)
     ts.read();
     if (ts.isTouched)
     {
+        if (!last_touched)
+            press_edge = true;
+        last_touched = true;
         touch_last_x = constrain(
             map(ts.points[0].x, min_x, max_x, 0, width - 1),
             0, width - 1);
@@ -75,8 +80,16 @@ bool touch_touched(void)
     }
     else
     {
+        last_touched = false;
         return false;
     }
+}
+
+bool touch_consume_press_edge(void)
+{
+    const bool pressed = press_edge;
+    press_edge = false;
+    return pressed;
 }
 
 bool touch_read_raw(uint16_t &x, uint16_t &y)

@@ -118,8 +118,10 @@ struct CalibUi
 
 enum BootOptionsPage
 {
-    BOOT_OPTIONS_PREFERENCES,
     BOOT_OPTIONS_START,
+    BOOT_OPTIONS_PREFERENCES,
+    BOOT_OPTIONS_NIGHT_SCHEDULE,
+    BOOT_OPTIONS_NIGHT_SCREEN,
     BOOT_OPTIONS_TOOLS,
     BOOT_OPTIONS_PAGE_COUNT
 };
@@ -131,6 +133,11 @@ struct BootOptionsUi
     lv_obj_t *pages[BOOT_OPTIONS_PAGE_COUNT];
     lv_obj_t *brightness_options;
     lv_obj_t *remember_selection;
+    lv_obj_t *night_enabled_options;
+    lv_obj_t *night_start_options;
+    lv_obj_t *night_end_options;
+    lv_obj_t *night_screen_options;
+    lv_obj_t *night_off_options;
     lv_obj_t *rtc_status;
     lv_obj_t *previous;
     lv_obj_t *previous_label;
@@ -149,6 +156,22 @@ enum BootBrightness
     BOOT_BRIGHTNESS_LATEST,
     BOOT_BRIGHTNESS_LOWEST,
     BOOT_BRIGHTNESS_HIGHEST
+};
+
+struct NightModeSettings
+{
+    bool enabled;
+    uint8_t start_hour;
+    uint8_t end_hour;
+    bool screen_off_enabled;
+    uint8_t screen_off_hour;
+};
+
+enum NightDisplayState
+{
+    NIGHT_DISPLAY_NORMAL,
+    NIGHT_DISPLAY_DIMMED,
+    NIGHT_DISPLAY_OFF
 };
 
 enum UiState
@@ -186,11 +209,21 @@ static int g_active_alarm_index = -1;
 static lv_obj_t *g_cursor = nullptr;
 static lv_timer_t *g_cursor_timer = nullptr;
 static BootBrightness g_boot_brightness = BOOT_BRIGHTNESS_LATEST;
-static BootOptionsPage g_boot_options_page = BOOT_OPTIONS_PREFERENCES;
+static BootOptionsPage g_boot_options_page = BOOT_OPTIONS_START;
 static bool g_boot_floppy_emulator = true;
+static NightModeSettings g_night_mode = {false, 22, 7, false, 23};
 static int g_last_saved_encoder = -1;
 static TaskHandle_t g_input_task_handle = nullptr;
 static TaskHandle_t g_audio_task_handle = nullptr;
+static char g_night_start_text[6] = "22:00";
+static char g_night_end_text[6] = "07:00";
+static char g_night_off_text[6] = "23:00";
+static const char *g_night_start_map[] = {
+    "-", g_night_start_text, "+", ""};
+static const char *g_night_end_map[] = {
+    "-", g_night_end_text, "+", ""};
+static const char *g_night_off_map[] = {
+    "-", g_night_off_text, "+", ""};
 
 void setup_codec();
 void setup_lvgl_display();
@@ -478,6 +511,157 @@ static void apply_boot_brightness(BootBrightness choice, bool save_choice)
     analogWrite(TFT_BL_VAR, brightness_to_pwm(brightness));
 }
 
+static uint8_t adjusted_hour(uint8_t hour, int delta)
+{
+    return (uint8_t)((hour + delta + 24) % 24);
+}
+
+static bool time_in_interval(uint16_t current,
+                             uint16_t start,
+                             uint16_t end)
+{
+    if (start == end)
+        return false;
+    if (start < end)
+        return current >= start && current < end;
+    return current >= start || current < end;
+}
+
+static NightDisplayState night_display_state(const DateTime &current)
+{
+    if (!g_night_mode.enabled ||
+        g_rtc_type == RTC_TYPE_NONE ||
+        current.year() < 2024)
+    {
+        return NIGHT_DISPLAY_NORMAL;
+    }
+
+    const uint16_t current_minutes =
+        (uint16_t)current.hour() * 60 + current.minute();
+    const uint16_t start_minutes =
+        (uint16_t)g_night_mode.start_hour * 60;
+    const uint16_t end_minutes =
+        (uint16_t)g_night_mode.end_hour * 60;
+    if (!time_in_interval(current_minutes, start_minutes, end_minutes))
+        return NIGHT_DISPLAY_NORMAL;
+
+    if (g_night_mode.screen_off_enabled)
+    {
+        const uint16_t off_minutes =
+            (uint16_t)g_night_mode.screen_off_hour * 60;
+        const uint16_t night_duration =
+            (end_minutes + 1440 - start_minutes) % 1440;
+        const uint16_t off_offset =
+            (off_minutes + 1440 - start_minutes) % 1440;
+        const uint16_t current_offset =
+            (current_minutes + 1440 - start_minutes) % 1440;
+        if (off_offset < night_duration && current_offset >= off_offset)
+            return NIGHT_DISPLAY_OFF;
+    }
+
+    return NIGHT_DISPLAY_DIMMED;
+}
+
+static void set_checked_button(lv_obj_t *matrix, uint32_t selected)
+{
+    if (!matrix)
+        return;
+    lv_buttonmatrix_clear_button_ctrl_all(
+        matrix, LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_buttonmatrix_set_button_ctrl(
+        matrix, selected, LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_buttonmatrix_set_selected_button(matrix, selected);
+}
+
+static void update_night_options_ui()
+{
+    snprintf(g_night_start_text, sizeof(g_night_start_text),
+             "%02u:00", (unsigned)g_night_mode.start_hour);
+    snprintf(g_night_end_text, sizeof(g_night_end_text),
+             "%02u:00", (unsigned)g_night_mode.end_hour);
+    snprintf(g_night_off_text, sizeof(g_night_off_text),
+             "%02u:00", (unsigned)g_night_mode.screen_off_hour);
+
+    if (g_boot_options_ui.night_start_options)
+    {
+        lv_buttonmatrix_set_map(
+            g_boot_options_ui.night_start_options, g_night_start_map);
+        lv_buttonmatrix_set_map(
+            g_boot_options_ui.night_end_options, g_night_end_map);
+        lv_buttonmatrix_set_map(
+            g_boot_options_ui.night_off_options, g_night_off_map);
+        set_checked_button(
+            g_boot_options_ui.night_enabled_options,
+            g_night_mode.enabled ? 1 : 0);
+        set_checked_button(
+            g_boot_options_ui.night_screen_options,
+            g_night_mode.screen_off_enabled ? 1 : 0);
+    }
+}
+
+static void night_enabled_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected >= 2)
+        return;
+    g_night_mode.enabled = selected == 1;
+    preferences.putBool("night_enabled", g_night_mode.enabled);
+}
+
+static void night_screen_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected >= 2)
+        return;
+    g_night_mode.screen_off_enabled = selected == 1;
+    preferences.putBool("night_off", g_night_mode.screen_off_enabled);
+}
+
+static void night_start_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected != 0 && selected != 2)
+        return;
+    g_night_mode.start_hour =
+        adjusted_hour(g_night_mode.start_hour, selected == 0 ? -1 : 1);
+    preferences.putUChar("night_start", g_night_mode.start_hour);
+    update_night_options_ui();
+}
+
+static void night_end_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected != 0 && selected != 2)
+        return;
+    g_night_mode.end_hour =
+        adjusted_hour(g_night_mode.end_hour, selected == 0 ? -1 : 1);
+    preferences.putUChar("night_end", g_night_mode.end_hour);
+    update_night_options_ui();
+}
+
+static void night_off_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected != 0 && selected != 2)
+        return;
+    g_night_mode.screen_off_hour =
+        adjusted_hour(
+            g_night_mode.screen_off_hour, selected == 0 ? -1 : 1);
+    preferences.putUChar(
+        "night_off_at", g_night_mode.screen_off_hour);
+    update_night_options_ui();
+}
+
 static void boot_brightness_event(lv_event_t *event)
 {
     lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
@@ -534,7 +718,8 @@ static void set_boot_options_page(BootOptionsPage page)
         return;
 
     static const char *page_names[BOOT_OPTIONS_PAGE_COUNT] = {
-        "Preferences", "Start", "Tools"};
+        "Start", "Preferences", "Night Schedule",
+        "Night Screen", "Tools"};
     g_boot_options_page = page;
     for (size_t i = 0; i < BOOT_OPTIONS_PAGE_COUNT; ++i)
         lv_obj_add_flag(
@@ -549,7 +734,7 @@ static void set_boot_options_page(BootOptionsPage page)
              (unsigned)BOOT_OPTIONS_PAGE_COUNT);
     lv_label_set_text(g_boot_options_ui.title, title);
 
-    if (page == BOOT_OPTIONS_PREFERENCES)
+    if (page == BOOT_OPTIONS_START)
     {
         lv_obj_add_flag(
             g_boot_options_ui.previous, LV_OBJ_FLAG_HIDDEN);
@@ -589,7 +774,7 @@ static void set_boot_options_page(BootOptionsPage page)
 static void boot_options_previous_event(lv_event_t *event)
 {
     (void)event;
-    if (g_boot_options_page > BOOT_OPTIONS_PREFERENCES)
+    if (g_boot_options_page > BOOT_OPTIONS_START)
     {
         set_boot_options_page(
             (BootOptionsPage)(g_boot_options_page - 1));
@@ -690,6 +875,8 @@ static void init_boot_options_ui(lv_obj_t *screen)
 {
     static const char *brightness_map[] = {"Latest", "Lowest", "Highest", ""};
     static const char *remember_map[] = {"One time", "Remember", ""};
+    static const char *night_enabled_map[] = {"Disabled", "Enabled", ""};
+    static const char *night_screen_map[] = {"Dim only", "Screen off", ""};
 
     g_boot_options_ui.panel = lv_obj_create(screen);
     lv_obj_set_size(g_boot_options_ui.panel, 292, 208);
@@ -769,19 +956,138 @@ static void init_boot_options_ui(lv_obj_t *screen)
     style_boot_options_matrix(
         g_boot_options_ui.remember_selection);
 
+    lv_obj_t *night_schedule_page =
+        g_boot_options_ui.pages[BOOT_OPTIONS_NIGHT_SCHEDULE];
+    g_boot_options_ui.night_enabled_options =
+        lv_buttonmatrix_create(night_schedule_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.night_enabled_options, night_enabled_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.night_enabled_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.night_enabled_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        g_boot_options_ui.night_enabled_options, true);
+    lv_obj_set_size(
+        g_boot_options_ui.night_enabled_options, 260, 36);
+    lv_obj_align(
+        g_boot_options_ui.night_enabled_options,
+        LV_ALIGN_TOP_MID, 0, 0);
+    style_boot_options_matrix(
+        g_boot_options_ui.night_enabled_options);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.night_enabled_options,
+        night_enabled_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *dim_from_label = lv_label_create(night_schedule_page);
+    lv_label_set_text(dim_from_label, "Dim from");
+    lv_obj_set_style_text_font(dim_from_label, &lv_font_chicago_8, 0);
+    lv_obj_align(dim_from_label, LV_ALIGN_TOP_LEFT, 8, 43);
+
+    g_boot_options_ui.night_start_options =
+        lv_buttonmatrix_create(night_schedule_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.night_start_options, g_night_start_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.night_start_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_obj_set_size(
+        g_boot_options_ui.night_start_options, 162, 38);
+    lv_obj_align(
+        g_boot_options_ui.night_start_options,
+        LV_ALIGN_TOP_RIGHT, -8, 36);
+    style_boot_options_matrix(
+        g_boot_options_ui.night_start_options);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.night_start_options,
+        night_start_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *normal_at_label = lv_label_create(night_schedule_page);
+    lv_label_set_text(normal_at_label, "Normal at");
+    lv_obj_set_style_text_font(normal_at_label, &lv_font_chicago_8, 0);
+    lv_obj_align(normal_at_label, LV_ALIGN_TOP_LEFT, 8, 91);
+
+    g_boot_options_ui.night_end_options =
+        lv_buttonmatrix_create(night_schedule_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.night_end_options, g_night_end_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.night_end_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_obj_set_size(
+        g_boot_options_ui.night_end_options, 162, 38);
+    lv_obj_align(
+        g_boot_options_ui.night_end_options,
+        LV_ALIGN_BOTTOM_RIGHT, -8, 0);
+    style_boot_options_matrix(
+        g_boot_options_ui.night_end_options);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.night_end_options,
+        night_end_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *night_screen_page =
+        g_boot_options_ui.pages[BOOT_OPTIONS_NIGHT_SCREEN];
+    g_boot_options_ui.night_screen_options =
+        lv_buttonmatrix_create(night_screen_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.night_screen_options, night_screen_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.night_screen_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.night_screen_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        g_boot_options_ui.night_screen_options, true);
+    lv_obj_set_size(
+        g_boot_options_ui.night_screen_options, 260, 52);
+    lv_obj_align(
+        g_boot_options_ui.night_screen_options,
+        LV_ALIGN_TOP_MID, 0, 0);
+    style_boot_options_matrix(
+        g_boot_options_ui.night_screen_options);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.night_screen_options,
+        night_screen_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *screen_off_label = lv_label_create(night_screen_page);
+    lv_label_set_text(screen_off_label, "Screen off at");
+    lv_obj_set_style_text_font(screen_off_label, &lv_font_chicago_8, 0);
+    lv_obj_align(screen_off_label, LV_ALIGN_TOP_MID, 0, 59);
+
+    g_boot_options_ui.night_off_options =
+        lv_buttonmatrix_create(night_screen_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.night_off_options, g_night_off_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.night_off_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_obj_set_size(
+        g_boot_options_ui.night_off_options, 260, 50);
+    lv_obj_align(
+        g_boot_options_ui.night_off_options,
+        LV_ALIGN_BOTTOM_MID, 0, 0);
+    style_boot_options_matrix(
+        g_boot_options_ui.night_off_options);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.night_off_options,
+        night_off_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
     lv_obj_t *start_page =
         g_boot_options_ui.pages[BOOT_OPTIONS_START];
     lv_obj_t *clock_button =
-        create_action_button(start_page, "Start Clock",
+        create_action_button(start_page, "Clock",
                              boot_start_clock_event);
-    lv_obj_set_size(clock_button, 260, 58);
-    lv_obj_align(clock_button, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_size(clock_button, 126, 124);
+    lv_obj_align(clock_button, LV_ALIGN_LEFT_MID, 6, 0);
 
     lv_obj_t *emulator_button =
-        create_action_button(start_page, "Start Emulator",
+        create_action_button(start_page, "Emulator",
                              boot_start_emulator_event);
-    lv_obj_set_size(emulator_button, 260, 58);
-    lv_obj_align(emulator_button, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_size(emulator_button, 126, 124);
+    lv_obj_align(emulator_button, LV_ALIGN_RIGHT_MID, -6, 0);
 
     lv_obj_t *tools_page =
         g_boot_options_ui.pages[BOOT_OPTIONS_TOOLS];
@@ -830,7 +1136,7 @@ static void init_boot_options_ui(lv_obj_t *screen)
         lv_obj_get_child(g_boot_options_ui.next, 0);
 
     lv_obj_add_flag(g_boot_options_ui.panel, LV_OBJ_FLAG_HIDDEN);
-    set_boot_options_page(BOOT_OPTIONS_PREFERENCES);
+    set_boot_options_page(BOOT_OPTIONS_START);
 }
 
 static void show_boot_options_ui()
@@ -852,7 +1158,8 @@ static void show_boot_options_ui()
         1, LV_BUTTONMATRIX_CTRL_CHECKED);
     lv_buttonmatrix_set_selected_button(
         g_boot_options_ui.remember_selection, 1);
-    set_boot_options_page(BOOT_OPTIONS_PREFERENCES);
+    update_night_options_ui();
+    set_boot_options_page(BOOT_OPTIONS_START);
 
     char rtc_status[64];
     if (format_rtc_health(rtc_status, sizeof(rtc_status)))
@@ -1556,6 +1863,19 @@ void setup()
         saved_boot_brightness = BOOT_BRIGHTNESS_LATEST;
     g_boot_brightness = (BootBrightness)saved_boot_brightness;
     g_boot_floppy_emulator = preferences.getBool("floppy_emulator", true);
+    g_night_mode.enabled = preferences.getBool("night_enabled", false);
+    g_night_mode.start_hour = preferences.getUChar("night_start", 22);
+    g_night_mode.end_hour = preferences.getUChar("night_end", 7);
+    g_night_mode.screen_off_enabled =
+        preferences.getBool("night_off", false);
+    g_night_mode.screen_off_hour =
+        preferences.getUChar("night_off_at", 23);
+    if (g_night_mode.start_hour >= 24)
+        g_night_mode.start_hour = 22;
+    if (g_night_mode.end_hour >= 24)
+        g_night_mode.end_hour = 7;
+    if (g_night_mode.screen_off_hour >= 24)
+        g_night_mode.screen_off_hour = 23;
 
     heap_caps_malloc_extmem_enable(0);
     LittleFS.begin();
@@ -1649,6 +1969,9 @@ void loop()
     static unsigned long last_alarm_check_ms = 0;
     static unsigned long last_encoder_save_ms = 0;
     static unsigned long full_brightness_until = 0;
+    static unsigned long last_night_check_ms = 0;
+    static NightDisplayState scheduled_display_state =
+        NIGHT_DISPLAY_NORMAL;
 
     unsigned long now = millis();
     InputState inputs = read_input_state();
@@ -1683,6 +2006,24 @@ void loop()
     {
         currentState = UI_STATE_TIMER_FINISHED;
         stateStartTime = now;
+    }
+
+    if (!last_night_check_ms || now - last_night_check_ms >= 1000)
+    {
+        scheduled_display_state = night_display_state(rtc_now());
+        last_night_check_ms = now;
+    }
+
+    const bool temporary_wake_active =
+        (int32_t)(full_brightness_until - now) > 0;
+    if (currentState == UI_STATE_NORMAL &&
+        scheduled_display_state != NIGHT_DISPLAY_NORMAL &&
+        !temporary_wake_active &&
+        (inputs.clock || inputs.alarm))
+    {
+        full_brightness_until = now + 10000;
+        inputs.clock = false;
+        inputs.alarm = false;
     }
 
     switch (currentState)
@@ -2085,6 +2426,12 @@ void loop()
         break;
     }
     case UI_STATE_CALIBRATION: // calibration screen
+        if (inputs.clock)
+        {
+            g_requested_state = UI_STATE_BOOT_OPTIONS;
+            stateStartTime = now;
+            break;
+        }
         if (currentState != lastState)
         {
             lv_obj_t *scr = lv_screen_active();
@@ -2189,7 +2536,11 @@ void loop()
 
     lastState = currentState;
 
-    if (inputs.touch)
+    const bool screen_touch_pressed = touch_consume_press_edge();
+    if (inputs.touch ||
+        (screen_touch_pressed &&
+         currentState == UI_STATE_NORMAL &&
+         scheduled_display_state != NIGHT_DISPLAY_NORMAL))
         full_brightness_until = now + 10000;
 
     int enc = encoder.getCount();
@@ -2199,8 +2550,16 @@ void loop()
         enc = kBrightnessMax;
     if (enc != encoder.getCount())
         encoder.setCount(enc);
-    if (now < full_brightness_until)
+    if ((int32_t)(full_brightness_until - now) > 0)
         analogWrite(TFT_BL_VAR, 255);
+    else if (currentState == UI_STATE_NORMAL &&
+             scheduled_display_state == NIGHT_DISPLAY_OFF)
+        analogWrite(TFT_BL_VAR, 0);
+    else if (currentState == UI_STATE_NORMAL &&
+             scheduled_display_state == NIGHT_DISPLAY_DIMMED)
+        analogWrite(
+            TFT_BL_VAR,
+            brightness_to_pwm(min(enc, 1)));
     else
         analogWrite(TFT_BL_VAR, brightness_to_pwm(enc));
 

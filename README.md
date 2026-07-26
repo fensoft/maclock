@@ -31,16 +31,16 @@ disassembly, wiring, firmware preparation, and flashing.
 | Control | Clock mode | Mini vMac mode |
 | --- | --- | --- |
 | Rotary encoder | Adjust brightness from off to maximum | Adjust brightness from off to maximum |
-| Clock button | Open the date/time editor; dismiss a ringing alarm | Enter key |
-| Alarm button | Open alarms and timers; snooze a ringing alarm | Escape key |
+| Clock button | Open the date/time editor; dismiss a ringing alarm; wake night mode | Enter key |
+| Alarm button | Open alarms and timers; snooze a ringing alarm; wake night mode | Escape key |
 | Clock + Alarm, held for 2 seconds | Open Boot Options | Safely exit to Boot Options |
 | Floppy switch | Advance startup and show the floppy icon | No emulator action |
-| Display touchscreen | Operate menus and show the pointer | Move the Macintosh pointer using relative motion |
+| Display touchscreen | Operate menus, show the pointer, and wake night mode | Move the Macintosh pointer using relative motion |
 | Discrete touch sensor (red wire) | Force full brightness for 10 seconds; snooze a ringing alarm | Macintosh mouse button |
 
 Brightness uses perceptual steps, so the lower levels change more gradually.
-Brightness, the optional default boot mode, and touchscreen calibration are
-stored persistently.
+Brightness, night-mode settings, the optional default boot mode, and
+touchscreen calibration are stored persistently.
 
 ### Choosing The Boot Mode
 
@@ -55,14 +55,16 @@ To open the boot-options screen:
 2. Turn Maclock off, hold **Clock**, turn Maclock on, and release the button
    when **Boot Options** appears.
 
-Boot Options uses three pages with large controls. Use **Back** and **Next** to
-move between Preferences, Start, and Tools. The pages provide these choices:
+Boot Options uses five pages with large controls. Its first page has
+rounded-square **Clock** and **Emulator** launch buttons. Use **Back** and
+**Next** to move between Start, Preferences, Night Schedule, Night Screen, and
+Tools. The pages provide these choices:
 
 - **Brightness / Latest** restores the last encoder brightness.
 - **Brightness / Lowest** starts at the lowest visible setting.
 - **Brightness / Highest** starts at full brightness.
-- **Start Clock** runs the normal Macintosh-style clock startup.
-- **Start Emulator** launches Mini vMac immediately.
+- **Clock** runs the normal Macintosh-style clock startup.
+- **Emulator** launches Mini vMac immediately.
 - **Remember** saves the selected start mode as the next power-on default;
   **One time** starts it without changing the default.
 - **Diagnostics** opens a live hardware test screen for both buttons, the
@@ -71,6 +73,22 @@ move between Preferences, Start, and Tools. The pages provide these choices:
 
 The brightness choice is saved as it is changed. The boot mode is saved only
 when **Remember** is selected.
+
+### Scheduled Night Mode
+
+Night mode is configured on the two Night pages in **Boot Options**:
+
+1. Enable the schedule and select the hours to start dimming and return to
+   normal brightness.
+2. Choose **Dim only** to keep the display at its lowest visible brightness,
+   or **Screen off** and select the hour when the backlight should turn off.
+
+The screen-off hour must fall inside the configured night interval. The clock,
+timers, and alarms continue running while the backlight is off. A touchscreen
+press, the discrete touch sensor, or either physical button restores full
+brightness for 10 seconds. The first Clock or Alarm press while night mode is
+dimmed or off is used only to wake the display; press it again to open its
+screen. A ringing alarm or finished timer also restores the normal display.
 
 ### Calibrating The Touchscreen
 
@@ -83,7 +101,8 @@ Calibration is entered from the boot-options screen:
    top-left, top-right, bottom-right, and bottom-left.
 
 After the fourth point, the calibration is saved and Maclock opens the normal
-clock display.
+clock display. Press **Clock** during calibration to cancel and return to Boot
+Options without changing the saved calibration.
 
 <p align="center">
   <img src="img/config_calib.jpg" alt="Maclock touchscreen calibration crosshair" width="640">

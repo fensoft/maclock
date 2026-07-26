@@ -13,6 +13,7 @@ extern int touch_last_y;
 
 void touch_init(unsigned short int w, unsigned short int h, unsigned char r);
 bool touch_touched(void);
+bool touch_consume_press_edge(void);
 
 bool touch_read_raw(uint16_t &x, uint16_t &y);
 void touch_set_calibration(uint16_t minx, uint16_t maxx, uint16_t miny, uint16_t maxy);
