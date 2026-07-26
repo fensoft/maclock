@@ -63,6 +63,8 @@ struct AlarmEditorUi
     lv_obj_t *summary;
     lv_obj_t *previous;
     lv_obj_t *previous_label;
+    lv_obj_t *exit;
+    lv_obj_t *exit_label;
     lv_obj_t *next;
     lv_obj_t *next_label;
 };
@@ -457,27 +459,16 @@ static void SetEditorPage(AlarmEditorPage page)
              (unsigned)page + 1,
              (unsigned)ALARM_PAGE_COUNT);
     lv_label_set_text(g_editor.title, title);
-    lv_label_set_text(
-        g_editor.previous_label,
-        page == ALARM_PAGE_HOME ? "Close" : "Back");
-    lv_label_set_text(
-        g_editor.next_label,
-        page == ALARM_PAGE_ACTIONS ? "Save" : "Next");
 
     if (page == ALARM_PAGE_HOME)
-    {
-        lv_obj_add_flag(g_editor.next, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_size(g_editor.previous, 260, 40);
-        lv_obj_align(g_editor.previous, LV_ALIGN_BOTTOM_MID, 0, 0);
-    }
+        lv_obj_add_flag(g_editor.previous, LV_OBJ_FLAG_HIDDEN);
     else
-    {
+        lv_obj_clear_flag(g_editor.previous, LV_OBJ_FLAG_HIDDEN);
+
+    if (page == ALARM_PAGE_ACTIONS)
+        lv_obj_add_flag(g_editor.next, LV_OBJ_FLAG_HIDDEN);
+    else
         lv_obj_clear_flag(g_editor.next, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_size(g_editor.previous, 130, 40);
-        lv_obj_align(g_editor.previous, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-        lv_obj_set_size(g_editor.next, 130, 40);
-        lv_obj_align(g_editor.next, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    }
 
     if (page == ALARM_PAGE_ACTIONS)
         UpdateSummary();
@@ -485,27 +476,16 @@ static void SetEditorPage(AlarmEditorPage page)
 
 static void PreviousPageEvent(lv_event_t *event)
 {
-    if (g_editor_page == ALARM_PAGE_HOME)
-    {
-        CancelEvent(event);
-        return;
-    }
-    SetEditorPage((AlarmEditorPage)(g_editor_page - 1));
+    (void)event;
+    if (g_editor_page > ALARM_PAGE_HOME)
+        SetEditorPage((AlarmEditorPage)(g_editor_page - 1));
 }
 
 static void NextPageEvent(lv_event_t *event)
 {
-    if (g_editor_page == ALARM_PAGE_HOME)
-    {
-        SetEditorPage(ALARM_PAGE_SELECT);
-        return;
-    }
-    if (g_editor_page == ALARM_PAGE_ACTIONS)
-    {
-        SaveEvent(event);
-        return;
-    }
-    SetEditorPage((AlarmEditorPage)(g_editor_page + 1));
+    (void)event;
+    if (g_editor_page < ALARM_PAGE_ACTIONS)
+        SetEditorPage((AlarmEditorPage)(g_editor_page + 1));
 }
 
 static void SnoozeEvent(lv_event_t *event)
@@ -665,16 +645,28 @@ static void InitEditorUi(lv_obj_t *screen)
     lv_obj_set_style_text_line_space(g_editor.summary, 3, 0);
     lv_obj_align(g_editor.summary, LV_ALIGN_TOP_MID, 0, 4);
 
+    lv_obj_t *save =
+        CreateButton(actions_page, "Save", SaveEvent);
+    lv_obj_set_size(save, 260, 58);
+    lv_obj_align(save, LV_ALIGN_BOTTOM_MID, 0, 0);
+
     g_editor.previous =
-        CreateButton(g_editor.panel, "Cancel", PreviousPageEvent);
-    lv_obj_set_size(g_editor.previous, 130, 40);
+        CreateButton(g_editor.panel, "Previous", PreviousPageEvent);
+    lv_obj_set_size(g_editor.previous, 84, 40);
     lv_obj_align(g_editor.previous, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     g_editor.previous_label =
         lv_obj_get_child(g_editor.previous, 0);
 
+    g_editor.exit =
+        CreateButton(g_editor.panel, "Exit", CancelEvent);
+    lv_obj_set_size(g_editor.exit, 84, 40);
+    lv_obj_align(g_editor.exit, LV_ALIGN_BOTTOM_MID, 0, 0);
+    g_editor.exit_label =
+        lv_obj_get_child(g_editor.exit, 0);
+
     g_editor.next =
         CreateButton(g_editor.panel, "Next", NextPageEvent);
-    lv_obj_set_size(g_editor.next, 130, 40);
+    lv_obj_set_size(g_editor.next, 84, 40);
     lv_obj_align(g_editor.next, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     g_editor.next_label = lv_obj_get_child(g_editor.next, 0);
 

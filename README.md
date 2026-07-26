@@ -55,10 +55,11 @@ To open the boot-options screen:
 2. Turn Maclock off, hold **Clock**, turn Maclock on, and release the button
    when **Boot Options** appears.
 
-Boot Options uses five pages with large controls. Its first page has
-rounded-square **Clock** and **Emulator** launch buttons. Use **Back** and
-**Next** to move between Start, Preferences, Night Schedule, Night Screen, and
-Tools. The pages provide these choices:
+Boot Options uses nine pages with large controls. Its first page has
+rounded-square **Clock** and **Emulator** launch buttons. Every page has fixed
+**Previous**, **Exit**, and **Next** footer slots; the unavailable direction
+is left empty on the first or last page. The pages cover Start, Preferences,
+two Night pages, four Chime pages, and Tools:
 
 - **Brightness / Latest** restores the last encoder brightness.
 - **Brightness / Lowest** starts at the lowest visible setting.
@@ -70,6 +71,7 @@ Tools. The pages provide these choices:
 - **Diagnostics** opens a live hardware test screen for both buttons, the
   floppy switch, encoder, touch sensor, charging input, known I²C devices, and
   RTC health.
+- **Exit** returns directly to the normal clock from any page.
 
 The brightness choice is saved as it is changed. The boot mode is saved only
 when **Remember** is selected.
@@ -89,6 +91,20 @@ press, the discrete touch sensor, or either physical button restores full
 brightness for 10 seconds. The first Clock or Alarm press while night mode is
 dimmed or off is used only to wake the display; press it again to open its
 screen. A ringing alarm or finished timer also restores the normal display.
+
+### Hourly Chime
+
+The four Chime pages in **Boot Options** configure:
+
+- **Off**, **Hourly**, or **Quarter hour** playback. Quarter-hour mode plays
+  at `:00`, `:15`, `:30`, and `:45`.
+- Quack, Startup, or Floppy sound.
+- 25%, 50%, 75%, or 100% volume.
+- Optional quiet hours, including schedules that cross midnight.
+
+Chime settings are saved immediately. A due chime is skipped during quiet
+hours or while an alarm, timer, startup effect, or other sound is already
+playing.
 
 ### Calibrating The Touchscreen
 
@@ -172,11 +188,11 @@ alarms. Each alarm has its own:
 
 The first page has large square **Alarm** and **Timer** buttons.
 Alarm opens six pages with large touch targets: alarm selection, time, days,
-sound, volume, and actions. Use **Back** and **Next** to move
-between pages. The four time buttons always adjust the selected alarm by
-exactly one hour or one minute. Tap **Save** on the last page to store all
-three alarms persistently. **Close** on the first page discards changes made
-since opening the editor.
+sound, volume, and actions. Every page has fixed **Previous**, **Exit**, and
+**Next** footer slots, leaving an empty direction on the first and last pages.
+The four time buttons always adjust the selected alarm by exactly one hour or
+one minute. Tap **Save** on the last page to store all three alarms
+persistently. **Exit** discards changes made since opening the editor.
 
 An alarm-clock icon appears to the left of the date when at least one alarm is
 enabled or snoozed. When an alarm rings, press **Alarm**, touch the discrete

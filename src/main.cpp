@@ -122,6 +122,10 @@ enum BootOptionsPage
     BOOT_OPTIONS_PREFERENCES,
     BOOT_OPTIONS_NIGHT_SCHEDULE,
     BOOT_OPTIONS_NIGHT_SCREEN,
+    BOOT_OPTIONS_CHIME,
+    BOOT_OPTIONS_CHIME_SOUND,
+    BOOT_OPTIONS_CHIME_VOLUME,
+    BOOT_OPTIONS_CHIME_QUIET,
     BOOT_OPTIONS_TOOLS,
     BOOT_OPTIONS_PAGE_COUNT
 };
@@ -138,9 +142,17 @@ struct BootOptionsUi
     lv_obj_t *night_end_options;
     lv_obj_t *night_screen_options;
     lv_obj_t *night_off_options;
+    lv_obj_t *chime_mode_options;
+    lv_obj_t *chime_sound_options;
+    lv_obj_t *chime_volume_options;
+    lv_obj_t *chime_quiet_options;
+    lv_obj_t *chime_quiet_start_options;
+    lv_obj_t *chime_quiet_end_options;
     lv_obj_t *rtc_status;
     lv_obj_t *previous;
     lv_obj_t *previous_label;
+    lv_obj_t *exit;
+    lv_obj_t *exit_label;
     lv_obj_t *next;
     lv_obj_t *next_label;
 };
@@ -172,6 +184,24 @@ enum NightDisplayState
     NIGHT_DISPLAY_NORMAL,
     NIGHT_DISPLAY_DIMMED,
     NIGHT_DISPLAY_OFF
+};
+
+enum ChimeMode
+{
+    CHIME_MODE_OFF,
+    CHIME_MODE_HOURLY,
+    CHIME_MODE_QUARTER_HOUR,
+    CHIME_MODE_COUNT
+};
+
+struct ChimeSettings
+{
+    ChimeMode mode;
+    uint8_t sound;
+    uint8_t volume;
+    bool quiet_enabled;
+    uint8_t quiet_start_hour;
+    uint8_t quiet_end_hour;
 };
 
 enum UiState
@@ -212,6 +242,8 @@ static BootBrightness g_boot_brightness = BOOT_BRIGHTNESS_LATEST;
 static BootOptionsPage g_boot_options_page = BOOT_OPTIONS_START;
 static bool g_boot_floppy_emulator = true;
 static NightModeSettings g_night_mode = {false, 22, 7, false, 23};
+static ChimeSettings g_chime = {
+    CHIME_MODE_OFF, 0, 1, true, 22, 7};
 static int g_last_saved_encoder = -1;
 static TaskHandle_t g_input_task_handle = nullptr;
 static TaskHandle_t g_audio_task_handle = nullptr;
@@ -224,6 +256,15 @@ static const char *g_night_end_map[] = {
     "-", g_night_end_text, "+", ""};
 static const char *g_night_off_map[] = {
     "-", g_night_off_text, "+", ""};
+static char g_chime_quiet_start_text[6] = "22:00";
+static char g_chime_quiet_end_text[6] = "07:00";
+static const char *g_chime_quiet_start_map[] = {
+    "-", g_chime_quiet_start_text, "+", ""};
+static const char *g_chime_quiet_end_map[] = {
+    "-", g_chime_quiet_end_text, "+", ""};
+static const char *g_chime_sound_paths[] = {
+    "/quack.mp3", "/startup.mp3", "/floppy.mp3"};
+static const uint8_t g_chime_volumes[] = {25, 50, 75, 100};
 
 void setup_codec();
 void setup_lvgl_display();
@@ -337,6 +378,16 @@ static bool consume_mp3_finished()
     g_mp3_finished = false;
     portEXIT_CRITICAL(&g_mp3_mux);
     return finished;
+}
+
+static bool mp3_playback_running()
+{
+    if (g_mp3_lock)
+        xSemaphoreTake(g_mp3_lock, portMAX_DELAY);
+    const bool running = mp3 && mp3->isRunning();
+    if (g_mp3_lock)
+        xSemaphoreGive(g_mp3_lock);
+    return running;
 }
 
 void alarm_snooze_current()
@@ -562,6 +613,55 @@ static NightDisplayState night_display_state(const DateTime &current)
     return NIGHT_DISPLAY_DIMMED;
 }
 
+static bool chime_quiet_now(const DateTime &current)
+{
+    if (!g_chime.quiet_enabled)
+        return false;
+    const uint16_t current_minutes =
+        (uint16_t)current.hour() * 60 + current.minute();
+    return time_in_interval(
+        current_minutes,
+        (uint16_t)g_chime.quiet_start_hour * 60,
+        (uint16_t)g_chime.quiet_end_hour * 60);
+}
+
+static void maybe_start_chime(const DateTime &current)
+{
+    static uint32_t last_chime_minute = UINT32_MAX;
+    if (g_chime.mode == CHIME_MODE_OFF ||
+        g_rtc_type == RTC_TYPE_NONE ||
+        current.year() < 2024)
+    {
+        return;
+    }
+
+    const uint8_t minute = current.minute();
+    const bool due =
+        minute == 0 ||
+        (g_chime.mode == CHIME_MODE_QUARTER_HOUR &&
+         (minute % 15) == 0);
+    if (!due || current.second() > 4)
+        return;
+
+    const uint32_t minute_key = current.unixtime() / 60;
+    if (minute_key == last_chime_minute)
+        return;
+    last_chime_minute = minute_key;
+
+    if (chime_quiet_now(current) || mp3_playback_running())
+        return;
+
+    const size_t sound_count =
+        sizeof(g_chime_sound_paths) / sizeof(g_chime_sound_paths[0]);
+    const size_t volume_count =
+        sizeof(g_chime_volumes) / sizeof(g_chime_volumes[0]);
+    if (g_chime.sound >= sound_count || g_chime.volume >= volume_count)
+        return;
+    start_mp3_playback(
+        g_chime_sound_paths[g_chime.sound],
+        g_chime_volumes[g_chime.volume]);
+}
+
 static void set_checked_button(lv_obj_t *matrix, uint32_t selected)
 {
     if (!matrix)
@@ -597,6 +697,114 @@ static void update_night_options_ui()
             g_boot_options_ui.night_screen_options,
             g_night_mode.screen_off_enabled ? 1 : 0);
     }
+}
+
+static void update_chime_options_ui()
+{
+    snprintf(
+        g_chime_quiet_start_text,
+        sizeof(g_chime_quiet_start_text),
+        "%02u:00", (unsigned)g_chime.quiet_start_hour);
+    snprintf(
+        g_chime_quiet_end_text,
+        sizeof(g_chime_quiet_end_text),
+        "%02u:00", (unsigned)g_chime.quiet_end_hour);
+
+    if (!g_boot_options_ui.chime_mode_options)
+        return;
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.chime_quiet_start_options,
+        g_chime_quiet_start_map);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.chime_quiet_end_options,
+        g_chime_quiet_end_map);
+    set_checked_button(
+        g_boot_options_ui.chime_mode_options, (uint32_t)g_chime.mode);
+    set_checked_button(
+        g_boot_options_ui.chime_sound_options, g_chime.sound);
+    set_checked_button(
+        g_boot_options_ui.chime_volume_options, g_chime.volume);
+    set_checked_button(
+        g_boot_options_ui.chime_quiet_options,
+        g_chime.quiet_enabled ? 1 : 0);
+}
+
+static void chime_mode_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected >= CHIME_MODE_COUNT)
+        return;
+    g_chime.mode = (ChimeMode)selected;
+    preferences.putUChar("chime_mode", (uint8_t)g_chime.mode);
+}
+
+static void chime_sound_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected >=
+        sizeof(g_chime_sound_paths) / sizeof(g_chime_sound_paths[0]))
+    {
+        return;
+    }
+    g_chime.sound = (uint8_t)selected;
+    preferences.putUChar("chime_sound", g_chime.sound);
+}
+
+static void chime_volume_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected >=
+        sizeof(g_chime_volumes) / sizeof(g_chime_volumes[0]))
+    {
+        return;
+    }
+    g_chime.volume = (uint8_t)selected;
+    preferences.putUChar("chime_volume", g_chime.volume);
+}
+
+static void chime_quiet_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected >= 2)
+        return;
+    g_chime.quiet_enabled = selected == 1;
+    preferences.putBool("chime_quiet", g_chime.quiet_enabled);
+}
+
+static void chime_quiet_start_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected != 0 && selected != 2)
+        return;
+    g_chime.quiet_start_hour = adjusted_hour(
+        g_chime.quiet_start_hour, selected == 0 ? -1 : 1);
+    preferences.putUChar(
+        "quiet_start", g_chime.quiet_start_hour);
+    update_chime_options_ui();
+}
+
+static void chime_quiet_end_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected != 0 && selected != 2)
+        return;
+    g_chime.quiet_end_hour = adjusted_hour(
+        g_chime.quiet_end_hour, selected == 0 ? -1 : 1);
+    preferences.putUChar(
+        "quiet_end", g_chime.quiet_end_hour);
+    update_chime_options_ui();
 }
 
 static void night_enabled_event(lv_event_t *event)
@@ -706,6 +914,12 @@ static void boot_diagnostics_event(lv_event_t *event)
     request_state(UI_STATE_DIAGNOSTICS);
 }
 
+static void boot_exit_event(lv_event_t *event)
+{
+    (void)event;
+    request_state(UI_STATE_NORMAL);
+}
+
 static void diagnostics_back_event(lv_event_t *event)
 {
     (void)event;
@@ -719,7 +933,8 @@ static void set_boot_options_page(BootOptionsPage page)
 
     static const char *page_names[BOOT_OPTIONS_PAGE_COUNT] = {
         "Start", "Preferences", "Night Schedule",
-        "Night Screen", "Tools"};
+        "Night Screen", "Chime", "Chime Sound",
+        "Chime Volume", "Quiet Hours", "Tools"};
     g_boot_options_page = page;
     for (size_t i = 0; i < BOOT_OPTIONS_PAGE_COUNT; ++i)
         lv_obj_add_flag(
@@ -735,40 +950,18 @@ static void set_boot_options_page(BootOptionsPage page)
     lv_label_set_text(g_boot_options_ui.title, title);
 
     if (page == BOOT_OPTIONS_START)
-    {
         lv_obj_add_flag(
             g_boot_options_ui.previous, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(
-            g_boot_options_ui.next, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_size(g_boot_options_ui.next, 260, 40);
-        lv_obj_align(
-            g_boot_options_ui.next, LV_ALIGN_BOTTOM_MID, 0, 0);
-    }
-    else if (page == BOOT_OPTIONS_TOOLS)
-    {
-        lv_obj_clear_flag(
-            g_boot_options_ui.previous, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(
-            g_boot_options_ui.next, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_size(g_boot_options_ui.previous, 260, 40);
-        lv_obj_align(
-            g_boot_options_ui.previous, LV_ALIGN_BOTTOM_MID, 0, 0);
-    }
     else
-    {
         lv_obj_clear_flag(
             g_boot_options_ui.previous, LV_OBJ_FLAG_HIDDEN);
+
+    if (page == BOOT_OPTIONS_TOOLS)
+        lv_obj_add_flag(
+            g_boot_options_ui.next, LV_OBJ_FLAG_HIDDEN);
+    else
         lv_obj_clear_flag(
             g_boot_options_ui.next, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_size(g_boot_options_ui.previous, 130, 40);
-        lv_obj_align(
-            g_boot_options_ui.previous,
-            LV_ALIGN_BOTTOM_LEFT, 0, 0);
-        lv_obj_set_size(g_boot_options_ui.next, 130, 40);
-        lv_obj_align(
-            g_boot_options_ui.next,
-            LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    }
 }
 
 static void boot_options_previous_event(lv_event_t *event)
@@ -814,8 +1007,8 @@ static void style_boot_options_matrix(lv_obj_t *matrix)
     lv_obj_set_style_border_width(matrix, 0, 0);
     lv_obj_set_style_radius(matrix, 0, 0);
     lv_obj_set_style_pad_all(matrix, 0, 0);
-    lv_obj_set_style_pad_row(matrix, 6, 0);
-    lv_obj_set_style_pad_column(matrix, 6, 0);
+    lv_obj_set_style_pad_row(matrix, 10, 0);
+    lv_obj_set_style_pad_column(matrix, 10, 0);
     lv_obj_set_style_text_font(matrix, &lv_font_chicago_8, LV_PART_ITEMS);
     lv_obj_set_style_bg_color(matrix, lv_color_white(), LV_PART_ITEMS);
     lv_obj_set_style_bg_opa(matrix, LV_OPA_COVER, LV_PART_ITEMS);
@@ -877,6 +1070,14 @@ static void init_boot_options_ui(lv_obj_t *screen)
     static const char *remember_map[] = {"One time", "Remember", ""};
     static const char *night_enabled_map[] = {"Disabled", "Enabled", ""};
     static const char *night_screen_map[] = {"Dim only", "Screen off", ""};
+    static const char *chime_mode_map[] = {
+        "Off", "\n", "Hourly", "\n", "Quarter hour", ""};
+    static const char *chime_sound_map[] = {
+        "Quack", "\n", "Startup", "\n", "Floppy", ""};
+    static const char *chime_volume_map[] = {
+        "25%", "50%", "\n", "75%", "100%", ""};
+    static const char *chime_quiet_map[] = {
+        "Disabled", "Enabled", ""};
 
     g_boot_options_ui.panel = lv_obj_create(screen);
     lv_obj_set_size(g_boot_options_ui.panel, 292, 208);
@@ -971,7 +1172,7 @@ static void init_boot_options_ui(lv_obj_t *screen)
     lv_buttonmatrix_set_one_checked(
         g_boot_options_ui.night_enabled_options, true);
     lv_obj_set_size(
-        g_boot_options_ui.night_enabled_options, 260, 36);
+        g_boot_options_ui.night_enabled_options, 260, 28);
     lv_obj_align(
         g_boot_options_ui.night_enabled_options,
         LV_ALIGN_TOP_MID, 0, 0);
@@ -984,7 +1185,7 @@ static void init_boot_options_ui(lv_obj_t *screen)
     lv_obj_t *dim_from_label = lv_label_create(night_schedule_page);
     lv_label_set_text(dim_from_label, "Dim from");
     lv_obj_set_style_text_font(dim_from_label, &lv_font_chicago_8, 0);
-    lv_obj_align(dim_from_label, LV_ALIGN_TOP_LEFT, 8, 43);
+    lv_obj_align(dim_from_label, LV_ALIGN_TOP_MID, 0, 34);
 
     g_boot_options_ui.night_start_options =
         lv_buttonmatrix_create(night_schedule_page);
@@ -994,12 +1195,14 @@ static void init_boot_options_ui(lv_obj_t *screen)
         g_boot_options_ui.night_start_options,
         LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
     lv_obj_set_size(
-        g_boot_options_ui.night_start_options, 162, 38);
+        g_boot_options_ui.night_start_options, 260, 28);
     lv_obj_align(
         g_boot_options_ui.night_start_options,
-        LV_ALIGN_TOP_RIGHT, -8, 36);
+        LV_ALIGN_TOP_MID, 0, 50);
     style_boot_options_matrix(
         g_boot_options_ui.night_start_options);
+    lv_obj_set_style_pad_column(
+        g_boot_options_ui.night_start_options, 18, 0);
     lv_obj_add_event_cb(
         g_boot_options_ui.night_start_options,
         night_start_event, LV_EVENT_VALUE_CHANGED, nullptr);
@@ -1007,7 +1210,7 @@ static void init_boot_options_ui(lv_obj_t *screen)
     lv_obj_t *normal_at_label = lv_label_create(night_schedule_page);
     lv_label_set_text(normal_at_label, "Normal at");
     lv_obj_set_style_text_font(normal_at_label, &lv_font_chicago_8, 0);
-    lv_obj_align(normal_at_label, LV_ALIGN_TOP_LEFT, 8, 91);
+    lv_obj_align(normal_at_label, LV_ALIGN_TOP_MID, 0, 84);
 
     g_boot_options_ui.night_end_options =
         lv_buttonmatrix_create(night_schedule_page);
@@ -1017,12 +1220,14 @@ static void init_boot_options_ui(lv_obj_t *screen)
         g_boot_options_ui.night_end_options,
         LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
     lv_obj_set_size(
-        g_boot_options_ui.night_end_options, 162, 38);
+        g_boot_options_ui.night_end_options, 260, 28);
     lv_obj_align(
         g_boot_options_ui.night_end_options,
-        LV_ALIGN_BOTTOM_RIGHT, -8, 0);
+        LV_ALIGN_BOTTOM_MID, 0, 0);
     style_boot_options_matrix(
         g_boot_options_ui.night_end_options);
+    lv_obj_set_style_pad_column(
+        g_boot_options_ui.night_end_options, 18, 0);
     lv_obj_add_event_cb(
         g_boot_options_ui.night_end_options,
         night_end_event, LV_EVENT_VALUE_CHANGED, nullptr);
@@ -1075,19 +1280,165 @@ static void init_boot_options_ui(lv_obj_t *screen)
         g_boot_options_ui.night_off_options,
         night_off_event, LV_EVENT_VALUE_CHANGED, nullptr);
 
+    lv_obj_t *chime_page =
+        g_boot_options_ui.pages[BOOT_OPTIONS_CHIME];
+    g_boot_options_ui.chime_mode_options =
+        lv_buttonmatrix_create(chime_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.chime_mode_options, chime_mode_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.chime_mode_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.chime_mode_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        g_boot_options_ui.chime_mode_options, true);
+    lv_obj_set_size(
+        g_boot_options_ui.chime_mode_options, 260, 124);
+    lv_obj_center(g_boot_options_ui.chime_mode_options);
+    style_boot_options_matrix(
+        g_boot_options_ui.chime_mode_options);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.chime_mode_options,
+        chime_mode_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *chime_sound_page =
+        g_boot_options_ui.pages[BOOT_OPTIONS_CHIME_SOUND];
+    g_boot_options_ui.chime_sound_options =
+        lv_buttonmatrix_create(chime_sound_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.chime_sound_options, chime_sound_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.chime_sound_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.chime_sound_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        g_boot_options_ui.chime_sound_options, true);
+    lv_obj_set_size(
+        g_boot_options_ui.chime_sound_options, 260, 124);
+    lv_obj_center(g_boot_options_ui.chime_sound_options);
+    style_boot_options_matrix(
+        g_boot_options_ui.chime_sound_options);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.chime_sound_options,
+        chime_sound_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *chime_volume_page =
+        g_boot_options_ui.pages[BOOT_OPTIONS_CHIME_VOLUME];
+    g_boot_options_ui.chime_volume_options =
+        lv_buttonmatrix_create(chime_volume_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.chime_volume_options, chime_volume_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.chime_volume_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.chime_volume_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        g_boot_options_ui.chime_volume_options, true);
+    lv_obj_set_size(
+        g_boot_options_ui.chime_volume_options, 260, 124);
+    lv_obj_center(g_boot_options_ui.chime_volume_options);
+    style_boot_options_matrix(
+        g_boot_options_ui.chime_volume_options);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.chime_volume_options,
+        chime_volume_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *chime_quiet_page =
+        g_boot_options_ui.pages[BOOT_OPTIONS_CHIME_QUIET];
+    g_boot_options_ui.chime_quiet_options =
+        lv_buttonmatrix_create(chime_quiet_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.chime_quiet_options, chime_quiet_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.chime_quiet_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.chime_quiet_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        g_boot_options_ui.chime_quiet_options, true);
+    lv_obj_set_size(
+        g_boot_options_ui.chime_quiet_options, 260, 28);
+    lv_obj_align(
+        g_boot_options_ui.chime_quiet_options,
+        LV_ALIGN_TOP_MID, 0, 0);
+    style_boot_options_matrix(
+        g_boot_options_ui.chime_quiet_options);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.chime_quiet_options,
+        chime_quiet_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *quiet_from_label = lv_label_create(chime_quiet_page);
+    lv_label_set_text(quiet_from_label, "Quiet from");
+    lv_obj_set_style_text_font(quiet_from_label, &lv_font_chicago_8, 0);
+    lv_obj_align(quiet_from_label, LV_ALIGN_TOP_MID, 0, 34);
+
+    g_boot_options_ui.chime_quiet_start_options =
+        lv_buttonmatrix_create(chime_quiet_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.chime_quiet_start_options,
+        g_chime_quiet_start_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.chime_quiet_start_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_obj_set_size(
+        g_boot_options_ui.chime_quiet_start_options, 260, 28);
+    lv_obj_align(
+        g_boot_options_ui.chime_quiet_start_options,
+        LV_ALIGN_TOP_MID, 0, 50);
+    style_boot_options_matrix(
+        g_boot_options_ui.chime_quiet_start_options);
+    lv_obj_set_style_pad_column(
+        g_boot_options_ui.chime_quiet_start_options, 18, 0);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.chime_quiet_start_options,
+        chime_quiet_start_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *quiet_end_label = lv_label_create(chime_quiet_page);
+    lv_label_set_text(quiet_end_label, "Quiet ends");
+    lv_obj_set_style_text_font(quiet_end_label, &lv_font_chicago_8, 0);
+    lv_obj_align(quiet_end_label, LV_ALIGN_TOP_MID, 0, 84);
+
+    g_boot_options_ui.chime_quiet_end_options =
+        lv_buttonmatrix_create(chime_quiet_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.chime_quiet_end_options,
+        g_chime_quiet_end_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.chime_quiet_end_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_obj_set_size(
+        g_boot_options_ui.chime_quiet_end_options, 260, 28);
+    lv_obj_align(
+        g_boot_options_ui.chime_quiet_end_options,
+        LV_ALIGN_BOTTOM_MID, 0, 0);
+    style_boot_options_matrix(
+        g_boot_options_ui.chime_quiet_end_options);
+    lv_obj_set_style_pad_column(
+        g_boot_options_ui.chime_quiet_end_options, 18, 0);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.chime_quiet_end_options,
+        chime_quiet_end_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
     lv_obj_t *start_page =
         g_boot_options_ui.pages[BOOT_OPTIONS_START];
     lv_obj_t *clock_button =
         create_action_button(start_page, "Clock",
                              boot_start_clock_event);
-    lv_obj_set_size(clock_button, 126, 124);
-    lv_obj_align(clock_button, LV_ALIGN_LEFT_MID, 6, 0);
+    lv_obj_set_size(clock_button, 122, 124);
+    lv_obj_align(clock_button, LV_ALIGN_LEFT_MID, 8, 0);
 
     lv_obj_t *emulator_button =
         create_action_button(start_page, "Emulator",
                              boot_start_emulator_event);
-    lv_obj_set_size(emulator_button, 126, 124);
-    lv_obj_align(emulator_button, LV_ALIGN_RIGHT_MID, -6, 0);
+    lv_obj_set_size(emulator_button, 122, 124);
+    lv_obj_align(emulator_button, LV_ALIGN_RIGHT_MID, -8, 0);
 
     lv_obj_t *tools_page =
         g_boot_options_ui.pages[BOOT_OPTIONS_TOOLS];
@@ -1115,20 +1466,31 @@ static void init_boot_options_ui(lv_obj_t *screen)
 
     g_boot_options_ui.previous =
         create_action_button(
-            g_boot_options_ui.panel, "Back",
+            g_boot_options_ui.panel, "Previous",
             boot_options_previous_event);
-    lv_obj_set_size(g_boot_options_ui.previous, 130, 40);
+    lv_obj_set_size(g_boot_options_ui.previous, 84, 40);
     lv_obj_align(
         g_boot_options_ui.previous,
         LV_ALIGN_BOTTOM_LEFT, 0, 0);
     g_boot_options_ui.previous_label =
         lv_obj_get_child(g_boot_options_ui.previous, 0);
 
+    g_boot_options_ui.exit =
+        create_action_button(
+            g_boot_options_ui.panel, "Exit",
+            boot_exit_event);
+    lv_obj_set_size(g_boot_options_ui.exit, 84, 40);
+    lv_obj_align(
+        g_boot_options_ui.exit,
+        LV_ALIGN_BOTTOM_MID, 0, 0);
+    g_boot_options_ui.exit_label =
+        lv_obj_get_child(g_boot_options_ui.exit, 0);
+
     g_boot_options_ui.next =
         create_action_button(
             g_boot_options_ui.panel, "Next",
             boot_options_next_event);
-    lv_obj_set_size(g_boot_options_ui.next, 130, 40);
+    lv_obj_set_size(g_boot_options_ui.next, 84, 40);
     lv_obj_align(
         g_boot_options_ui.next,
         LV_ALIGN_BOTTOM_RIGHT, 0, 0);
@@ -1159,6 +1521,7 @@ static void show_boot_options_ui()
     lv_buttonmatrix_set_selected_button(
         g_boot_options_ui.remember_selection, 1);
     update_night_options_ui();
+    update_chime_options_ui();
     set_boot_options_page(BOOT_OPTIONS_START);
 
     char rtc_status[64];
@@ -1876,6 +2239,34 @@ void setup()
         g_night_mode.end_hour = 7;
     if (g_night_mode.screen_off_hour >= 24)
         g_night_mode.screen_off_hour = 23;
+    const uint8_t saved_chime_mode =
+        preferences.getUChar("chime_mode", CHIME_MODE_OFF);
+    g_chime.mode =
+        saved_chime_mode < CHIME_MODE_COUNT
+            ? (ChimeMode)saved_chime_mode
+            : CHIME_MODE_OFF;
+    g_chime.sound = preferences.getUChar("chime_sound", 0);
+    g_chime.volume = preferences.getUChar("chime_volume", 1);
+    g_chime.quiet_enabled =
+        preferences.getBool("chime_quiet", true);
+    g_chime.quiet_start_hour =
+        preferences.getUChar("quiet_start", 22);
+    g_chime.quiet_end_hour =
+        preferences.getUChar("quiet_end", 7);
+    if (g_chime.sound >=
+        sizeof(g_chime_sound_paths) / sizeof(g_chime_sound_paths[0]))
+    {
+        g_chime.sound = 0;
+    }
+    if (g_chime.volume >=
+        sizeof(g_chime_volumes) / sizeof(g_chime_volumes[0]))
+    {
+        g_chime.volume = 1;
+    }
+    if (g_chime.quiet_start_hour >= 24)
+        g_chime.quiet_start_hour = 22;
+    if (g_chime.quiet_end_hour >= 24)
+        g_chime.quiet_end_hour = 7;
 
     heap_caps_malloc_extmem_enable(0);
     LittleFS.begin();
@@ -2010,7 +2401,15 @@ void loop()
 
     if (!last_night_check_ms || now - last_night_check_ms >= 1000)
     {
-        scheduled_display_state = night_display_state(rtc_now());
+        const DateTime current = rtc_now();
+        scheduled_display_state = night_display_state(current);
+        if (currentState == UI_STATE_NORMAL ||
+            currentState == UI_STATE_SET_DATETIME ||
+            currentState == UI_STATE_ALARM_EDITOR ||
+            currentState == UI_STATE_TIMER_EDITOR)
+        {
+            maybe_start_chime(current);
+        }
         last_night_check_ms = now;
     }
 
