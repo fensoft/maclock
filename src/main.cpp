@@ -28,7 +28,6 @@
 #include "wifi_mode.h"
 
 LV_FONT_DECLARE(lv_font_chicago_8);
-LV_FONT_DECLARE(lv_font_chicago_16);
 LV_FONT_DECLARE(lv_font_chicago_32);
 LV_FONT_DECLARE(lv_font_chicago_48);
 
@@ -64,7 +63,6 @@ enum WeatherSensor
 
 static WeatherSensor g_weather_sensor = WEATHER_SENSOR_NONE;
 static uint8_t g_weather_sensor_address = 0;
-static bool g_clock_compact_weather_layout = false;
 
 struct InputState
 {
@@ -91,12 +89,6 @@ struct UiImages
     lv_obj_t *time;
     lv_obj_t *date;
     lv_obj_t *temp;
-    lv_obj_t *weather_int_names;
-    lv_obj_t *weather_int_values;
-    lv_obj_t *weather_ext_names;
-    lv_obj_t *weather_ext_values;
-    lv_obj_t *weather_rain_name;
-    lv_obj_t *weather_rain_value;
     lv_obj_t *gauge_icon;
     lv_obj_t *gauge_line;
     lv_obj_t *gauge_box;
@@ -1759,18 +1751,6 @@ static void hide_all_ui()
     lv_obj_add_flag(g_ui.time, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.date, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.temp, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(
-        g_ui.weather_int_names, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(
-        g_ui.weather_int_values, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(
-        g_ui.weather_ext_names, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(
-        g_ui.weather_ext_values, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(
-        g_ui.weather_rain_name, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(
-        g_ui.weather_rain_value, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.gauge_icon, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.gauge_line, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
@@ -1971,57 +1951,40 @@ static void update_clock_labels()
         break;
     }
 
-    g_clock_compact_weather_layout = online.forecast_valid;
     if (online.forecast_valid)
     {
-        char internal_values[32];
+        char internal[16];
         if (sensor_valid)
-            snprintf(
-                internal_values, sizeof(internal_values),
-                "%.1f°C\n%.0f°C",
-                temperature, online.minimum_temperature);
+            snprintf(internal, sizeof(internal), "%.1f°", temperature);
         else
-            snprintf(
-                internal_values, sizeof(internal_values),
-                "--\n%.0f°C",
-                online.minimum_temperature);
+            snprintf(internal, sizeof(internal), "--");
 
-        char external_values[32];
+        char weather[112];
         snprintf(
-            external_values, sizeof(external_values),
-            "%.1f°C\n%.0f°C",
+            weather, sizeof(weather),
+            "In: %s   Out: %.1f°   Today: %.0f-%.0f°",
+            internal,
             online.current_temperature,
+            online.minimum_temperature,
             online.maximum_temperature);
 
-        char rain_value[8];
-        snprintf(
-            rain_value, sizeof(rain_value), "%u%%",
-            (unsigned)online.precipitation_probability);
-
-        lv_label_set_text(
-            g_ui.weather_int_values, internal_values);
-        lv_label_set_text(
-            g_ui.weather_ext_values, external_values);
-        lv_label_set_text(
-            g_ui.weather_rain_value, rain_value);
-        lv_obj_add_flag(g_ui.temp, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(
-            g_ui.weather_int_names, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(
-            g_ui.weather_int_values, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(
-            g_ui.weather_ext_names, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(
-            g_ui.weather_ext_values, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(
-            g_ui.weather_rain_name, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(
-            g_ui.weather_rain_value, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(g_ui.temp, weather);
+        lv_obj_clear_flag(g_ui.temp, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_style_text_font(
-            g_ui.date, &lv_font_chicago_16, 0);
-        lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID, 0, 76);
+            g_ui.date, &lv_font_chicago_32, 0);
+        lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID,
+                     0, 14 + 4 + 32 + 16);
+        lv_obj_set_style_text_font(
+            g_ui.temp, &lv_font_chicago_8, 0);
+        lv_obj_set_style_text_letter_space(g_ui.temp, 0, 0);
+        lv_label_set_long_mode(g_ui.temp, LV_LABEL_LONG_CLIP);
+        lv_obj_set_width(g_ui.temp, 236);
+        lv_obj_set_style_text_align(
+            g_ui.temp, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(
-            g_ui.gauge_icon, LV_ALIGN_TOP_RIGHT, -12, 121);
+            g_ui.temp, LV_ALIGN_BOTTOM_LEFT, 0, -3);
+        lv_obj_align(
+            g_ui.gauge_icon, LV_ALIGN_BOTTOM_RIGHT, -12, -3);
 
         if (online.weather_code <= 1)
             lv_image_set_src(g_ui.gauge_icon, "S:/sunny.png");
@@ -2037,18 +2000,6 @@ static void update_clock_labels()
     }
 
     lv_obj_clear_flag(g_ui.temp, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(
-        g_ui.weather_int_names, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(
-        g_ui.weather_int_values, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(
-        g_ui.weather_ext_names, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(
-        g_ui.weather_ext_values, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(
-        g_ui.weather_rain_name, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(
-        g_ui.weather_rain_value, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_text_font(
         g_ui.date, &lv_font_chicago_32, 0);
     lv_obj_set_style_text_font(
@@ -2100,10 +2051,7 @@ static void update_alarm_indicator_layout(bool active)
 {
     static constexpr int kIndicatorGap = 4;
     static constexpr int kDateShift = (18 + kIndicatorGap) / 2;
-    const int date_top =
-        g_clock_compact_weather_layout
-            ? 76
-            : 14 + 4 + 32 + 16;
+    const int date_top = 14 + 4 + 32 + 16;
 
     lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID,
                  active ? kDateShift : 0, date_top);
@@ -2226,88 +2174,6 @@ static void init_ui_assets()
     lv_obj_set_style_text_letter_space(g_ui.temp, 1, 0);
     lv_obj_set_width(g_ui.temp, 220);
     lv_obj_align(g_ui.temp, LV_ALIGN_TOP_LEFT, 12, 118);
-
-    g_ui.weather_int_names = lv_label_create(g_ui.clock);
-    lv_label_set_text(g_ui.weather_int_names, "Int:\nLow:");
-    lv_obj_set_style_text_font(
-        g_ui.weather_int_names, &lv_font_chicago_8, 0);
-    lv_obj_set_style_text_letter_space(
-        g_ui.weather_int_names, 0, 0);
-    lv_obj_set_style_text_align(
-        g_ui.weather_int_names, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_label_set_long_mode(
-        g_ui.weather_int_names, LV_LABEL_LONG_CLIP);
-    lv_obj_set_size(g_ui.weather_int_names, 34, LV_SIZE_CONTENT);
-    lv_obj_align(
-        g_ui.weather_int_names, LV_ALIGN_TOP_LEFT, 0, 105);
-
-    g_ui.weather_int_values = lv_label_create(g_ui.clock);
-    lv_label_set_text(g_ui.weather_int_values, "--\n--");
-    lv_obj_set_style_text_font(
-        g_ui.weather_int_values, &lv_font_chicago_8, 0);
-    lv_obj_set_style_text_letter_space(
-        g_ui.weather_int_values, 0, 0);
-    lv_label_set_long_mode(
-        g_ui.weather_int_values, LV_LABEL_LONG_CLIP);
-    lv_obj_set_size(
-        g_ui.weather_int_values, 40, LV_SIZE_CONTENT);
-    lv_obj_align(
-        g_ui.weather_int_values, LV_ALIGN_TOP_LEFT, 36, 105);
-
-    g_ui.weather_ext_names = lv_label_create(g_ui.clock);
-    lv_label_set_text(g_ui.weather_ext_names, "Ext:\nHigh:");
-    lv_obj_set_style_text_font(
-        g_ui.weather_ext_names, &lv_font_chicago_8, 0);
-    lv_obj_set_style_text_letter_space(
-        g_ui.weather_ext_names, 0, 0);
-    lv_obj_set_style_text_align(
-        g_ui.weather_ext_names, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_label_set_long_mode(
-        g_ui.weather_ext_names, LV_LABEL_LONG_CLIP);
-    lv_obj_set_size(g_ui.weather_ext_names, 40, LV_SIZE_CONTENT);
-    lv_obj_align(
-        g_ui.weather_ext_names, LV_ALIGN_TOP_LEFT, 76, 105);
-
-    g_ui.weather_ext_values = lv_label_create(g_ui.clock);
-    lv_label_set_text(g_ui.weather_ext_values, "--\n--");
-    lv_obj_set_style_text_font(
-        g_ui.weather_ext_values, &lv_font_chicago_8, 0);
-    lv_obj_set_style_text_letter_space(
-        g_ui.weather_ext_values, 0, 0);
-    lv_label_set_long_mode(
-        g_ui.weather_ext_values, LV_LABEL_LONG_CLIP);
-    lv_obj_set_size(
-        g_ui.weather_ext_values, 44, LV_SIZE_CONTENT);
-    lv_obj_align(
-        g_ui.weather_ext_values, LV_ALIGN_TOP_LEFT, 116, 105);
-
-    g_ui.weather_rain_name = lv_label_create(g_ui.clock);
-    lv_label_set_text(g_ui.weather_rain_name, "Rain:");
-    lv_obj_set_style_text_font(
-        g_ui.weather_rain_name, &lv_font_chicago_8, 0);
-    lv_obj_set_style_text_letter_space(
-        g_ui.weather_rain_name, 0, 0);
-    lv_obj_set_style_text_align(
-        g_ui.weather_rain_name, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_label_set_long_mode(
-        g_ui.weather_rain_name, LV_LABEL_LONG_CLIP);
-    lv_obj_set_size(
-        g_ui.weather_rain_name, 40, LV_SIZE_CONTENT);
-    lv_obj_align(
-        g_ui.weather_rain_name, LV_ALIGN_TOP_LEFT, 160, 105);
-
-    g_ui.weather_rain_value = lv_label_create(g_ui.clock);
-    lv_label_set_text(g_ui.weather_rain_value, "--");
-    lv_obj_set_style_text_font(
-        g_ui.weather_rain_value, &lv_font_chicago_8, 0);
-    lv_obj_set_style_text_letter_space(
-        g_ui.weather_rain_value, 0, 0);
-    lv_label_set_long_mode(
-        g_ui.weather_rain_value, LV_LABEL_LONG_CLIP);
-    lv_obj_set_size(
-        g_ui.weather_rain_value, 42, LV_SIZE_CONTENT);
-    lv_obj_align(
-        g_ui.weather_rain_value, LV_ALIGN_TOP_LEFT, 202, 105);
 
     g_ui.gauge_icon = lv_image_create(g_ui.clock);
     lv_image_set_src(g_ui.gauge_icon, "S:/cloudy.png");
