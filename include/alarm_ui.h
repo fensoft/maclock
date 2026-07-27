@@ -12,6 +12,16 @@
 static constexpr size_t kAlarmCount = 3;
 static constexpr uint32_t kAlarmSnoozeSeconds = 9 * 60;
 
+struct AlarmSettings
+{
+    uint8_t enabled = 0;
+    uint8_t hour = 7;
+    uint8_t minute = 0;
+    uint8_t weekdays = 0x7F;
+    uint8_t sound = 0;
+    uint8_t volume = 2;
+};
+
 class AlarmService
 {
 public:
@@ -24,6 +34,11 @@ public:
     bool hasActiveIndicator() const;
     const char *soundPath(size_t alarm_index) const;
     uint8_t volume(size_t alarm_index) const;
+    AlarmSettings settings(size_t alarm_index) const;
+    bool configure(
+        size_t alarm_index,
+        const AlarmSettings &settings,
+        const char *sound_path);
 
     State &state();
 

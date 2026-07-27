@@ -37,6 +37,7 @@
 #include "weather_service.h"
 #include "input_service.h"
 #include "audio_service.h"
+#include "control_panel.h"
 #include "settings_store.h"
 
 LV_FONT_DECLARE(lv_font_chicago_8);
@@ -54,6 +55,7 @@ static MaclockApp *active_app = nullptr;
 #define display_service (active_app->display())
 #define audio_service (active_app->audio())
 #define wifi_service (active_app->wifi())
+#define control_panel_service (active_app->controlPanel())
 #define alarm_service (active_app->alarms())
 #define alarm_view (active_app->alarmView())
 #define timer_service (active_app->timer())
@@ -461,6 +463,12 @@ static const char *g_legacy_chime_sound_paths[] = {
     "/quack.mp3", "/startup.mp3", "/floppy.mp3"};
 static char g_chime_sound_path[SOUND_SELECTOR_PATH_MAX] =
     "/quack.mp3";
+static char g_startup_sound_path[SOUND_SELECTOR_PATH_MAX] =
+    "/startup.mp3";
+static uint8_t g_startup_sound_volume = 80;
+static char g_floppy_sound_path[SOUND_SELECTOR_PATH_MAX] =
+    "/floppy.mp3";
+static uint8_t g_floppy_sound_volume = 65;
 static const uint8_t g_chime_volumes[] = {25, 50, 75, 100};
 static const char *g_brightness_map[4] = {};
 static const char *g_remember_map[3] = {};
@@ -823,3 +831,4 @@ static void maybe_start_chime(const DateTime &current)
 #include "ui/clock_view_faces.cpp"
 #include "ui/ui_assets.cpp"
 #include "ui/maclock_state_machine.cpp"
+#include "ui/control_panel_bindings.cpp"

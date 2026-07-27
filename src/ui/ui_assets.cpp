@@ -204,6 +204,7 @@ void UiShell::init()
 static void run_emulator()
 {
     audio_service.stop();
+    control_panel_service.stop();
     wifi_service.pause();
     audio_service.suspendTask();
     input_service.suspendTask();

@@ -74,6 +74,8 @@ Application code is divided by ownership:
   and `AudioService` own hardware-facing state.
 - `WifiService`, `AlarmService`, and `TimerService` own their worker and
   persisted runtime state.
+- `ControlPanelService` owns a station-only HTTP server and mDNS advertisement.
+  It is never used as the captive Wi-Fi setup server.
 - `UiShell`, `StartupView`, `ClockView`, `BootOptionsView`,
   `DateTimeEditor`, `AlarmView`, `TimerView`, `DiagnosticsView`,
   `WifiSetupView`, and `CalibrationView` own UI state.
@@ -85,6 +87,25 @@ The focused files under `src/ui/` are guarded implementation units included by
 translation unit for private LVGL callbacks and their instance compatibility
 thunks. PlatformIO may discover those `.cpp` files separately; without
 `MACLOCK_COMBINED_SOURCE` they intentionally compile empty.
+
+## Web Portals
+
+Maclock has two intentionally independent HTTP lifecycles:
+
+- `WifiService` starts the `Maclock Setup` access point, DNS responder, and
+  captive setup server only while `UiState::WifiSetup` is active. Its form
+  changes Wi-Fi credentials and the forecast city.
+- `ControlPanelService` starts only after station Wi-Fi has connected. It
+  advertises `maclock.local`, serves the embedded responsive control page, and
+  exposes JSON/form routes for appearance, alarms, timer, night mode, chimes,
+  and sound previews.
+
+`MaclockApp` implements `ControlPanelEventSink`. HTTP callbacks run from
+`MaclockApp::tick()`, validate ranges and LittleFS sound paths, then call the
+same state-owning services and persistence methods used by the device UI.
+They never access LVGL from the Wi-Fi worker. The control server is stopped
+before the setup portal starts or Mini vMac runs, avoiding two listeners on
+port 80 and preserving exclusive display/audio ownership.
 
 ## Flash Layout And LittleFS
 
@@ -357,7 +378,7 @@ Three storage mechanisms have different lifetimes:
 
 | Store | Data |
 | --- | --- |
-| NVS Preferences, namespace `maclock` | Encoder brightness, boot-brightness choice, default emulator/clock choice |
+| NVS Preferences, namespace `maclock` | Appearance, regional options, alarms, timer defaults, night/chime schedules, sound paths/volumes, Wi-Fi, brightness, and boot choice |
 | EEPROM emulation | FT6336 calibration structure |
 | LittleFS | UI assets, audio, ROM, and mutable emulator disk images |
 

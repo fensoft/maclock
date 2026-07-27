@@ -201,6 +201,50 @@ String SettingsStore::loadChimePath(const char *fallback) const
         .getString("chime_path", fallback);
 }
 
+String SettingsStore::loadStartupSoundPath(
+    const char *fallback) const
+{
+    return const_cast<Preferences &>(preferences_)
+        .getString("startup_sound", fallback);
+}
+
+uint8_t SettingsStore::loadStartupSoundVolume(
+    uint8_t fallback) const
+{
+    const uint8_t value =
+        const_cast<Preferences &>(preferences_)
+            .getUChar("startup_volume", fallback);
+    return value <= 100 ? value : fallback;
+}
+
+String SettingsStore::loadFloppySoundPath(
+    const char *fallback) const
+{
+    return const_cast<Preferences &>(preferences_)
+        .getString("floppy_sound", fallback);
+}
+
+uint8_t SettingsStore::loadFloppySoundVolume(
+    uint8_t fallback) const
+{
+    const uint8_t value =
+        const_cast<Preferences &>(preferences_)
+            .getUChar("floppy_volume", fallback);
+    return value <= 100 ? value : fallback;
+}
+
+void SettingsStore::saveSystemSounds(
+    const char *startup_path, uint8_t startup_volume,
+    const char *floppy_path, uint8_t floppy_volume)
+{
+    if (startup_path)
+        preferences_.putString("startup_sound", startup_path);
+    preferences_.putUChar("startup_volume", startup_volume);
+    if (floppy_path)
+        preferences_.putString("floppy_sound", floppy_path);
+    preferences_.putUChar("floppy_volume", floppy_volume);
+}
+
 Preferences &emulator_preferences()
 {
     return g_settings_store->preferences();

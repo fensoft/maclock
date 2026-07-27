@@ -30,11 +30,14 @@ struct TimerUi
 
 struct TimerService::State
 {
+    Preferences *preferences = nullptr;
     bool active = false;
     bool finished_pending = false;
     uint32_t end_ms = 0;
     uint32_t last_ui_seconds = UINT32_MAX;
     uint16_t selected_minutes = 25;
+    char sound_path[SOUND_SELECTOR_PATH_MAX] = "/quack.mp3";
+    uint8_t volume = 2;
     TimerUi ui = {};
     TimerView *view = nullptr;
     AppEventSink *events = nullptr;
@@ -45,6 +48,8 @@ namespace
 TimerService *active_timer_service = nullptr;
 
 #define g_timer_active (active_timer_service->state().active)
+#define g_timer_preferences \
+    (active_timer_service->state().preferences)
 #define g_timer_finished_pending \
     (active_timer_service->state().finished_pending)
 #define g_timer_end_ms (active_timer_service->state().end_ms)
@@ -52,6 +57,9 @@ TimerService *active_timer_service = nullptr;
     (active_timer_service->state().last_ui_seconds)
 #define g_selected_minutes \
     (active_timer_service->state().selected_minutes)
+#define g_timer_sound_path \
+    (active_timer_service->state().sound_path)
+#define g_timer_volume (active_timer_service->state().volume)
 #define g_timer_ui (active_timer_service->state().ui)
 #define g_timer_view (active_timer_service->state().view)
 #define g_events (active_timer_service->state().events)
@@ -83,11 +91,7 @@ static void SetCountdownSeconds(uint32_t total_seconds)
 
 static void StartSelectedTimer()
 {
-    const uint32_t duration_ms =
-        (uint32_t)g_selected_minutes * 60U * 1000U;
-    g_timer_end_ms = millis() + duration_ms;
-    g_timer_active = true;
-    g_timer_finished_pending = false;
+    active_timer_service->start(g_selected_minutes);
 }
 
 static void ButtonVisualEvent(lv_event_t *event)
@@ -342,6 +346,27 @@ TimerService::State &TimerService::state()
     return *state_;
 }
 
+void TimerService::begin(Preferences &preferences)
+{
+    active_timer_service = this;
+    state();
+    g_timer_preferences = &preferences;
+    const uint16_t saved_minutes =
+        preferences.getUShort("timer_minutes", 25);
+    g_selected_minutes =
+        saved_minutes >= 1 && saved_minutes <= 1440
+            ? saved_minutes
+            : 25;
+    const uint8_t saved_volume =
+        preferences.getUChar("timer_volume", 2);
+    g_timer_volume = saved_volume < 4 ? saved_volume : 2;
+    const String saved_sound =
+        preferences.getString("timer_sound", "/quack.mp3");
+    strlcpy(
+        g_timer_sound_path, saved_sound.c_str(),
+        sizeof(g_timer_sound_path));
+}
+
 void TimerService::update(uint32_t now_ms)
 {
     if (g_timer_active &&
@@ -383,6 +408,18 @@ void TimerService::formatRemaining(
     FormatSeconds(remainingSeconds(now_ms), text, text_size);
 }
 
+void TimerService::start(uint16_t minutes)
+{
+    if (minutes < 1 || minutes > 1440)
+        return;
+    g_selected_minutes = minutes;
+    const uint32_t duration_ms =
+        static_cast<uint32_t>(minutes) * 60U * 1000U;
+    g_timer_end_ms = millis() + duration_ms;
+    g_timer_active = true;
+    g_timer_finished_pending = false;
+}
+
 void TimerService::cancel()
 {
     g_timer_active = false;
@@ -390,14 +427,53 @@ void TimerService::cancel()
     g_timer_end_ms = 0;
 }
 
+bool TimerService::configure(
+    uint16_t minutes, const char *sound_path, uint8_t volume)
+{
+    if (minutes < 1 || minutes > 1440 ||
+        !sound_path || !sound_path[0] || volume >= 4)
+    {
+        return false;
+    }
+
+    g_selected_minutes = minutes;
+    g_timer_volume = volume;
+    strlcpy(
+        g_timer_sound_path,
+        SoundSelector::resolvePath(sound_path, "/quack.mp3"),
+        sizeof(g_timer_sound_path));
+    if (g_timer_preferences)
+    {
+        g_timer_preferences->putUShort(
+            "timer_minutes", g_selected_minutes);
+        g_timer_preferences->putUChar(
+            "timer_volume", g_timer_volume);
+        g_timer_preferences->putString(
+            "timer_sound", g_timer_sound_path);
+    }
+    return true;
+}
+
+uint16_t TimerService::selectedMinutes() const
+{
+    return g_selected_minutes;
+}
+
 const char *TimerService::soundPath() const
 {
-    return "/quack.mp3";
+    return SoundSelector::resolvePath(
+        g_timer_sound_path, "/quack.mp3");
 }
 
 uint8_t TimerService::volume() const
 {
-    return 75;
+    static const uint8_t volumes[] = {25, 50, 75, 100};
+    return volumes[g_timer_volume < 4 ? g_timer_volume : 2];
+}
+
+uint8_t TimerService::volumeIndex() const
+{
+    return g_timer_volume < 4 ? g_timer_volume : 2;
 }
 
 void TimerView::begin(lv_obj_t *screen, AppEventSink &events)

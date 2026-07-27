@@ -12,6 +12,48 @@ namespace
 class MaclockAudioOutputI2S final : public AudioOutputI2S
 {
 public:
+    bool begin() override
+    {
+        return i2sOn || AudioOutputI2S::begin();
+    }
+
+    bool stop() override
+    {
+        // Clock-mode sounds share one continuously running, silent I2S
+        // stream. Mini vMac uses forceStop() when it must reconfigure it.
+        return true;
+    }
+
+    void forceStop()
+    {
+        AudioOutputI2S::stop();
+    }
+
+    void preparePlayback()
+    {
+        fade_in_sample_ = 0;
+    }
+
+    bool ConsumeSample(int16_t sample[2]) override
+    {
+        if (!sample || fade_in_sample_ >= kFadeInSamples)
+            return AudioOutputI2S::ConsumeSample(sample);
+
+        int16_t faded[2];
+        const int32_t numerator = fade_in_sample_ + 1;
+        faded[0] = static_cast<int16_t>(
+            static_cast<int32_t>(sample[0]) *
+            numerator / kFadeInSamples);
+        faded[1] = static_cast<int16_t>(
+            static_cast<int32_t>(sample[1]) *
+            numerator / kFadeInSamples);
+        if (!AudioOutputI2S::ConsumeSample(faded))
+            return false;
+
+        ++fade_in_sample_;
+        return true;
+    }
+
     size_t writeStereoFrames(
         const int16_t *frames, size_t frame_count)
     {
@@ -27,6 +69,12 @@ public:
             0);
         return bytes_written / (2 * sizeof(int16_t));
     }
+
+private:
+    // About 10 ms at the clock audio rate. The counter advances only
+    // when I2S accepts a sample, so backpressure cannot shorten the fade.
+    static constexpr uint16_t kFadeInSamples = 441;
+    uint16_t fade_in_sample_ = kFadeInSamples;
 };
 
 DisplayService *emulator_display = nullptr;
@@ -220,8 +268,9 @@ void DisplayService::beginCodec()
         codec_, &clock,
         ES8311_RESOLUTION_16,
         ES8311_RESOLUTION_16);
-    es8311_voice_volume_set(codec_, 80, nullptr);
-    es8311_voice_mute(codec_, false);
+    es8311_voice_fade(codec_, ES8311_FADE_4LRCK);
+    es8311_voice_volume_set(codec_, 0, nullptr);
+    es8311_voice_mute(codec_, true);
 
     audio_output_ = new MaclockAudioOutputI2S();
     audio_output_->SetPinout(
@@ -229,6 +278,25 @@ void DisplayService::beginCodec()
     audio_output_->SetBuffers(
         kClockAudioDmaBufferCount,
         kClockAudioDmaBufferBytes);
+    audio_output_->begin();
+}
+
+void DisplayService::stopAudioOutput()
+{
+    if (audio_output_)
+    {
+        static_cast<MaclockAudioOutputI2S *>(audio_output_)
+            ->forceStop();
+    }
+}
+
+void DisplayService::prepareAudioPlayback()
+{
+    if (audio_output_)
+    {
+        static_cast<MaclockAudioOutputI2S *>(audio_output_)
+            ->preparePlayback();
+    }
 }
 
 size_t DisplayService::writeStereoFrames(
@@ -266,6 +334,12 @@ AudioOutputI2S *EmulatorHardwareBridge::audioOutput()
 es8311_handle_t EmulatorHardwareBridge::codec()
 {
     return emulator_display ? emulator_display->codec() : nullptr;
+}
+
+void EmulatorHardwareBridge::stopAudioOutput()
+{
+    if (emulator_display)
+        emulator_display->stopAudioOutput();
 }
 
 size_t audio_write_stereo_frames(

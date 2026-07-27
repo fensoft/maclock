@@ -48,6 +48,10 @@ void AudioService::resumeTask()
 
 void AudioService::deletePlaybackLocked()
 {
+    const es8311_handle_t codec = display_.codec();
+    if (codec)
+        es8311_voice_mute(codec, true);
+
     if (decoder_)
     {
         if (decoder_->isRunning())
@@ -85,9 +89,9 @@ bool AudioService::play(const char *path, uint8_t volume)
     deletePlaybackLocked();
     const es8311_handle_t codec = display_.codec();
     if (codec)
-        es8311_voice_volume_set(
-            codec, volume, nullptr);
+        es8311_voice_volume_set(codec, 0, nullptr);
     audio_output->SetGain(1.0f);
+    display_.prepareAudioPlayback();
 
     file_ = new AudioFileSourceLittleFS(path);
     decoder_ = new AudioGeneratorMP3();
@@ -96,6 +100,15 @@ bool AudioService::play(const char *path, uint8_t volume)
         decoder_->begin(file_, audio_output);
     if (!started)
         deletePlaybackLocked();
+    else if (codec)
+    {
+        // AudioOutputI2S::begin() preloads DMA with silence. Keep the
+        // ES8311 muted while its clocks settle, then reveal that silent
+        // stream before the decoder task starts sending MP3 samples.
+        vTaskDelay(pdMS_TO_TICKS(5));
+        es8311_voice_mute(codec, false);
+        es8311_voice_volume_set(codec, volume, nullptr);
+    }
 
     portENTER_CRITICAL(&finished_mux_);
     finished_ = false;
@@ -141,6 +154,19 @@ void AudioService::runTask()
             is_running = true;
             if (!decoder_->loop())
             {
+                AudioOutputI2S *audio_output =
+                    display_.audioOutput();
+                if (audio_output)
+                {
+                    // The decoder has reached MP3 EOF, but DMA can still
+                    // contain the last part of the sound. Queue silence
+                    // until those samples have physically played before
+                    // reporting completion or stopping I2S.
+                    audio_output->flush();
+                }
+                const es8311_handle_t codec = display_.codec();
+                if (codec)
+                    es8311_voice_mute(codec, true);
                 decoder_->stop();
                 is_running = false;
                 portENTER_CRITICAL(&finished_mux_);

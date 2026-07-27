@@ -19,11 +19,13 @@ public:
     void beginLvglInput();
     void registerLittleFs();
     void beginCodec();
+    void stopAudioOutput();
 
     TFT_eSPI &tft() { return tft_; }
     AudioOutputI2S *audioOutput() { return audio_output_; }
     es8311_handle_t codec() { return codec_; }
 
+    void prepareAudioPlayback();
     size_t writeStereoFrames(
         const int16_t *frames, size_t frame_count);
 
@@ -54,4 +56,5 @@ public:
     static TFT_eSPI &display();
     static AudioOutputI2S *audioOutput();
     static es8311_handle_t codec();
+    static void stopAudioOutput();
 };

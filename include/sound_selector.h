@@ -22,6 +22,8 @@ public:
     static const char *resolvePath(
         const char *path, const char *fallback_path);
     static const char *displayName(const char *path);
+    static size_t count();
+    static const char *pathAt(size_t index);
 
     void begin(
         lv_obj_t *parent,

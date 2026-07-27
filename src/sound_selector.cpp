@@ -356,3 +356,17 @@ const char *SoundSelector::displayName(const char *path)
         display_name, sizeof(display_name));
     return display_name;
 }
+
+size_t SoundSelector::count()
+{
+    if (!g_scanned)
+        scan();
+    return g_path_count;
+}
+
+const char *SoundSelector::pathAt(size_t index)
+{
+    if (!g_scanned)
+        scan();
+    return index < g_path_count ? g_paths[index] : nullptr;
+}

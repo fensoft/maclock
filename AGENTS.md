@@ -62,6 +62,13 @@ LittleFS, and boot lifecycle.
   empty when PlatformIO discovers them separately.
 - `include/*_service.h`, matching `src/*.cpp`: settings, I2C, RTC, weather,
   input, display, audio, Wi-Fi, alarm, and timer ownership.
+- `include/control_panel.h` and `src/control_panel.cpp`: station-only local
+  web controls and JSON routes. This is intentionally separate from the
+  captive Wi-Fi setup portal in `wifi_mode.cpp`.
+- `web/control-panel/`: responsive Vue source for the classic Macintosh web
+  control panel. `scripts/build_control_panel.py` runs as a PlatformIO prebuild
+  hook and regenerates the gzip-compressed `src/control_panel_page.h` whenever
+  the web-source fingerprint changes. Never hand-edit the generated header.
 - `src/init.cpp`: `DisplayService`, including TFT/LVGL, LittleFS LVGL driver,
   ES8311/I2S ownership, and the narrow Mini vMac hardware bridge.
 - `src/datetime_ui.cpp`: state-owning date/time editor; it reports RTC changes

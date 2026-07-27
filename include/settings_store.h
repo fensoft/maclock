@@ -26,6 +26,13 @@ public:
     void saveNightMode(const NightModeSettings &value);
     void saveChime(const ChimeSettings &value, const char *sound_path);
     String loadChimePath(const char *fallback) const;
+    String loadStartupSoundPath(const char *fallback) const;
+    uint8_t loadStartupSoundVolume(uint8_t fallback) const;
+    String loadFloppySoundPath(const char *fallback) const;
+    uint8_t loadFloppySoundVolume(uint8_t fallback) const;
+    void saveSystemSounds(
+        const char *startup_path, uint8_t startup_volume,
+        const char *floppy_path, uint8_t floppy_volume);
 
 private:
     Preferences preferences_;

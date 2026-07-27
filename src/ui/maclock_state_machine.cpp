@@ -20,6 +20,22 @@ void MaclockApp::begin()
     heap_caps_malloc_extmem_enable(0);
     LittleFS.begin();
     SoundSelector::scan();
+    const String saved_startup_path =
+        settings_store.loadStartupSoundPath("/startup.mp3");
+    strlcpy(
+        g_startup_sound_path, saved_startup_path.c_str(),
+        sizeof(g_startup_sound_path));
+    g_startup_sound_volume =
+        settings_store.loadStartupSoundVolume(80);
+    const String saved_floppy_path =
+        settings_store.loadFloppySoundPath("/floppy.mp3");
+    strlcpy(
+        g_floppy_sound_path, saved_floppy_path.c_str(),
+        sizeof(g_floppy_sound_path));
+    g_floppy_sound_volume =
+        settings_store.loadFloppySoundVolume(65);
+    timer_service.begin(settings_store.preferences());
+    control_panel_service.begin(*this);
     EmulatorHardwareBridge::bind(display_service);
     display_service.beginPanel();
     touch_eeprom_begin();
@@ -94,6 +110,20 @@ void MaclockApp::tick()
     {
         wifi_service.stopPortal();
     }
+    if (current_state_ == UI_STATE_WIFI_SETUP)
+        control_panel_service.stop();
+    else
+        control_panel_service.tick(wifi_service.snapshot());
+
+    if (control_preview_pending_ &&
+        static_cast<int32_t>(
+            now - control_preview_due_ms_) >= 0)
+    {
+        control_preview_pending_ = false;
+        audio_service.play(
+            control_preview_sound_,
+            control_preview_volume_);
+    }
 
     uint32_t synchronized_epoch = 0;
     if (wifi_service.takeTimeSync(synchronized_epoch))
@@ -167,16 +197,21 @@ void MaclockApp::tick()
             lv_obj_clear_flag(ui_shell.background, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(ui_shell.corners, LV_OBJ_FLAG_HIDDEN);
             lv_timer_handler();
-            audio_service.play("/startup.mp3", 80);
-            wifi_service.startTask();
+            startup_sound_started_ = audio_service.play(
+                SoundSelector::resolvePath(
+                    g_startup_sound_path, "/startup.mp3"),
+                g_startup_sound_volume);
             requested_state_ = advance_state(current_state_);
             state_start_ms_ = now;
         }
         break;
     case UI_STATE_WAIT_STARTUP_SOUND: // wait for end of startup sound
     {
-        if (audio_service.takeFinished())
+        if (!startup_sound_started_ ||
+            audio_service.takeFinished())
         {
+            startup_sound_started_ = false;
+            wifi_service.startTask();
             requested_state_ = advance_state(current_state_);
             state_start_ms_ = now;
         }
@@ -224,7 +259,10 @@ void MaclockApp::tick()
         lv_obj_clear_flag(ui_shell.background, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(ui_shell.corners, LV_OBJ_FLAG_HIDDEN);
         lv_timer_handler();
-        audio_service.play("/floppy.mp3", 65);
+        audio_service.play(
+            SoundSelector::resolvePath(
+                g_floppy_sound_path, "/floppy.mp3"),
+            g_floppy_sound_volume);
     }
         requested_state_ = advance_state(current_state_);
         state_start_ms_ = now;
@@ -597,6 +635,7 @@ void MaclockApp::tick()
             lv_obj_clear_flag(ui_shell.corners, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(
                 wifi_setup_view.panel, LV_OBJ_FLAG_HIDDEN);
+            control_panel_service.stop();
             wifi_service.startPortal();
             wifi_setup_view.last_update_ms = 0;
         }

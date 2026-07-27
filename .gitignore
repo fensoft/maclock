@@ -11,3 +11,7 @@ data/vMac.ROM
 data/disk*.dsk
 data/disk*.dsk.zip
 data/Thumbs.db
+data/*.mp3
+web/control-panel/node_modules/
+web/control-panel/dist/
+web/control-panel/.vite/

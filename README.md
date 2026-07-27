@@ -127,6 +127,7 @@ When enabled and connected, Maclock:
 - synchronizes the external RTC from NTP;
 - obtains the city coordinates and automatic UTC/DST offset;
 - refreshes the current conditions, daily low/high, and rain probability;
+- serves a local phone-friendly control panel;
 - pauses its Wi-Fi worker while Mini vMac is running.
 
 The clock switches back to its local BMP5xx/HTU2x display if the online
@@ -138,6 +139,50 @@ City lookup and weather use the
 [Open-Meteo Geocoding API](https://open-meteo.com/en/docs/geocoding-api) and
 [Forecast API](https://open-meteo.com/en/docs). Wi-Fi credentials and the city
 are stored in the device's persistent settings.
+
+### Web Control Panel
+
+The control panel is separate from the `Maclock Setup` captive portal. Setup
+only configures the network, city, timezone, and weather connection. Once
+Maclock is connected to the configured Wi-Fi, open:
+
+- `http://maclock.local/`; or
+- `http://<device-ip>/`, using the address shown in Diagnostics.
+
+The responsive control panel can:
+
+- change the clock face, light/dark theme, and brightness immediately;
+- configure and persist all three alarms, including weekly days, sound, and
+  volume;
+- save timer defaults, start or cancel the timer, and select its sound and
+  volume;
+- configure night-mode dimming and screen-off hours;
+- configure hourly/quarter-hour chimes and quiet hours;
+- choose persistent startup and floppy sounds and their volumes;
+- list and preview every `.mp3` file already present in LittleFS.
+
+The panel is served directly by Maclock and uses no cloud service. It is
+available only while the clock is connected to the same local network and is
+stopped before the Wi-Fi setup portal or Mini vMac takes ownership.
+
+The interface is a responsive Vue application styled after classic Macintosh
+control panels. Its editable source is in `web/control-panel/`; the generated
+`src/control_panel_page.h` must not be edited by hand. During every PlatformIO
+build, `scripts/build_control_panel.py` checks a source fingerprint and
+automatically runs the Vue build when the embedded header is stale. The final
+single-file HTML document is gzip-compressed before it is placed in firmware.
+
+For web-only development, run:
+
+```sh
+cd web/control-panel
+npm install
+npm run dev
+```
+
+The development server uses simulated Maclock state, so controls and timer
+updates can be tested without hardware. `npm run build` performs the same
+single-file build and header generation used by PlatformIO.
 
 ### Calibrating The Touchscreen
 

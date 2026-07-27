@@ -374,7 +374,7 @@ uint8_t ArduinoAPI_Sound_Init(uint32_t sample_rate)
     if (!audio_out || !es8311_handle)
         return 0;
 
-    audio_out->stop();
+    EmulatorHardwareBridge::stopAudioOutput();
     if (es8311_sample_frequency_config(
             es8311_handle,
             kCodecNominalRate * kCodecMclkMultiplier,
@@ -426,7 +426,7 @@ uint8_t ArduinoAPI_Sound_Start()
 
     if (xStreamBufferReset(EmulatorAudioQueue) != pdPASS)
     {
-        audio_out->stop();
+        EmulatorHardwareBridge::stopAudioOutput();
         EmulatorSoundStarted = false;
         return 0;
     }
@@ -441,7 +441,7 @@ uint8_t ArduinoAPI_Sound_Start()
             &EmulatorAudioTaskHandle,
             0) != pdPASS)
     {
-        audio_out->stop();
+        EmulatorHardwareBridge::stopAudioOutput();
         EmulatorSoundStarted = false;
         EmulatorAudioTaskHandle = NULL;
         return 0;
@@ -466,7 +466,7 @@ void ArduinoAPI_Sound_Stop()
     }
 
     if (audio_out)
-        audio_out->stop();
+        EmulatorHardwareBridge::stopAudioOutput();
     if (EmulatorAudioQueue)
         xStreamBufferReset(EmulatorAudioQueue);
 }
@@ -479,6 +479,8 @@ void ArduinoAPI_Sound_UnInit()
     ArduinoAPI_Sound_Stop();
     if (es8311_handle)
     {
+        es8311_voice_mute(es8311_handle, true);
+        es8311_voice_volume_set(es8311_handle, 0, nullptr);
         es8311_sample_frequency_config(
             es8311_handle,
             kClockAudioRate * kClockAudioMclkMultiplier,
@@ -491,6 +493,7 @@ void ArduinoAPI_Sound_UnInit()
             kClockAudioDmaBufferBytes);
         audio_out->SetRate((int)kClockAudioRate);
         audio_out->SetChannels(2);
+        audio_out->begin();
     }
     EmulatorSoundInitialized = false;
     EmulatorSoundSampleRate = 0;

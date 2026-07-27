@@ -28,15 +28,10 @@ enum AlarmEditorPage
     ALARM_PAGE_COUNT
 };
 
-struct AlarmConfig
-{
-    uint8_t enabled;
-    uint8_t hour;
-    uint8_t minute;
-    uint8_t weekdays;
-    uint8_t sound;
-    uint8_t volume;
-};
+using AlarmConfig = AlarmSettings;
+static_assert(
+    sizeof(AlarmConfig) == 6,
+    "AlarmSettings must preserve alarms_v1 storage layout");
 
 struct AlarmStorage
 {
@@ -947,6 +942,40 @@ uint8_t AlarmService::volume(size_t alarm_index) const
     if (alarm_index >= kAlarmCount)
         return g_volume_values[2];
     return g_volume_values[g_alarms[alarm_index].volume];
+}
+
+AlarmSettings AlarmService::settings(size_t alarm_index) const
+{
+    if (alarm_index >= kAlarmCount)
+        return AlarmSettings();
+    return g_alarms[alarm_index];
+}
+
+bool AlarmService::configure(
+    size_t alarm_index,
+    const AlarmSettings &settings,
+    const char *sound_path)
+{
+    if (alarm_index >= kAlarmCount ||
+        !AlarmConfigIsValid(settings) ||
+        !sound_path || !sound_path[0])
+    {
+        return false;
+    }
+
+    g_alarms[alarm_index] = settings;
+    strlcpy(
+        g_alarm_sound_paths[alarm_index],
+        SoundSelector::resolvePath(sound_path, "/quack.mp3"),
+        SOUND_SELECTOR_PATH_MAX);
+    g_last_trigger_minute[alarm_index] = UINT32_MAX;
+    if (g_snooze_alarm == static_cast<int>(alarm_index) &&
+        !settings.enabled)
+    {
+        g_snooze_alarm = -1;
+    }
+    SaveAlarms();
+    return true;
 }
 
 void AlarmView::begin(lv_obj_t *screen, AppEventSink &events)
