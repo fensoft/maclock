@@ -26,6 +26,7 @@
 #include <Preferences.h>
 #include "brightness.h"
 #include "localization.h"
+#include "regional_settings.h"
 #include "selector_list_style.h"
 #include "sound_selector.h"
 #include "wifi_mode.h"
@@ -84,7 +85,9 @@ struct UiImages
     lv_obj_t *disk_missing_1;
     lv_obj_t *disk_missing_2;
     lv_obj_t *boot;
+    lv_obj_t *boot_message;
     lv_obj_t *menu;
+    lv_obj_t *menu_titles;
     lv_obj_t *menu_right;
     lv_obj_t *icon;
     lv_obj_t *clock;
@@ -125,6 +128,7 @@ enum BootOptionsPage
     BOOT_OPTIONS_START,
     BOOT_OPTIONS_PREFERENCES,
     BOOT_OPTIONS_LANGUAGE,
+    BOOT_OPTIONS_REGIONAL,
     BOOT_OPTIONS_NIGHT_SCHEDULE,
     BOOT_OPTIONS_NIGHT_SCREEN,
     BOOT_OPTIONS_CHIME,
@@ -145,6 +149,8 @@ struct BootOptionsUi
     lv_obj_t *remember_selection;
     lv_obj_t *language_options;
     lv_obj_t *language_items[UI_LANGUAGE_COUNT];
+    lv_obj_t *date_format_options;
+    lv_obj_t *temperature_unit_options;
     lv_obj_t *night_enabled_options;
     lv_obj_t *night_start_options;
     lv_obj_t *night_end_options;
@@ -167,6 +173,8 @@ struct BootOptionsUi
     lv_obj_t *next_label;
     lv_obj_t *brightness_label;
     lv_obj_t *remember_label;
+    lv_obj_t *date_format_label;
+    lv_obj_t *temperature_unit_label;
     lv_obj_t *dim_from_label;
     lv_obj_t *normal_at_label;
     lv_obj_t *screen_off_label;
@@ -273,6 +281,9 @@ static int g_active_alarm_index = -1;
 static lv_obj_t *g_cursor = nullptr;
 static lv_timer_t *g_cursor_timer = nullptr;
 static BootBrightness g_boot_brightness = BOOT_BRIGHTNESS_LATEST;
+static UiDateFormat g_date_format = UI_DATE_FORMAT_DMY;
+static UiTemperatureUnit g_temperature_unit =
+    UI_TEMPERATURE_CELSIUS;
 static BootOptionsPage g_boot_options_page = BOOT_OPTIONS_START;
 static bool g_boot_floppy_emulator = true;
 static NightModeSettings g_night_mode = {false, 22, 7, false, 23};
@@ -303,6 +314,10 @@ static char g_chime_sound_path[SOUND_SELECTOR_PATH_MAX] =
 static const uint8_t g_chime_volumes[] = {25, 50, 75, 100};
 static const char *g_brightness_map[4] = {};
 static const char *g_remember_map[3] = {};
+static const char *g_date_format_map[] = {
+    "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", ""};
+static const char *g_temperature_unit_map[] = {
+    "°C", "°F", ""};
 static const char *g_night_enabled_map[3] = {};
 static const char *g_night_screen_map[3] = {};
 static const char *g_chime_mode_map[6] = {};
@@ -748,6 +763,25 @@ static void update_language_selection(bool scroll_to_selected)
     }
 }
 
+static void update_menu_titles()
+{
+    if (!g_ui.menu_titles)
+        return;
+
+    char titles[96];
+    snprintf(
+        titles, sizeof(titles), "%s  %s  %s  %s",
+        tr("File"), tr("Edit"), tr("View"), tr("Special"));
+    lv_label_set_text(g_ui.menu_titles, titles);
+}
+
+static void update_boot_message()
+{
+    if (g_ui.boot_message)
+        lv_label_set_text(
+            g_ui.boot_message, tr("Welcome to Macintosh."));
+}
+
 static void update_boot_translation_maps()
 {
     g_brightness_map[0] = tr("Latest");
@@ -862,12 +896,14 @@ static void update_wifi_options_ui()
     {
         snprintf(status, sizeof(status), tr("Online: %s\n%s"),
                  wifi.location[0] ? wifi.location : wifi.city,
-                 wifi.timezone[0] ? wifi.timezone : wifi.status);
+                 wifi.timezone[0]
+                     ? wifi.timezone
+                     : tr(wifi.status));
     }
     else
     {
         snprintf(status, sizeof(status), "%s\n%s",
-                 wifi.ssid, wifi.status);
+                 wifi.ssid, tr(wifi.status));
     }
     lv_label_set_text(g_boot_options_ui.wifi_status, status);
 }
@@ -882,6 +918,30 @@ static void language_event(lv_event_t *event)
     localization_set_language((UiLanguage)selected);
     preferences.putUChar("language", (uint8_t)selected);
     refresh_language_ui();
+}
+
+static void date_format_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected >= UI_DATE_FORMAT_COUNT)
+        return;
+    g_date_format = (UiDateFormat)selected;
+    preferences.putUChar("date_format", (uint8_t)g_date_format);
+    datetime_ui_set_date_format(g_date_format);
+}
+
+static void temperature_unit_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected >= UI_TEMPERATURE_UNIT_COUNT)
+        return;
+    g_temperature_unit = (UiTemperatureUnit)selected;
+    preferences.putUChar(
+        "temp_unit", (uint8_t)g_temperature_unit);
 }
 
 static void chime_mode_event(lv_event_t *event)
@@ -1112,9 +1172,10 @@ static void set_boot_options_page(BootOptionsPage page)
 
     const char *page_names[BOOT_OPTIONS_PAGE_COUNT] = {
         tr("Start"), tr("Preferences"), tr("Language"),
+        tr("Regional"),
         tr("Night Schedule"), tr("Night Screen"), tr("Chime"),
         tr("Chime Sound"), tr("Chime Volume"), tr("Quiet Hours"),
-        "Wi-Fi", tr("Tools")};
+        tr("Wi-Fi"), tr("Tools")};
     g_boot_options_page = page;
     for (size_t i = 0; i < BOOT_OPTIONS_PAGE_COUNT; ++i)
         lv_obj_add_flag(
@@ -1346,6 +1407,83 @@ static void init_boot_options_ui(lv_obj_t *screen)
         lv_obj_add_event_cb(
             item, language_event, LV_EVENT_CLICKED, nullptr);
     }
+
+    lv_obj_t *regional_page =
+        g_boot_options_ui.pages[BOOT_OPTIONS_REGIONAL];
+    g_boot_options_ui.date_format_label =
+        lv_label_create(regional_page);
+    lv_label_set_text(
+        g_boot_options_ui.date_format_label, tr("Date format"));
+    lv_obj_set_style_text_font(
+        g_boot_options_ui.date_format_label,
+        &lv_font_chicago_8, 0);
+    lv_obj_align(
+        g_boot_options_ui.date_format_label,
+        LV_ALIGN_TOP_MID, 0, 0);
+
+    g_boot_options_ui.date_format_options =
+        lv_buttonmatrix_create(regional_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.date_format_options,
+        g_date_format_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.date_format_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.date_format_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        g_boot_options_ui.date_format_options, true);
+    lv_obj_set_size(
+        g_boot_options_ui.date_format_options, 260, 42);
+    lv_obj_align(
+        g_boot_options_ui.date_format_options,
+        LV_ALIGN_TOP_MID, 0, 16);
+    style_boot_options_matrix(
+        g_boot_options_ui.date_format_options);
+    lv_obj_set_style_pad_column(
+        g_boot_options_ui.date_format_options, 6, 0);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.date_format_options,
+        date_format_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    g_boot_options_ui.temperature_unit_label =
+        lv_label_create(regional_page);
+    lv_label_set_text(
+        g_boot_options_ui.temperature_unit_label,
+        tr("Temperature unit"));
+    lv_obj_set_style_text_font(
+        g_boot_options_ui.temperature_unit_label,
+        &lv_font_chicago_8, 0);
+    lv_obj_align(
+        g_boot_options_ui.temperature_unit_label,
+        LV_ALIGN_TOP_MID, 0, 69);
+
+    g_boot_options_ui.temperature_unit_options =
+        lv_buttonmatrix_create(regional_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.temperature_unit_options,
+        g_temperature_unit_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.temperature_unit_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.temperature_unit_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        g_boot_options_ui.temperature_unit_options, true);
+    lv_obj_set_size(
+        g_boot_options_ui.temperature_unit_options, 260, 42);
+    lv_obj_align(
+        g_boot_options_ui.temperature_unit_options,
+        LV_ALIGN_BOTTOM_MID, 0, 0);
+    style_boot_options_matrix(
+        g_boot_options_ui.temperature_unit_options);
+    lv_obj_set_style_pad_column(
+        g_boot_options_ui.temperature_unit_options, 10, 0);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.temperature_unit_options,
+        temperature_unit_event, LV_EVENT_VALUE_CHANGED, nullptr);
 
     lv_obj_t *night_schedule_page =
         g_boot_options_ui.pages[BOOT_OPTIONS_NIGHT_SCHEDULE];
@@ -1653,7 +1791,7 @@ static void init_boot_options_ui(lv_obj_t *screen)
     lv_obj_t *start_page =
         g_boot_options_ui.pages[BOOT_OPTIONS_START];
     lv_obj_t *clock_button =
-        create_action_button(start_page, "Clock",
+        create_action_button(start_page, tr("Clock"),
                              boot_start_clock_event);
     g_boot_options_ui.clock_button_label =
         lv_obj_get_child(clock_button, 0);
@@ -1753,6 +1891,12 @@ static void show_boot_options_ui()
         1, LV_BUTTONMATRIX_CTRL_CHECKED);
     lv_buttonmatrix_set_selected_button(
         g_boot_options_ui.remember_selection, 1);
+    set_checked_button(
+        g_boot_options_ui.date_format_options,
+        (uint32_t)g_date_format);
+    set_checked_button(
+        g_boot_options_ui.temperature_unit_options,
+        (uint32_t)g_temperature_unit);
     update_language_selection(true);
     update_night_options_ui();
     update_chime_options_ui();
@@ -1881,6 +2025,11 @@ static void refresh_language_ui()
 
     lv_label_set_text(g_boot_options_ui.brightness_label, tr("Brightness"));
     lv_label_set_text(g_boot_options_ui.remember_label, tr("Default boot mode"));
+    lv_label_set_text(
+        g_boot_options_ui.date_format_label, tr("Date format"));
+    lv_label_set_text(
+        g_boot_options_ui.temperature_unit_label,
+        tr("Temperature unit"));
     lv_label_set_text(g_boot_options_ui.dim_from_label, tr("Dim from"));
     lv_label_set_text(g_boot_options_ui.normal_at_label, tr("Normal at"));
     lv_label_set_text(g_boot_options_ui.screen_off_label, tr("Screen off at"));
@@ -1906,6 +2055,8 @@ static void refresh_language_ui()
     lv_label_set_text(
         g_wifi_setup_ui.status,
         tr("Connect to: Maclock Setup\nThen open: 192.168.4.1"));
+    update_boot_message();
+    update_menu_titles();
     lv_label_set_text(g_ui.clock_label, tr("Clock"));
     lv_label_set_text(g_calib_ui.label, tr("Touch the crosshair"));
 
@@ -1919,6 +2070,12 @@ static void refresh_language_ui()
     set_checked_button(
         g_boot_options_ui.remember_selection,
         remember_selected < 2 ? remember_selected : 1);
+    set_checked_button(
+        g_boot_options_ui.date_format_options,
+        (uint32_t)g_date_format);
+    set_checked_button(
+        g_boot_options_ui.temperature_unit_options,
+        (uint32_t)g_temperature_unit);
     update_night_options_ui();
     update_chime_options_ui();
     update_wifi_options_ui();
@@ -1934,6 +2091,7 @@ static void hide_all_ui()
     lv_obj_add_flag(g_ui.disk_missing_2, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.boot, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.menu, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(g_ui.menu_titles, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.menu_right, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.icon, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.clock, LV_OBJ_FLAG_HIDDEN);
@@ -2067,6 +2225,43 @@ static bool littlefs_exists(const char *path)
     return LittleFS.exists(path);
 }
 
+static float display_temperature(float celsius)
+{
+    return g_temperature_unit == UI_TEMPERATURE_FAHRENHEIT
+               ? celsius * 9.0f / 5.0f + 32.0f
+               : celsius;
+}
+
+static char display_temperature_unit()
+{
+    return g_temperature_unit == UI_TEMPERATURE_FAHRENHEIT
+               ? 'F'
+               : 'C';
+}
+
+static void format_display_date(
+    const DateTime &date, char *text, size_t text_size)
+{
+    switch (g_date_format)
+    {
+    case UI_DATE_FORMAT_MDY:
+        snprintf(
+            text, text_size, "%02d/%02d/%04d",
+            date.month(), date.day(), date.year());
+        break;
+    case UI_DATE_FORMAT_YMD:
+        snprintf(
+            text, text_size, "%04d-%02d-%02d",
+            date.year(), date.month(), date.day());
+        break;
+    default:
+        snprintf(
+            text, text_size, "%02d/%02d/%04d",
+            date.day(), date.month(), date.year());
+        break;
+    }
+}
+
 static void update_clock_labels()
 {
     static int last_sec = -1;
@@ -2084,9 +2279,7 @@ static void update_clock_labels()
     lv_label_set_text(g_ui.time, buf);
     lv_obj_align(g_ui.time, LV_ALIGN_TOP_MID, 0, 14 + 4);
 
-    int year = now.year();
-    snprintf(buf, sizeof(buf), "%02d/%02d/%04d",
-             now.day(), now.month(), year);
+    format_display_date(now, buf, sizeof(buf));
     lv_label_set_text(g_ui.date, buf);
 
     const WifiModeSnapshot online = wifi_mode_snapshot();
@@ -2145,19 +2338,22 @@ static void update_clock_labels()
     {
         char internal[16];
         if (sensor_valid)
-            snprintf(internal, sizeof(internal), "%.1f°", temperature);
+            snprintf(
+                internal, sizeof(internal), "%.1f°",
+                display_temperature(temperature));
         else
             snprintf(internal, sizeof(internal), "--");
 
         char weather[112];
         snprintf(
             weather, sizeof(weather),
-            "%s: %s   %s: %.1f°   %s: %.0f-%.0f°",
+            "%s: %s   %s: %.1f°   %s: %.0f-%.0f°%c",
             tr("In"), internal, tr("Out"),
-            online.current_temperature,
+            display_temperature(online.current_temperature),
             tr("Today"),
-            online.minimum_temperature,
-            online.maximum_temperature);
+            display_temperature(online.minimum_temperature),
+            display_temperature(online.maximum_temperature),
+            display_temperature_unit());
 
         lv_label_set_text(g_ui.temp, weather);
         lv_obj_clear_flag(g_ui.temp, LV_OBJ_FLAG_HIDDEN);
@@ -2217,7 +2413,10 @@ static void update_clock_labels()
     lv_obj_clear_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
 
     char tbuf[12];
-    snprintf(tbuf, sizeof(tbuf), "%02.1f°C", temperature);
+    snprintf(
+        tbuf, sizeof(tbuf), "%02.1f°%c",
+        display_temperature(temperature),
+        display_temperature_unit());
     lv_label_set_text(g_ui.temp, tbuf);
 
     if (gauge_width == 0)
@@ -2325,6 +2524,24 @@ static void init_ui_assets()
     g_ui.menu = lv_image_create(scr);
     set_image_src(g_ui.menu, g_ui.menu_buf, "S:/menu.png");
 
+    g_ui.menu_titles = lv_label_create(scr);
+    lv_obj_remove_style_all(g_ui.menu_titles);
+    lv_obj_set_size(g_ui.menu_titles, 251, 19);
+    lv_obj_set_pos(g_ui.menu_titles, 37, 0);
+    lv_obj_set_style_bg_color(
+        g_ui.menu_titles, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(
+        g_ui.menu_titles, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_color(
+        g_ui.menu_titles, lv_color_black(), 0);
+    lv_obj_set_style_text_font(
+        g_ui.menu_titles, &lv_font_chicago_8, 0);
+    lv_obj_set_style_pad_left(g_ui.menu_titles, 4, 0);
+    lv_obj_set_style_pad_top(g_ui.menu_titles, 2, 0);
+    lv_label_set_long_mode(
+        g_ui.menu_titles, LV_LABEL_LONG_CLIP);
+    update_menu_titles();
+
     g_ui.menu_right = lv_image_create(scr);
     set_image_src(g_ui.menu_right, g_ui.menu_right_buf, "S:/menu_right.png");
     lv_obj_align(g_ui.menu_right, LV_ALIGN_TOP_RIGHT, 0, 0);
@@ -2354,13 +2571,22 @@ static void init_ui_assets()
     lv_obj_align(g_ui.time, LV_ALIGN_TOP_MID, 0, 8);
 
     g_ui.date = lv_label_create(g_ui.clock);
-    lv_label_set_text(g_ui.date, "1/1/00");
+    lv_label_set_text(
+        g_ui.date,
+        g_date_format == UI_DATE_FORMAT_YMD
+            ? "0000-00-00"
+            : "00/00/0000");
     lv_obj_set_style_text_font(g_ui.date, &lv_font_chicago_32, 0);
     lv_obj_set_style_text_letter_space(g_ui.date, 1, 0);
     lv_obj_align(g_ui.date, LV_ALIGN_TOP_MID, 0, 83);
 
     g_ui.temp = lv_label_create(g_ui.clock);
-    lv_label_set_text(g_ui.temp, "00.0°C");
+    char temperature_placeholder[12];
+    snprintf(
+        temperature_placeholder,
+        sizeof(temperature_placeholder),
+        "--.-°%c", display_temperature_unit());
+    lv_label_set_text(g_ui.temp, temperature_placeholder);
     lv_obj_set_style_text_font(g_ui.temp, &lv_font_chicago_8, 0);
     lv_obj_set_style_text_letter_space(g_ui.temp, 1, 0);
     lv_obj_set_width(g_ui.temp, 220);
@@ -2404,6 +2630,24 @@ static void init_ui_assets()
     g_ui.boot = lv_image_create(scr);
     set_image_src(g_ui.boot, g_ui.boot_buf, "S:/boot.png");
     lv_obj_center(g_ui.boot);
+
+    g_ui.boot_message = lv_label_create(g_ui.boot);
+    lv_obj_remove_style_all(g_ui.boot_message);
+    lv_obj_set_size(g_ui.boot_message, 188, 24);
+    lv_obj_set_pos(g_ui.boot_message, 68, 25);
+    lv_obj_set_style_bg_opa(
+        g_ui.boot_message, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(
+        g_ui.boot_message, lv_color_white(), 0);
+    lv_obj_set_style_text_color(
+        g_ui.boot_message, lv_color_black(), 0);
+    lv_obj_set_style_text_font(
+        g_ui.boot_message, &lv_font_chicago_8, 0);
+    lv_obj_set_style_pad_left(g_ui.boot_message, 6, 0);
+    lv_obj_set_style_pad_top(g_ui.boot_message, 2, 0);
+    lv_label_set_long_mode(
+        g_ui.boot_message, LV_LABEL_LONG_CLIP);
+    update_boot_message();
 
     for (size_t i = 0; i < k_plugin_max; ++i)
     {
@@ -2667,10 +2911,10 @@ static void update_diagnostics_ui()
              "%s: %lld/%u\n"
              "%s: %s\n"
              "%s: %s\n"
-             "I2C    : %s\n"
-             "Wi-Fi  : %s\n"
-             "SSID   : %s\n"
-             "IP/RSSI: %s\n"
+             "%-7s: %s\n"
+             "%-7s: %s\n"
+             "%-7s: %s\n"
+             "%-7s: %s\n"
              "%s",
              tr("Clock"),
              digitalRead(GPIO_CLOCK) == LOW
@@ -2690,9 +2934,13 @@ static void update_diagnostics_ui()
              touch.touched() ? tr("Pressed") : tr("Released"),
              tr("Charging"),
              digitalRead(GPIO_CHARGING) == HIGH ? tr("Yes") : tr("No"),
+             tr("I2C"),
              i2c_devices,
+             tr("Wi-Fi"),
              network_state,
+             tr("SSID"),
              network_ssid,
+             tr("IP/RSSI"),
              network_address,
              rtc_status);
     lv_label_set_text(g_diagnostics_ui.status, status);
@@ -2709,6 +2957,21 @@ void setup()
         saved_language < UI_LANGUAGE_COUNT
             ? (UiLanguage)saved_language
             : UI_LANGUAGE_ENGLISH);
+    const uint8_t saved_date_format =
+        preferences.getUChar(
+            "date_format", UI_DATE_FORMAT_DMY);
+    g_date_format =
+        saved_date_format < UI_DATE_FORMAT_COUNT
+            ? (UiDateFormat)saved_date_format
+            : UI_DATE_FORMAT_DMY;
+    const uint8_t saved_temperature_unit =
+        preferences.getUChar(
+            "temp_unit", UI_TEMPERATURE_CELSIUS);
+    g_temperature_unit =
+        saved_temperature_unit < UI_TEMPERATURE_UNIT_COUNT
+            ? (UiTemperatureUnit)saved_temperature_unit
+            : UI_TEMPERATURE_CELSIUS;
+    datetime_ui_set_date_format(g_date_format);
     g_mp3_lock = xSemaphoreCreateMutex();
     alarms_init(preferences);
     wifi_mode_begin(preferences);
@@ -3137,6 +3400,7 @@ void loop()
             lv_obj_clear_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(g_ui.menu, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_ui.menu_titles, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(g_ui.menu_right, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(g_ui.clock, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(g_ui.clock_label, LV_OBJ_FLAG_HIDDEN);
@@ -3369,7 +3633,7 @@ void loop()
                 setup_status, sizeof(setup_status),
                 tr("1. Connect to Wi-Fi:\nMaclock Setup\n\n"
                    "2. Open 192.168.4.1\n\n%s"),
-                wifi.status);
+                tr(wifi.status));
             lv_label_set_text(
                 g_wifi_setup_ui.status, setup_status);
             lv_timer_handler();

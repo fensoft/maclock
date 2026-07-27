@@ -19,6 +19,8 @@ struct DateTimeUi
     lv_obj_t *day;
     lv_obj_t *month;
     lv_obj_t *year;
+    lv_obj_t *date_sep1;
+    lv_obj_t *date_sep2;
     lv_obj_t *plus_btn;
     lv_obj_t *minus_btn;
     lv_obj_t *save_btn;
@@ -38,6 +40,50 @@ static lv_style_t g_spinbox_style;
 static lv_style_t g_spinbox_style_active;
 static lv_style_t g_btn_style;
 static lv_style_t g_btn_style_pressed;
+static UiDateFormat g_date_format = UI_DATE_FORMAT_DMY;
+
+static void update_date_order()
+{
+    if (!g_dt_ui.date_row || !g_dt_ui.date_sep1 ||
+        !g_dt_ui.date_sep2)
+    {
+        return;
+    }
+
+    const char *separator =
+        g_date_format == UI_DATE_FORMAT_YMD ? "-" : "/";
+    lv_label_set_text(g_dt_ui.date_sep1, separator);
+    lv_label_set_text(g_dt_ui.date_sep2, separator);
+
+    lv_obj_t *ordered[5] = {};
+    switch (g_date_format)
+    {
+    case UI_DATE_FORMAT_MDY:
+        ordered[0] = lv_obj_get_parent(g_dt_ui.month);
+        ordered[1] = g_dt_ui.date_sep1;
+        ordered[2] = lv_obj_get_parent(g_dt_ui.day);
+        ordered[3] = g_dt_ui.date_sep2;
+        ordered[4] = lv_obj_get_parent(g_dt_ui.year);
+        break;
+    case UI_DATE_FORMAT_YMD:
+        ordered[0] = lv_obj_get_parent(g_dt_ui.year);
+        ordered[1] = g_dt_ui.date_sep1;
+        ordered[2] = lv_obj_get_parent(g_dt_ui.month);
+        ordered[3] = g_dt_ui.date_sep2;
+        ordered[4] = lv_obj_get_parent(g_dt_ui.day);
+        break;
+    default:
+        ordered[0] = lv_obj_get_parent(g_dt_ui.day);
+        ordered[1] = g_dt_ui.date_sep1;
+        ordered[2] = lv_obj_get_parent(g_dt_ui.month);
+        ordered[3] = g_dt_ui.date_sep2;
+        ordered[4] = lv_obj_get_parent(g_dt_ui.year);
+        break;
+    }
+
+    for (int32_t i = 0; i < 5; ++i)
+        lv_obj_move_to_index(ordered[i], i);
+}
 
 static void select_last_digit(lv_obj_t *spinbox)
 {
@@ -278,24 +324,27 @@ void datetime_ui_init(lv_obj_t *scr)
     g_dt_spinbox_digits[g_dt_spinbox_count - 1] = 2;
     g_dt_spinbox_min[g_dt_spinbox_count - 1] = 1;
     g_dt_spinbox_max[g_dt_spinbox_count - 1] = 31;
-    lv_obj_t *date_sep1 = lv_label_create(g_dt_ui.date_row);
-    lv_label_set_text(date_sep1, "/");
-    lv_obj_set_style_text_font(date_sep1, &lv_font_chicago_8, 0);
+    g_dt_ui.date_sep1 = lv_label_create(g_dt_ui.date_row);
+    lv_label_set_text(g_dt_ui.date_sep1, "/");
+    lv_obj_set_style_text_font(
+        g_dt_ui.date_sep1, &lv_font_chicago_8, 0);
 
     g_dt_ui.month = create_spinbox_column(g_dt_ui.date_row, 1, 12, 2, 1);
     g_dt_spinboxes[g_dt_spinbox_count++] = g_dt_ui.month;
     g_dt_spinbox_digits[g_dt_spinbox_count - 1] = 2;
     g_dt_spinbox_min[g_dt_spinbox_count - 1] = 1;
     g_dt_spinbox_max[g_dt_spinbox_count - 1] = 12;
-    lv_obj_t *date_sep2 = lv_label_create(g_dt_ui.date_row);
-    lv_label_set_text(date_sep2, "/");
-    lv_obj_set_style_text_font(date_sep2, &lv_font_chicago_8, 0);
+    g_dt_ui.date_sep2 = lv_label_create(g_dt_ui.date_row);
+    lv_label_set_text(g_dt_ui.date_sep2, "/");
+    lv_obj_set_style_text_font(
+        g_dt_ui.date_sep2, &lv_font_chicago_8, 0);
 
     g_dt_ui.year = create_spinbox_column(g_dt_ui.date_row, 2000, 2099, 4, 2026);
     g_dt_spinboxes[g_dt_spinbox_count++] = g_dt_ui.year;
     g_dt_spinbox_digits[g_dt_spinbox_count - 1] = 4;
     g_dt_spinbox_min[g_dt_spinbox_count - 1] = 2000;
     g_dt_spinbox_max[g_dt_spinbox_count - 1] = 2099;
+    update_date_order();
 
     lv_obj_t *step_row = lv_obj_create(g_dt_ui.panel);
     lv_obj_remove_style_all(step_row);
@@ -388,6 +437,15 @@ void datetime_ui_enter(const DateTime &current)
         lv_obj_clear_state(g_dt_spinboxes[i], LV_STATE_CHECKED);
     lv_obj_add_state(g_dt_ui.active_spinbox, LV_STATE_CHECKED);
     select_last_digit(g_dt_ui.active_spinbox);
+}
+
+void datetime_ui_set_date_format(UiDateFormat format)
+{
+    g_date_format =
+        format < UI_DATE_FORMAT_COUNT
+            ? format
+            : UI_DATE_FORMAT_DMY;
+    update_date_order();
 }
 
 void datetime_ui_refresh_language()

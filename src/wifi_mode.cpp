@@ -8,6 +8,8 @@
 #include <WiFi.h>
 #include <time.h>
 
+#include "localization.h"
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -164,6 +166,23 @@ static String html_escape(const char *text)
     return escaped;
 }
 
+static const char *language_code()
+{
+    switch (localization_get_language())
+    {
+    case UI_LANGUAGE_FRENCH:
+        return "fr";
+    case UI_LANGUAGE_SPANISH:
+        return "es";
+    case UI_LANGUAGE_GERMAN:
+        return "de";
+    case UI_LANGUAGE_ITALIAN:
+        return "it";
+    default:
+        return "en";
+    }
+}
+
 static bool begin_http(HTTPClient &http, NetworkClient &client,
                        const String &url)
 {
@@ -180,7 +199,9 @@ static bool geocode_city(WifiSettings &settings)
     const String url =
         String(F("http://geocoding-api.open-meteo.com/v1/search?name=")) +
         url_encode(settings.city) +
-        F("&count=1&language=en&format=json");
+        F("&count=1&language=") +
+        language_code() +
+        F("&format=json");
 
     NetworkClient client;
     HTTPClient http;
@@ -194,13 +215,10 @@ static bool geocode_city(WifiSettings &settings)
     const int response = http.GET();
     if (response != HTTP_CODE_OK)
     {
-        char status[48];
-        snprintf(status, sizeof(status),
-                 response < 0
-                     ? "City service connection failed"
-                     : "City service error: HTTP %d",
-                 response);
-        set_status(status);
+        set_status(
+            response < 0
+                ? "City service connection failed"
+                : "City service error");
         Serial.printf(
             "[Wi-Fi] City lookup failed: %d (%s)\n",
             response,
@@ -518,7 +536,8 @@ static void send_setup_page()
     String page;
     page.reserve(1500);
     page += F(
-        "<!doctype html><html><head><meta name=viewport "
+        "<!doctype html><html><head><meta charset=utf-8>"
+        "<meta name=viewport "
         "content='width=device-width,initial-scale=1'>"
         "<title>Maclock Wi-Fi</title><style>"
         "body{font:18px sans-serif;max-width:32rem;margin:2rem auto;"
@@ -530,17 +549,32 @@ static void send_setup_page()
         "button{margin-top:1.2rem;background:#111;color:#fff}"
         "small{display:block;margin-top:.4rem}</style></head><body>"
         "<h1>Maclock Wi-Fi</h1><form method=post action=/save>"
-        "<label>Wi-Fi name</label><input name=ssid maxlength=32 required value=\"");
+        "<label>");
+    page += html_escape(tr("Wi-Fi name"));
+    page += F(
+        "</label><input name=ssid maxlength=32 required value=\"");
     page += html_escape(settings.ssid);
     page += F(
-        "\"><label>Password</label><input name=pass type=password "
-        "maxlength=64 value=\"\"><small>Leave empty to keep the saved "
-        "password, or for a new open network.</small>"
-        "<label>City</label><input name=city maxlength=48 required value=\"");
+        "\"><label>");
+    page += html_escape(tr("Password"));
+    page += F(
+        "</label><input name=pass type=password "
+        "maxlength=64 value=\"\"><small>");
+    page += html_escape(
+        tr("Leave empty to keep the saved password, or for a new open network."));
+    page += F("</small><label>");
+    page += html_escape(tr("City"));
+    page += F(
+        "</label><input name=city maxlength=48 required value=\"");
     page += html_escape(settings.city);
     page += F(
-        "\"><small>Used for timezone, DST, and weather.</small>"
-        "<button type=submit>Save and enable Wi-Fi</button>"
+        "\"><small>");
+    page += html_escape(
+        tr("Used for timezone, DST, and weather."));
+    page += F("</small><button type=submit>");
+    page += html_escape(tr("Save and enable Wi-Fi"));
+    page += F(
+        "</button>"
         "</form></body></html>");
     g_web_server.send(200, "text/html", page);
 }
@@ -555,7 +589,7 @@ static void save_setup()
     if (!ssid.length() || !city.length())
     {
         g_web_server.send(400, "text/plain",
-                          "Wi-Fi name and city are required.");
+                          tr("Wi-Fi name and city are required."));
         return;
     }
 
@@ -592,11 +626,19 @@ static void save_setup()
         g_preferences->putBool("wifi_coord", false);
     }
 
-    g_web_server.send(
-        200, "text/html",
-        "<!doctype html><meta name=viewport "
+    String page;
+    page.reserve(256);
+    page += F(
+        "<!doctype html><meta charset=utf-8>"
+        "<meta name=viewport "
         "content='width=device-width,initial-scale=1'>"
-        "<h1>Saved</h1><p>Return to Maclock and press Back.</p>");
+        "<h1>");
+    page += html_escape(tr("Saved"));
+    page += F("</h1><p>");
+    page += html_escape(
+        tr("Return to Maclock and press Back."));
+    page += F("</p>");
+    g_web_server.send(200, "text/html", page);
 }
 
 static void configure_portal_routes()

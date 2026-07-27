@@ -19,6 +19,7 @@
 #include "audio_output.h"
 #include "brightness.h"
 #include "es8311.h"
+#include "localization.h"
 
 #include "SYSDEPNS.h"
 #include "CNFGGLOB.h"
@@ -611,9 +612,15 @@ static void DrawEmulatorStartupOverlay()
     my_lcd.drawRect(x, y, width, height, TFT_BLACK);
     my_lcd.setTextColor(TFT_BLACK, TFT_WHITE);
     my_lcd.setTextSize(1);
-    my_lcd.drawString("Clock: Enter   Alarm: Escape", x + 7, y + 7, 1);
-    my_lcd.drawString("Hold both 2s: Boot Options", x + 7, y + 23, 1);
-    my_lcd.drawString("Rotary: Brightness", x + 7, y + 39, 1);
+    my_lcd.drawString(
+        tr("Clock: Enter   Alarm: Escape"),
+        x + 7, y + 7, 1);
+    my_lcd.drawString(
+        tr("Hold both 2s: Boot Options"),
+        x + 7, y + 23, 1);
+    my_lcd.drawString(
+        tr("Rotary: Brightness"),
+        x + 7, y + 39, 1);
 }
 
 static void DrawScreenRegion(const uint8_t *screen_ptr,

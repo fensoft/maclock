@@ -326,17 +326,21 @@ static void UpdateSummary()
         return;
 
     const AlarmConfig &alarm = g_edit_alarms[g_selected_alarm];
-    static const char day_letters[] = "MTWTFSS";
-    char days[8];
+    static const char *day_names[] = {
+        "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+    char days[48] = {};
     size_t day_count = 0;
     for (size_t i = 0; i < 7; ++i)
     {
         if ((alarm.weekdays & (uint8_t)(1U << i)) != 0)
-            days[day_count++] = day_letters[i];
+        {
+            if (day_count++)
+                strlcat(days, " ", sizeof(days));
+            strlcat(days, tr(day_names[i]), sizeof(days));
+        }
     }
     if (day_count == 0)
-        days[day_count++] = '-';
-    days[day_count] = '\0';
+        strlcpy(days, "-", sizeof(days));
 
     char text[160];
     snprintf(text, sizeof(text),
