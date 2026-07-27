@@ -22,6 +22,7 @@ static constexpr uint32_t kForecastRefreshMs = 30UL * 60UL * 1000UL;
 static constexpr uint32_t kNtpRefreshMs = 6UL * 60UL * 60UL * 1000UL;
 static constexpr uint32_t kForecastStaleSeconds = 6UL * 60UL * 60UL;
 static constexpr uint16_t kHttpTimeoutMs = 12000;
+static constexpr size_t kMaxDetectedNetworks = 12;
 
 struct WifiSettings
 {
@@ -33,6 +34,13 @@ struct WifiSettings
     double latitude;
     double longitude;
     int32_t utc_offset_seconds;
+};
+
+struct DetectedNetwork
+{
+    char ssid[33];
+    int32_t rssi;
+    bool secured;
 };
 
 static Preferences *g_preferences = nullptr;
@@ -51,6 +59,10 @@ static bool g_time_sync_pending = false;
 static uint32_t g_pending_local_epoch = 0;
 static uint32_t g_last_forecast_ms = 0;
 static uint32_t g_last_ntp_ms = 0;
+static DetectedNetwork
+    g_detected_networks[kMaxDetectedNetworks] = {};
+static size_t g_detected_network_count = 0;
+static bool g_network_scan_succeeded = false;
 
 static void lock_state()
 {
@@ -164,6 +176,94 @@ static String html_escape(const char *text)
         ++text;
     }
     return escaped;
+}
+
+static void scan_detected_networks()
+{
+    g_detected_network_count = 0;
+    g_network_scan_succeeded = false;
+    WiFi.scanDelete();
+
+    const int16_t result =
+        WiFi.scanNetworks(false, false);
+    if (result < 0)
+    {
+        Serial.printf("[Wi-Fi] Network scan failed: %d\n", result);
+        WiFi.scanDelete();
+        return;
+    }
+    g_network_scan_succeeded = true;
+
+    for (int16_t i = 0; i < result; ++i)
+    {
+        const String ssid = WiFi.SSID(i);
+        if (!ssid.length() || ssid == kSetupSsid)
+            continue;
+
+        const int32_t rssi = WiFi.RSSI(i);
+        const bool secured =
+            WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+        size_t destination = g_detected_network_count;
+        for (size_t j = 0; j < g_detected_network_count; ++j)
+        {
+            if (ssid == g_detected_networks[j].ssid)
+            {
+                destination = j;
+                break;
+            }
+        }
+
+        if (destination < g_detected_network_count)
+        {
+            if (rssi <= g_detected_networks[destination].rssi)
+                continue;
+        }
+        else if (g_detected_network_count <
+                 kMaxDetectedNetworks)
+        {
+            destination = g_detected_network_count++;
+        }
+        else
+        {
+            destination = 0;
+            for (size_t j = 1; j < g_detected_network_count; ++j)
+            {
+                if (g_detected_networks[j].rssi <
+                    g_detected_networks[destination].rssi)
+                {
+                    destination = j;
+                }
+            }
+            if (rssi <= g_detected_networks[destination].rssi)
+                continue;
+        }
+
+        copy_text(
+            g_detected_networks[destination].ssid, ssid);
+        g_detected_networks[destination].rssi = rssi;
+        g_detected_networks[destination].secured = secured;
+    }
+    WiFi.scanDelete();
+
+    for (size_t i = 1; i < g_detected_network_count; ++i)
+    {
+        const DetectedNetwork network =
+            g_detected_networks[i];
+        size_t j = i;
+        while (j > 0 &&
+               g_detected_networks[j - 1].rssi <
+                   network.rssi)
+        {
+            g_detected_networks[j] =
+                g_detected_networks[j - 1];
+            --j;
+        }
+        g_detected_networks[j] = network;
+    }
+    Serial.printf(
+        "[Wi-Fi] Found %u visible network%s\n",
+        (unsigned)g_detected_network_count,
+        g_detected_network_count == 1 ? "" : "s");
 }
 
 static const char *language_code()
@@ -534,7 +634,7 @@ static void send_setup_page()
 {
     const WifiSettings settings = settings_snapshot();
     String page;
-    page.reserve(1500);
+    page.reserve(5000);
     page += F(
         "<!doctype html><html><head><meta charset=utf-8>"
         "<meta name=viewport "
@@ -547,25 +647,69 @@ static void send_setup_page()
         "input,button{box-sizing:border-box;width:100%;font:inherit;"
         "padding:.7rem;border:2px solid #111;border-radius:6px}"
         "button{margin-top:1.2rem;background:#111;color:#fff}"
+        ".networks{display:grid;gap:.5rem;margin:.5rem 0 1rem}"
+        ".network{display:flex;justify-content:space-between;"
+        "align-items:center;margin:0;background:#fff;color:#111;"
+        "text-align:left}"
+        ".network span:first-child{overflow:hidden;text-overflow:ellipsis;"
+        "white-space:nowrap}"
+        ".network.selected{background:#111;color:#fff}"
+        ".network .meta{font-size:.75em;white-space:nowrap;"
+        "margin-left:1rem}"
         "small{display:block;margin-top:.4rem}</style></head><body>"
         "<h1>Maclock Wi-Fi</h1><form method=post action=/save>"
         "<label>");
+    page += html_escape(tr("Detected networks"));
+    page += F("</label><div class=networks>");
+    if (g_detected_network_count)
+    {
+        for (size_t i = 0; i < g_detected_network_count; ++i)
+        {
+            const DetectedNetwork &network =
+                g_detected_networks[i];
+            page += F("<button type=button class='network");
+            if (strcmp(network.ssid, settings.ssid) == 0)
+                page += F(" selected");
+            page += F("' data-ssid=\"");
+            page += html_escape(network.ssid);
+            page += F("\" data-secured=");
+            page += network.secured ? F("1") : F("0");
+            page += F(" onclick='pickNetwork(this)'><span>");
+            page += html_escape(network.ssid);
+            page += F("</span><span class=meta>");
+            page += network.rssi;
+            page += F(" dBm &middot; ");
+            page += html_escape(
+                tr(network.secured ? "Secured" : "Open network"));
+            page += F("</span></button>");
+        }
+    }
+    else
+    {
+        page += F("<small>");
+        page += html_escape(
+            tr(g_network_scan_succeeded
+                   ? "No networks found. Enter a name below."
+                   : "Network scan failed. Enter a name below."));
+        page += F("</small>");
+    }
+    page += F("</div><label>");
     page += html_escape(tr("Wi-Fi name"));
     page += F(
-        "</label><input name=ssid maxlength=32 required value=\"");
+        "</label><input id=ssid name=ssid maxlength=32 required value=\"");
     page += html_escape(settings.ssid);
     page += F(
         "\"><label>");
     page += html_escape(tr("Password"));
     page += F(
-        "</label><input name=pass type=password "
+        "</label><input id=pass name=pass type=password "
         "maxlength=64 value=\"\"><small>");
     page += html_escape(
         tr("Leave empty to keep the saved password, or for a new open network."));
     page += F("</small><label>");
     page += html_escape(tr("City"));
     page += F(
-        "</label><input name=city maxlength=48 required value=\"");
+        "</label><input id=city name=city maxlength=48 required value=\"");
     page += html_escape(settings.city);
     page += F(
         "\"><small>");
@@ -575,7 +719,16 @@ static void send_setup_page()
     page += html_escape(tr("Save and enable Wi-Fi"));
     page += F(
         "</button>"
-        "</form></body></html>");
+        "</form><script>"
+        "function pickNetwork(button){"
+        "document.getElementById('ssid').value=button.dataset.ssid;"
+        "document.querySelectorAll('.network').forEach("
+        "item=>item.classList.remove('selected'));"
+        "button.classList.add('selected');"
+        "document.getElementById("
+        "button.dataset.secured==='1'?'pass':'city').focus();"
+        "}"
+        "</script></body></html>");
     g_web_server.send(200, "text/html", page);
 }
 
@@ -775,6 +928,9 @@ void wifi_mode_start_portal()
 
     wifi_mode_pause();
     configure_portal_routes();
+    WiFi.mode(WIFI_STA);
+    delay(50);
+    scan_detected_networks();
     WiFi.mode(WIFI_AP);
     const bool access_point_started = WiFi.softAP(kSetupSsid);
     delay(100);
