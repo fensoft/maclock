@@ -48,7 +48,8 @@ public:
 
     virtual ControlPanelSnapshot controlPanelSnapshot() = 0;
     virtual bool applyControlAppearance(
-        ClockFace face, ClockTheme theme, uint8_t brightness) = 0;
+        ClockFace face, ClockTheme theme, uint8_t brightness,
+        const TimeFormatSettings &time_format) = 0;
     virtual bool applyControlAlarm(
         size_t index, const ControlPanelAlarm &alarm) = 0;
     virtual bool applyControlTimer(

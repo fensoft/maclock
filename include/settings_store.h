@@ -17,6 +17,7 @@ public:
     void saveTemperatureUnit(UiTemperatureUnit value);
     void saveClockFace(ClockFace value);
     void saveClockTheme(ClockTheme value);
+    void saveTimeFormat(const TimeFormatSettings &value);
     void saveScreensaverMode(ScreensaverMode value);
     void saveScreensaverDelay(uint8_t value);
     void saveBootBrightness(BootBrightness value);

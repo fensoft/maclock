@@ -54,6 +54,67 @@ void UiShell::updateBootMessage()
             ui_shell.boot_message, tr("Welcome to Macintosh."));
 }
 
+static void set_checkbox_state(lv_obj_t *checkbox, bool checked)
+{
+    if (!checkbox)
+        return;
+    if (checked)
+        lv_obj_add_state(checkbox, LV_STATE_CHECKED);
+    else
+        lv_obj_remove_state(checkbox, LV_STATE_CHECKED);
+}
+
+static void update_regional_options_ui()
+{
+    set_checked_button(
+        boot_options_view.date_format_options,
+        static_cast<uint32_t>(g_date_format));
+    if (boot_options_view.regional_hour_label)
+        lv_label_set_text(
+            boot_options_view.regional_hour_label,
+            g_time_format.hour_format == HourFormat::Hour12
+                ? tr("12-hour")
+                : tr("24-hour"));
+    if (boot_options_view.regional_temperature_label)
+        lv_label_set_text(
+            boot_options_view.regional_temperature_label,
+            g_temperature_unit == UI_TEMPERATURE_FAHRENHEIT
+                ? "°F"
+                : "°C");
+}
+
+static void update_display_options_ui()
+{
+    if (boot_options_view.leading_zero_checkbox)
+        lv_checkbox_set_text(
+            boot_options_view.leading_zero_checkbox,
+            tr("Initial zero"));
+    if (boot_options_view.weekday_checkbox)
+        lv_checkbox_set_text(
+            boot_options_view.weekday_checkbox,
+            tr("Day"));
+    if (boot_options_view.seconds_checkbox)
+        lv_checkbox_set_text(
+            boot_options_view.seconds_checkbox,
+            tr("Seconds"));
+    if (boot_options_view.dark_mode_checkbox)
+        lv_checkbox_set_text(
+            boot_options_view.dark_mode_checkbox,
+            tr("Dark mode"));
+    set_checkbox_state(
+        boot_options_view.leading_zero_checkbox,
+        g_time_format.leading_zero);
+    set_checkbox_state(
+        boot_options_view.weekday_checkbox,
+        g_time_format.show_weekday);
+    set_checkbox_state(
+        boot_options_view.seconds_checkbox,
+        g_time_format.show_seconds);
+    set_checkbox_state(
+        boot_options_view.dark_mode_checkbox,
+        g_clock_theme == CLOCK_THEME_DARK);
+}
+
 static void update_boot_translation_maps()
 {
     g_brightness_map[0] = tr("Latest");
@@ -69,9 +130,6 @@ static void update_boot_translation_maps()
     g_clock_face_map[3] = tr("Analog");
     g_clock_face_map[4] = tr("Flip");
     g_clock_face_map[5] = "";
-    g_clock_theme_map[0] = tr("Light");
-    g_clock_theme_map[1] = tr("Dark");
-    g_clock_theme_map[2] = "";
     g_screensaver_map[0] = tr("Off");
     g_screensaver_map[1] = tr("After Dark");
     g_screensaver_map[2] = "";
@@ -209,6 +267,16 @@ static void language_event(lv_event_t *event)
     refresh_language_ui();
 }
 
+static void apply_time_format_change()
+{
+    settings_store.saveTimeFormat(g_time_format);
+    clock_view.applyTimeFormatLayout();
+    clock_view.last_second = -1;
+    clock_view.last_update_ms = 0;
+    update_regional_options_ui();
+    update_display_options_ui();
+}
+
 static void date_format_event(lv_event_t *event)
 {
     lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
@@ -216,21 +284,73 @@ static void date_format_event(lv_event_t *event)
         lv_buttonmatrix_get_selected_button(options);
     if (selected >= UI_DATE_FORMAT_COUNT)
         return;
-    g_date_format = (UiDateFormat)selected;
+    g_date_format = static_cast<UiDateFormat>(selected);
     settings_store.saveDateFormat(g_date_format);
     datetime_editor.setDateFormat(g_date_format);
     boot_options_view.refreshDateTime();
+    update_regional_options_ui();
 }
 
-static void temperature_unit_event(lv_event_t *event)
+static void regional_hour_event(lv_event_t *event)
 {
-    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
-    const uint32_t selected =
-        lv_buttonmatrix_get_selected_button(options);
-    if (selected >= UI_TEMPERATURE_UNIT_COUNT)
-        return;
-    g_temperature_unit = (UiTemperatureUnit)selected;
+    (void)event;
+    g_time_format.hour_format =
+        g_time_format.hour_format == HourFormat::Hour12
+            ? HourFormat::Hour24
+            : HourFormat::Hour12;
+    apply_time_format_change();
+}
+
+static void regional_temperature_event(lv_event_t *event)
+{
+    (void)event;
+    g_temperature_unit =
+        g_temperature_unit == UI_TEMPERATURE_FAHRENHEIT
+            ? UI_TEMPERATURE_CELSIUS
+            : UI_TEMPERATURE_FAHRENHEIT;
     settings_store.saveTemperatureUnit(g_temperature_unit);
+    update_regional_options_ui();
+}
+
+static void leading_zero_checkbox_event(lv_event_t *event)
+{
+    lv_obj_t *checkbox =
+        (lv_obj_t *)lv_event_get_target(event);
+    g_time_format.leading_zero =
+        lv_obj_has_state(checkbox, LV_STATE_CHECKED);
+    apply_time_format_change();
+}
+
+static void weekday_checkbox_event(lv_event_t *event)
+{
+    lv_obj_t *checkbox =
+        (lv_obj_t *)lv_event_get_target(event);
+    g_time_format.show_weekday =
+        lv_obj_has_state(checkbox, LV_STATE_CHECKED);
+    apply_time_format_change();
+}
+
+static void seconds_checkbox_event(lv_event_t *event)
+{
+    lv_obj_t *checkbox =
+        (lv_obj_t *)lv_event_get_target(event);
+    g_time_format.show_seconds =
+        lv_obj_has_state(checkbox, LV_STATE_CHECKED);
+    apply_time_format_change();
+}
+
+static void dark_mode_checkbox_event(lv_event_t *event)
+{
+    lv_obj_t *checkbox =
+        (lv_obj_t *)lv_event_get_target(event);
+    g_clock_theme =
+        lv_obj_has_state(checkbox, LV_STATE_CHECKED)
+            ? CLOCK_THEME_DARK
+            : CLOCK_THEME_LIGHT;
+    settings_store.saveClockTheme(g_clock_theme);
+    update_display_options_ui();
+    if (clock_view.compact)
+        clock_view.applyTheme();
 }
 
 static void clock_face_event(lv_event_t *event)
@@ -242,19 +362,6 @@ static void clock_face_event(lv_event_t *event)
         return;
     g_clock_face = (ClockFace)selected;
     settings_store.saveClockFace(g_clock_face);
-}
-
-static void clock_theme_event(lv_event_t *event)
-{
-    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
-    const uint32_t selected =
-        lv_buttonmatrix_get_selected_button(options);
-    if (selected >= CLOCK_THEME_COUNT)
-        return;
-    g_clock_theme = (ClockTheme)selected;
-    settings_store.saveClockTheme(g_clock_theme);
-    if (clock_view.compact)
-        clock_view.applyTheme();
 }
 
 static void screensaver_event(lv_event_t *event)
@@ -738,8 +845,8 @@ void BootOptionsView::setPage(BootOptionsPage page)
 
     const char *page_names[BOOT_OPTIONS_PAGE_COUNT] = {
         tr("Start"), tr("Preferences"), tr("Language"),
-        tr("Regional"), tr("Date / Time"), tr("Clock Face"),
-        tr("Clock Theme"), tr("Screensaver"),
+        tr("Regional"), tr("Display"), tr("Date / Time"),
+        tr("Clock Face"), tr("Screensaver"),
         tr("Night Schedule"), tr("Night Screen"), tr("Chime"),
         tr("Chime Sound"), tr("Chime Volume"), tr("Quiet Hours"),
         tr("Wi-Fi"), tr("Tools"), tr("About")};
@@ -835,6 +942,84 @@ static void style_boot_options_matrix(lv_obj_t *matrix)
     lv_obj_set_style_text_color(matrix, lv_color_white(), checked_items);
     lv_obj_set_style_bg_color(matrix, lv_color_black(), pressed_items);
     lv_obj_set_style_text_color(matrix, lv_color_white(), pressed_items);
+}
+
+static lv_obj_t *create_boot_checkbox(
+    lv_obj_t *parent, const char *text,
+    lv_event_cb_t callback)
+{
+    lv_obj_t *checkbox = lv_checkbox_create(parent);
+    lv_checkbox_set_text(checkbox, text);
+    lv_obj_set_style_text_font(
+        checkbox, &lv_font_chicago_8, LV_PART_MAIN);
+    lv_obj_set_style_text_color(
+        checkbox, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(
+        checkbox, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(
+        checkbox, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(
+        checkbox, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_border_width(
+        checkbox, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(
+        checkbox, 4, LV_PART_MAIN);
+    lv_obj_set_style_outline_width(
+        checkbox, 0, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(
+        checkbox, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(
+        checkbox, 20, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(
+        checkbox, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(
+        checkbox, 8, LV_PART_MAIN);
+
+    lv_obj_set_style_pad_all(
+        checkbox, 4, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(
+        checkbox, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(
+        checkbox, lv_color_white(), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(
+        checkbox, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_border_color(
+        checkbox, lv_color_black(), LV_PART_INDICATOR);
+    lv_obj_set_style_border_width(
+        checkbox, 1, LV_PART_INDICATOR);
+    lv_obj_set_style_shadow_width(
+        checkbox, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_image_src(
+        checkbox, nullptr, LV_PART_INDICATOR);
+
+    const lv_style_selector_t checked_indicator =
+        (lv_style_selector_t)LV_PART_INDICATOR |
+        (lv_style_selector_t)LV_STATE_CHECKED;
+    lv_obj_set_style_bg_color(
+        checkbox, lv_color_white(), checked_indicator);
+    lv_obj_set_style_bg_image_src(
+        checkbox, LV_SYMBOL_OK, checked_indicator);
+    lv_obj_set_style_bg_image_recolor(
+        checkbox, lv_color_black(), checked_indicator);
+    lv_obj_set_style_bg_image_recolor_opa(
+        checkbox, LV_OPA_COVER, checked_indicator);
+    lv_obj_set_style_text_font(
+        checkbox, LV_FONT_DEFAULT, checked_indicator);
+    lv_obj_set_style_text_color(
+        checkbox, lv_color_black(), checked_indicator);
+
+    const lv_style_selector_t pressed_main =
+        (lv_style_selector_t)LV_PART_MAIN |
+        (lv_style_selector_t)LV_STATE_PRESSED;
+    lv_obj_set_style_bg_color(
+        checkbox, lv_color_black(), pressed_main);
+    lv_obj_set_style_text_color(
+        checkbox, lv_color_white(), pressed_main);
+
+    lv_obj_set_ext_click_area(checkbox, 0);
+    lv_obj_add_event_cb(
+        checkbox, callback, LV_EVENT_VALUE_CHANGED, nullptr);
+    return checkbox;
 }
 
 static lv_obj_t *create_action_button(lv_obj_t *parent,

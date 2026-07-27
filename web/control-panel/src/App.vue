@@ -7,6 +7,7 @@ import MacWindow from "./components/MacWindow.vue";
 
 const faceOptions = ["Macintosh", "Compact Digital", "Analog", "Flip Clock"];
 const themeOptions = ["Light", "Dark"];
+const hourFormatOptions = ["24-hour", "12-hour"];
 const chimeOptions = ["Off", "Hourly", "Quarter-hour"];
 const weekdays = ["M", "T", "W", "T", "F", "S", "S"];
 const volumeOptions = ["Mute", "Low", "Medium", "High"];
@@ -72,7 +73,17 @@ async function runAction(
 
 function saveAppearance() {
   const appearance = panelState.value.appearance;
-  runAction("appearance", "/api/appearance", appearance, "Appearance saved");
+  runAction(
+    "appearance",
+    "/api/appearance",
+    {
+      ...appearance,
+      leadingZero: appearance.leadingZero ? 1 : 0,
+      seconds: appearance.seconds ? 1 : 0,
+      weekday: appearance.weekday ? 1 : 0,
+    },
+    "Appearance saved",
+  );
 }
 
 function alarmWeekdayEnabled(alarm, index) {
@@ -267,6 +278,46 @@ onBeforeUnmount(() => {
                   <span>{{ name }}</span>
                 </label>
               </fieldset>
+
+              <fieldset class="radio-box">
+                <legend>Hour format</legend>
+                <label
+                  v-for="(name, index) in hourFormatOptions"
+                  :key="name"
+                  class="classic-radio"
+                >
+                  <input
+                    v-model.number="panelState.appearance.hourFormat"
+                    type="radio"
+                    :value="index"
+                  />
+                  <span>{{ name }}</span>
+                </label>
+              </fieldset>
+
+              <label class="check-line">
+                <input
+                  v-model="panelState.appearance.leadingZero"
+                  type="checkbox"
+                />
+                <span>Show leading zero</span>
+              </label>
+
+              <label class="check-line">
+                <input
+                  v-model="panelState.appearance.seconds"
+                  type="checkbox"
+                />
+                <span>Show seconds on digital and flip faces</span>
+              </label>
+
+              <label class="check-line">
+                <input
+                  v-model="panelState.appearance.weekday"
+                  type="checkbox"
+                />
+                <span>Show 3-letter weekday before the date</span>
+              </label>
 
               <label class="field">
                 <span class="field-line">

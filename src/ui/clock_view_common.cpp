@@ -1,4 +1,49 @@
 #ifdef MACLOCK_COMBINED_SOURCE
+static uint8_t configured_display_hour(uint8_t hour)
+{
+    if (g_time_format.hour_format == HourFormat::Hour24)
+        return hour;
+    const uint8_t hour12 = hour % 12;
+    return hour12 ? hour12 : 12;
+}
+
+static const char *configured_meridiem(uint8_t hour)
+{
+    return hour < 12 ? "AM" : "PM";
+}
+
+static const lv_font_t *configured_date_font(bool timer_active)
+{
+    return g_time_format.show_weekday && !timer_active
+               ? &lv_font_chicago_24
+               : &lv_font_chicago_32;
+}
+
+static void format_configured_time(
+    const DateTime &current, char *text, size_t text_size)
+{
+    const uint8_t hour =
+        configured_display_hour(current.hour());
+    if (g_time_format.show_seconds)
+    {
+        snprintf(
+            text, text_size,
+            g_time_format.leading_zero
+                ? "%02u:%02u:%02u"
+                : "%u:%02u:%02u",
+            hour, current.minute(), current.second());
+    }
+    else
+    {
+        snprintf(
+            text, text_size,
+            g_time_format.leading_zero
+                ? "%02u:%02u"
+                : "%u:%02u",
+            hour, current.minute());
+    }
+}
+
 void ClockView::updateMacintoshLabels(
     const ClockRenderSnapshot &snapshot)
 {
@@ -9,10 +54,45 @@ void ClockView::updateMacintoshLabels(
     last_second = sec;
 
     char buf[24];
-    snprintf(buf, sizeof(buf), "%02d:%02d:%02d",
-             now.hour(), now.minute(), sec);
+    const bool hour12 =
+        g_time_format.hour_format == HourFormat::Hour12;
+    if (g_time_format.show_seconds)
+    {
+        snprintf(
+            buf, sizeof(buf), "%02u:%02u:%02u",
+            configured_display_hour(now.hour()),
+            now.minute(), sec);
+    }
+    else
+    {
+        snprintf(
+            buf, sizeof(buf), "%02u:%02u",
+            configured_display_hour(now.hour()),
+            now.minute());
+    }
     lv_label_set_text(ui_shell.time, buf);
-    lv_obj_align(ui_shell.time, LV_ALIGN_TOP_MID, 0, 14 + 4);
+    lv_obj_align(
+        ui_shell.time, LV_ALIGN_TOP_MID,
+        hour12 ? -6 : 0, 14 + 4);
+    if (hour12)
+    {
+        lv_label_set_text(
+            ui_shell.time_meridiem,
+            now.hour() < 12 ? "A\nM" : "P\nM");
+        lv_obj_update_layout(ui_shell.time);
+        lv_obj_align_to(
+            ui_shell.time_meridiem, ui_shell.time,
+            LV_ALIGN_OUT_RIGHT_MID, 4, 1);
+        lv_obj_clear_flag(
+            ui_shell.time_meridiem,
+            LV_OBJ_FLAG_HIDDEN);
+    }
+    else
+    {
+        lv_obj_add_flag(
+            ui_shell.time_meridiem,
+            LV_OBJ_FLAG_HIDDEN);
+    }
 
     format_display_date(now, buf, sizeof(buf));
     lv_label_set_text(ui_shell.date, buf);
@@ -64,7 +144,8 @@ void ClockView::updateMacintoshLabels(
         lv_label_set_text(ui_shell.temp, weather);
         lv_obj_clear_flag(ui_shell.temp, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_style_text_font(
-            ui_shell.date, &lv_font_chicago_32, 0);
+            ui_shell.date,
+            configured_date_font(snapshot.timer_active), 0);
         lv_obj_align(ui_shell.date, LV_ALIGN_TOP_MID,
                      0, 14 + 4 + 32 + 16);
         lv_obj_set_style_text_font(
@@ -94,7 +175,8 @@ void ClockView::updateMacintoshLabels(
 
     lv_obj_clear_flag(ui_shell.temp, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_text_font(
-        ui_shell.date, &lv_font_chicago_32, 0);
+        ui_shell.date,
+        configured_date_font(snapshot.timer_active), 0);
     lv_obj_set_style_text_font(
         ui_shell.temp, &lv_font_chicago_8, 0);
     lv_obj_set_style_text_letter_space(ui_shell.temp, 1, 0);
@@ -328,6 +410,96 @@ static void reset_flip_card_animation(
     state.animating = false;
 }
 
+void ClockView::applyTimeFormatLayout()
+{
+    const bool show_seconds = g_time_format.show_seconds;
+    const size_t visible_digits = show_seconds ? 6 : 4;
+    const int16_t card_width = show_seconds ? 38 : 56;
+    static constexpr int16_t compact_positions[4] = {
+        22, 82, 166, 226};
+    static constexpr int16_t seconds_positions[6] = {
+        8, 48, 102, 142, 196, 236};
+
+    for (size_t i = 0; i < kFlipDigitCount; ++i)
+    {
+        reset_flip_card_animation(
+            clock_view.flip_animations[i]);
+        if (i >= visible_digits)
+        {
+            lv_obj_add_flag(
+                clock_view.flip_cards[i],
+                LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+
+        lv_obj_clear_flag(
+            clock_view.flip_cards[i],
+            LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_size(
+            clock_view.flip_cards[i],
+            card_width, 96);
+        lv_obj_set_pos(
+            clock_view.flip_cards[i],
+            show_seconds
+                ? seconds_positions[i]
+                : compact_positions[i],
+            42);
+        lv_obj_set_style_transform_pivot_x(
+            clock_view.flip_animations[i].flap,
+            card_width / 2, 0);
+    }
+
+    const int16_t colon_width = show_seconds ? 10 : 16;
+    const int16_t colon_positions[2] = {
+        static_cast<int16_t>(show_seconds ? 90 : 144),
+        static_cast<int16_t>(show_seconds ? 184 : 0)};
+    for (size_t i = 0; i < 2; ++i)
+    {
+        if (i == 1 && !show_seconds)
+        {
+            lv_obj_add_flag(
+                clock_view.flip_colons[i],
+                LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        lv_obj_clear_flag(
+            clock_view.flip_colons[i],
+            LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_size(
+            clock_view.flip_colons[i],
+            colon_width, 96);
+        lv_obj_set_pos(
+            clock_view.flip_colons[i],
+            colon_positions[i], 42);
+        const int16_t dot_x = (colon_width - 4) / 2;
+        lv_obj_set_x(
+            clock_view.flip_colon_tops[i], dot_x);
+        lv_obj_set_x(
+            clock_view.flip_colon_bottoms[i], dot_x);
+    }
+
+    const bool hour12 =
+        g_time_format.hour_format == HourFormat::Hour12;
+    if (hour12)
+    {
+        lv_obj_clear_flag(
+            clock_view.compact_meridiem,
+            LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(
+            clock_view.flip_meridiem,
+            LV_OBJ_FLAG_HIDDEN);
+    }
+    else
+    {
+        lv_obj_add_flag(
+            clock_view.compact_meridiem,
+            LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(
+            clock_view.flip_meridiem,
+            LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void update_flip_card(
     FlipCardAnimation &state, const char *value)
 {
@@ -401,6 +573,8 @@ void ClockView::applyTheme()
     lv_obj_set_style_text_color(
         clock_view.compact_time, foreground, 0);
     lv_obj_set_style_text_color(
+        clock_view.compact_meridiem, foreground, 0);
+    lv_obj_set_style_text_color(
         clock_view.compact_date, foreground, 0);
     lv_obj_set_style_text_color(
         clock_view.compact_weather, foreground, 0);
@@ -428,10 +602,17 @@ void ClockView::applyTheme()
         clock_view.flip, background, 0);
     lv_obj_set_style_text_color(
         clock_view.flip_title, foreground, 0);
-    lv_obj_set_style_bg_color(
-        clock_view.flip_colon_top, foreground, 0);
-    lv_obj_set_style_bg_color(
-        clock_view.flip_colon_bottom, foreground, 0);
+    for (size_t i = 0; i < 2; ++i)
+    {
+        lv_obj_set_style_bg_color(
+            clock_view.flip_colon_tops[i],
+            foreground, 0);
+        lv_obj_set_style_bg_color(
+            clock_view.flip_colon_bottoms[i],
+            foreground, 0);
+    }
+    lv_obj_set_style_text_color(
+        clock_view.flip_meridiem, foreground, 0);
     lv_obj_set_style_text_color(
         clock_view.flip_date, foreground, 0);
 

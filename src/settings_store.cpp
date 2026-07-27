@@ -53,6 +53,15 @@ AppSettings SettingsStore::load()
     settings.clock_theme = load_enum(
         preferences_, "clock_theme",
         ClockTheme::Light, ClockTheme::Count);
+    settings.time_format.hour_format = load_enum(
+        preferences_, "hour_format",
+        HourFormat::Hour24, HourFormat::Count);
+    settings.time_format.leading_zero =
+        preferences_.getBool("lead_zero", true);
+    settings.time_format.show_seconds =
+        preferences_.getBool("show_seconds", true);
+    settings.time_format.show_weekday =
+        preferences_.getBool("show_weekday", false);
     settings.screensaver_mode = load_enum(
         preferences_, "screen_mode",
         ScreensaverMode::Off, ScreensaverMode::Count);
@@ -134,6 +143,16 @@ void SettingsStore::saveClockFace(ClockFace value)
 void SettingsStore::saveClockTheme(ClockTheme value)
 {
     preferences_.putUChar("clock_theme", static_cast<uint8_t>(value));
+}
+
+void SettingsStore::saveTimeFormat(
+    const TimeFormatSettings &value)
+{
+    preferences_.putUChar(
+        "hour_format", static_cast<uint8_t>(value.hour_format));
+    preferences_.putBool("lead_zero", value.leading_zero);
+    preferences_.putBool("show_seconds", value.show_seconds);
+    preferences_.putBool("show_weekday", value.show_weekday);
 }
 
 void SettingsStore::saveScreensaverMode(ScreensaverMode value)

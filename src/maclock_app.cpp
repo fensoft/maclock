@@ -42,6 +42,7 @@
 #include "fensoft_logo.h"
 
 LV_FONT_DECLARE(lv_font_chicago_8);
+LV_FONT_DECLARE(lv_font_chicago_24);
 LV_FONT_DECLARE(lv_font_chicago_32);
 LV_FONT_DECLARE(lv_font_chicago_48);
 
@@ -86,6 +87,7 @@ public:
     lv_obj_t *clock;
     lv_obj_t *clock_label;
     lv_obj_t *time;
+    lv_obj_t *time_meridiem;
     lv_obj_t *date;
     lv_obj_t *temp;
     lv_obj_t *gauge_icon;
@@ -139,9 +141,9 @@ enum BootOptionsPage
     BOOT_OPTIONS_PREFERENCES,
     BOOT_OPTIONS_LANGUAGE,
     BOOT_OPTIONS_REGIONAL,
+    BOOT_OPTIONS_DISPLAY,
     BOOT_OPTIONS_DATETIME,
     BOOT_OPTIONS_CLOCK_FACE,
-    BOOT_OPTIONS_CLOCK_THEME,
     BOOT_OPTIONS_SCREENSAVER,
     BOOT_OPTIONS_NIGHT_SCHEDULE,
     BOOT_OPTIONS_NIGHT_SCREEN,
@@ -186,7 +188,14 @@ public:
     lv_obj_t *language_options;
     lv_obj_t *language_items[UI_LANGUAGE_COUNT];
     lv_obj_t *date_format_options;
-    lv_obj_t *temperature_unit_options;
+    lv_obj_t *regional_hour_button;
+    lv_obj_t *regional_hour_label;
+    lv_obj_t *leading_zero_checkbox;
+    lv_obj_t *regional_temperature_button;
+    lv_obj_t *regional_temperature_label;
+    lv_obj_t *weekday_checkbox;
+    lv_obj_t *seconds_checkbox;
+    lv_obj_t *dark_mode_checkbox;
     lv_obj_t *datetime_fields;
     lv_obj_t *datetime_minus;
     lv_obj_t *datetime_plus;
@@ -196,7 +205,6 @@ public:
     BootDateTimeField datetime_selected = BOOT_DATETIME_HOUR;
     uint32_t datetime_last_refresh_ms = 0;
     lv_obj_t *clock_face_options;
-    lv_obj_t *clock_theme_options;
     lv_obj_t *screensaver_options;
     lv_obj_t *screensaver_delay_options;
     lv_obj_t *night_enabled_options;
@@ -225,8 +233,6 @@ public:
     lv_obj_t *next_label;
     lv_obj_t *brightness_label;
     lv_obj_t *remember_label;
-    lv_obj_t *date_format_label;
-    lv_obj_t *temperature_unit_label;
     lv_obj_t *screensaver_delay_label;
     lv_obj_t *dim_from_label;
     lv_obj_t *normal_at_label;
@@ -266,7 +272,7 @@ static constexpr uint8_t SCREENSAVER_MODE_COUNT =
     static_cast<uint8_t>(ScreensaverMode::Count);
 
 static constexpr size_t kScreensaverStarCount = 24;
-static constexpr size_t kFlipDigitCount = 4;
+static constexpr size_t kFlipDigitCount = 6;
 
 struct FlipCardAnimation
 {
@@ -310,6 +316,7 @@ public:
     void show(const ClockRenderSnapshot &snapshot);
     void update(const ClockRenderSnapshot &snapshot);
     void applyTheme();
+    void applyTimeFormatLayout();
     void showScreensaver();
     void updateScreensaver(
         const ClockRenderSnapshot &snapshot);
@@ -319,6 +326,7 @@ public:
     lv_obj_t *compact;
     lv_obj_t *compact_title;
     lv_obj_t *compact_time;
+    lv_obj_t *compact_meridiem;
     lv_obj_t *compact_date;
     lv_obj_t *compact_weather;
     lv_obj_t *analog;
@@ -335,10 +343,11 @@ public:
     lv_obj_t *flip;
     lv_obj_t *flip_cards[kFlipDigitCount];
     lv_obj_t *flip_digits[kFlipDigitCount];
-    lv_obj_t *flip_colon;
-    lv_obj_t *flip_colon_top;
-    lv_obj_t *flip_colon_bottom;
+    lv_obj_t *flip_colons[2];
+    lv_obj_t *flip_colon_tops[2];
+    lv_obj_t *flip_colon_bottoms[2];
     lv_obj_t *flip_title;
+    lv_obj_t *flip_meridiem;
     lv_obj_t *flip_date;
     FlipCardAnimation flip_animations[kFlipDigitCount];
     lv_obj_t *screensaver;
@@ -466,6 +475,7 @@ static lv_timer_t *g_cursor_timer = nullptr;
 #define g_temperature_unit (app_settings.temperature_unit)
 #define g_clock_face (app_settings.clock_face)
 #define g_clock_theme (app_settings.clock_theme)
+#define g_time_format (app_settings.time_format)
 #define g_screensaver_mode (app_settings.screensaver_mode)
 #define g_screensaver_delay_index \
     (app_settings.screensaver_delay_index)
@@ -502,12 +512,9 @@ static uint8_t g_floppy_sound_volume = 65;
 static const uint8_t g_chime_volumes[] = {25, 50, 75, 100};
 static const char *g_brightness_map[4] = {};
 static const char *g_remember_map[3] = {};
-static const char *g_date_format_map[] = {
+static const char *g_date_format_map[4] = {
     "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", ""};
-static const char *g_temperature_unit_map[] = {
-    "°C", "°F", ""};
 static const char *g_clock_face_map[7] = {};
-static const char *g_clock_theme_map[3] = {};
 static const char *g_screensaver_map[3] = {};
 static const uint8_t g_screensaver_delays_minutes[] = {
     1, 5, 10, 30};

@@ -83,6 +83,19 @@ void UiShell::init()
     lv_obj_set_style_text_letter_space(ui_shell.time, 1, 0);
     lv_obj_align(ui_shell.time, LV_ALIGN_TOP_MID, 0, 8);
 
+    ui_shell.time_meridiem = lv_label_create(ui_shell.clock);
+    lv_label_set_text(ui_shell.time_meridiem, "AM");
+    lv_obj_set_style_text_font(
+        ui_shell.time_meridiem, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_color(
+        ui_shell.time_meridiem, lv_color_black(), 0);
+    lv_obj_set_style_text_align(
+        ui_shell.time_meridiem, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_line_space(
+        ui_shell.time_meridiem, -2, 0);
+    lv_obj_add_flag(
+        ui_shell.time_meridiem, LV_OBJ_FLAG_HIDDEN);
+
     ui_shell.date = lv_label_create(ui_shell.clock);
     lv_label_set_text(
         ui_shell.date,

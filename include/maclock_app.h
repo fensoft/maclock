@@ -38,7 +38,8 @@ public:
 
     ControlPanelSnapshot controlPanelSnapshot() override;
     bool applyControlAppearance(
-        ClockFace face, ClockTheme theme, uint8_t brightness) override;
+        ClockFace face, ClockTheme theme, uint8_t brightness,
+        const TimeFormatSettings &time_format) override;
     bool applyControlAlarm(
         size_t index, const ControlPanelAlarm &alarm) override;
     bool applyControlTimer(

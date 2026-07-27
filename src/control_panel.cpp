@@ -119,6 +119,15 @@ static void send_state()
     appearance["theme"] =
         static_cast<uint8_t>(snapshot.settings.clock_theme);
     appearance["brightness"] = snapshot.brightness;
+    appearance["hourFormat"] =
+        static_cast<uint8_t>(
+            snapshot.settings.time_format.hour_format);
+    appearance["leadingZero"] =
+        snapshot.settings.time_format.leading_zero;
+    appearance["seconds"] =
+        snapshot.settings.time_format.show_seconds;
+    appearance["weekday"] =
+        snapshot.settings.time_format.show_weekday;
 
     JsonObject system_sounds =
         document["systemSounds"].to<JsonObject>();
@@ -205,24 +214,41 @@ static void apply_appearance()
     uint32_t face = 0;
     uint32_t theme = 0;
     uint32_t brightness = 0;
+    uint32_t hour_format = 0;
+    uint32_t leading_zero = 0;
+    uint32_t seconds = 0;
+    uint32_t weekday = 0;
     if (!read_uint(
             "face", 0,
             static_cast<uint8_t>(ClockFace::Count) - 1, face) ||
         !read_uint(
             "theme", 0,
             static_cast<uint8_t>(ClockTheme::Count) - 1, theme) ||
+        !read_uint("brightness", 0, kBrightnessMax, brightness) ||
         !read_uint(
-            "brightness", 0, kBrightnessMax, brightness))
+            "hourFormat", 0,
+            static_cast<uint8_t>(HourFormat::Count) - 1,
+            hour_format) ||
+        !read_uint("leadingZero", 0, 1, leading_zero) ||
+        !read_uint("seconds", 0, 1, seconds) ||
+        !read_uint("weekday", 0, 1, weekday))
     {
         send_result(false, "Invalid appearance settings", 400);
         return;
     }
 
+    TimeFormatSettings time_format;
+    time_format.hour_format =
+        static_cast<HourFormat>(hour_format);
+    time_format.leading_zero = leading_zero != 0;
+    time_format.show_seconds = seconds != 0;
+    time_format.show_weekday = weekday != 0;
     const bool applied = g_events &&
         g_events->applyControlAppearance(
             static_cast<ClockFace>(face),
             static_cast<ClockTheme>(theme),
-            static_cast<uint8_t>(brightness));
+            static_cast<uint8_t>(brightness),
+            time_format);
     send_result(
         applied,
         applied ? "Appearance updated" : "Appearance was not updated",

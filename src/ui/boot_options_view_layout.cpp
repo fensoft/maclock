@@ -104,17 +104,6 @@ void BootOptionsView::init(lv_obj_t *screen)
 
     lv_obj_t *regional_page =
         boot_options_view.pages[BOOT_OPTIONS_REGIONAL];
-    boot_options_view.date_format_label =
-        lv_label_create(regional_page);
-    lv_label_set_text(
-        boot_options_view.date_format_label, tr("Date format"));
-    lv_obj_set_style_text_font(
-        boot_options_view.date_format_label,
-        &lv_font_chicago_8, 0);
-    lv_obj_align(
-        boot_options_view.date_format_label,
-        LV_ALIGN_TOP_MID, 0, 0);
-
     boot_options_view.date_format_options =
         lv_buttonmatrix_create(regional_page);
     lv_buttonmatrix_set_map(
@@ -129,10 +118,10 @@ void BootOptionsView::init(lv_obj_t *screen)
     lv_buttonmatrix_set_one_checked(
         boot_options_view.date_format_options, true);
     lv_obj_set_size(
-        boot_options_view.date_format_options, 260, 42);
+        boot_options_view.date_format_options, 260, 50);
     lv_obj_align(
         boot_options_view.date_format_options,
-        LV_ALIGN_TOP_MID, 0, 16);
+        LV_ALIGN_TOP_MID, 0, 0);
     style_boot_options_matrix(
         boot_options_view.date_format_options);
     lv_obj_set_style_pad_column(
@@ -141,43 +130,79 @@ void BootOptionsView::init(lv_obj_t *screen)
         boot_options_view.date_format_options,
         date_format_event, LV_EVENT_VALUE_CHANGED, nullptr);
 
-    boot_options_view.temperature_unit_label =
-        lv_label_create(regional_page);
-    lv_label_set_text(
-        boot_options_view.temperature_unit_label,
-        tr("Temperature unit"));
-    lv_obj_set_style_text_font(
-        boot_options_view.temperature_unit_label,
-        &lv_font_chicago_8, 0);
-    lv_obj_align(
-        boot_options_view.temperature_unit_label,
-        LV_ALIGN_TOP_MID, 0, 69);
-
-    boot_options_view.temperature_unit_options =
-        lv_buttonmatrix_create(regional_page);
-    lv_buttonmatrix_set_map(
-        boot_options_view.temperature_unit_options,
-        g_temperature_unit_map);
-    lv_buttonmatrix_set_button_ctrl_all(
-        boot_options_view.temperature_unit_options,
-        LV_BUTTONMATRIX_CTRL_CHECKABLE);
-    lv_buttonmatrix_set_button_ctrl_all(
-        boot_options_view.temperature_unit_options,
-        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
-    lv_buttonmatrix_set_one_checked(
-        boot_options_view.temperature_unit_options, true);
+    boot_options_view.regional_hour_button =
+        create_action_button(
+            regional_page,
+            g_time_format.hour_format == HourFormat::Hour12
+                ? tr("12-hour")
+                : tr("24-hour"),
+            regional_hour_event);
     lv_obj_set_size(
-        boot_options_view.temperature_unit_options, 260, 42);
+        boot_options_view.regional_hour_button, 126, 62);
     lv_obj_align(
-        boot_options_view.temperature_unit_options,
-        LV_ALIGN_BOTTOM_MID, 0, 0);
-    style_boot_options_matrix(
-        boot_options_view.temperature_unit_options);
-    lv_obj_set_style_pad_column(
-        boot_options_view.temperature_unit_options, 10, 0);
-    lv_obj_add_event_cb(
-        boot_options_view.temperature_unit_options,
-        temperature_unit_event, LV_EVENT_VALUE_CHANGED, nullptr);
+        boot_options_view.regional_hour_button,
+        LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    boot_options_view.regional_hour_label =
+        lv_obj_get_child(
+            boot_options_view.regional_hour_button, 0);
+
+    boot_options_view.regional_temperature_button =
+        create_action_button(
+            regional_page,
+            g_temperature_unit == UI_TEMPERATURE_FAHRENHEIT
+                ? "°F"
+                : "°C",
+            regional_temperature_event);
+    lv_obj_set_size(
+        boot_options_view.regional_temperature_button, 126, 62);
+    lv_obj_align(
+        boot_options_view.regional_temperature_button,
+        LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    boot_options_view.regional_temperature_label =
+        lv_obj_get_child(
+            boot_options_view.regional_temperature_button, 0);
+
+    lv_obj_t *display_page =
+        boot_options_view.pages[BOOT_OPTIONS_DISPLAY];
+    boot_options_view.leading_zero_checkbox =
+        create_boot_checkbox(
+            display_page, tr("Initial zero"),
+            leading_zero_checkbox_event);
+    lv_obj_set_size(
+        boot_options_view.leading_zero_checkbox, 126, 58);
+    lv_obj_align(
+        boot_options_view.leading_zero_checkbox,
+        LV_ALIGN_TOP_LEFT, 0, 0);
+
+    boot_options_view.weekday_checkbox =
+        create_boot_checkbox(
+            display_page, tr("Day"),
+            weekday_checkbox_event);
+    lv_obj_set_size(
+        boot_options_view.weekday_checkbox, 126, 58);
+    lv_obj_align(
+        boot_options_view.weekday_checkbox,
+        LV_ALIGN_TOP_RIGHT, 0, 0);
+
+    boot_options_view.seconds_checkbox =
+        create_boot_checkbox(
+            display_page, tr("Seconds"),
+            seconds_checkbox_event);
+    lv_obj_set_size(
+        boot_options_view.seconds_checkbox, 126, 58);
+    lv_obj_align(
+        boot_options_view.seconds_checkbox,
+        LV_ALIGN_BOTTOM_LEFT, 0, 0);
+
+    boot_options_view.dark_mode_checkbox =
+        create_boot_checkbox(
+            display_page, tr("Dark mode"),
+            dark_mode_checkbox_event);
+    lv_obj_set_size(
+        boot_options_view.dark_mode_checkbox, 126, 58);
+    lv_obj_align(
+        boot_options_view.dark_mode_checkbox,
+        LV_ALIGN_BOTTOM_RIGHT, 0, 0);
 
     lv_obj_t *datetime_page =
         boot_options_view.pages[BOOT_OPTIONS_DATETIME];
@@ -260,30 +285,6 @@ void BootOptionsView::init(lv_obj_t *screen)
     lv_obj_add_event_cb(
         boot_options_view.clock_face_options,
         clock_face_event, LV_EVENT_VALUE_CHANGED, nullptr);
-
-    lv_obj_t *clock_theme_page =
-        boot_options_view.pages[BOOT_OPTIONS_CLOCK_THEME];
-    boot_options_view.clock_theme_options =
-        lv_buttonmatrix_create(clock_theme_page);
-    lv_buttonmatrix_set_map(
-        boot_options_view.clock_theme_options,
-        g_clock_theme_map);
-    lv_buttonmatrix_set_button_ctrl_all(
-        boot_options_view.clock_theme_options,
-        LV_BUTTONMATRIX_CTRL_CHECKABLE);
-    lv_buttonmatrix_set_button_ctrl_all(
-        boot_options_view.clock_theme_options,
-        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
-    lv_buttonmatrix_set_one_checked(
-        boot_options_view.clock_theme_options, true);
-    lv_obj_set_size(
-        boot_options_view.clock_theme_options, 260, 124);
-    lv_obj_center(boot_options_view.clock_theme_options);
-    style_boot_options_matrix(
-        boot_options_view.clock_theme_options);
-    lv_obj_add_event_cb(
-        boot_options_view.clock_theme_options,
-        clock_theme_event, LV_EVENT_VALUE_CHANGED, nullptr);
 
     lv_obj_t *screensaver_page =
         boot_options_view.pages[BOOT_OPTIONS_SCREENSAVER];
@@ -812,18 +813,11 @@ void BootOptionsView::show()
         1, LV_BUTTONMATRIX_CTRL_CHECKED);
     lv_buttonmatrix_set_selected_button(
         boot_options_view.remember_selection, 1);
-    set_checked_button(
-        boot_options_view.date_format_options,
-        (uint32_t)g_date_format);
-    set_checked_button(
-        boot_options_view.temperature_unit_options,
-        (uint32_t)g_temperature_unit);
+    update_regional_options_ui();
+    update_display_options_ui();
     set_checked_button(
         boot_options_view.clock_face_options,
         (uint32_t)g_clock_face);
-    set_checked_button(
-        boot_options_view.clock_theme_options,
-        (uint32_t)g_clock_theme);
     set_checked_button(
         boot_options_view.screensaver_options,
         (uint32_t)g_screensaver_mode);

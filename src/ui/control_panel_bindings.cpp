@@ -61,12 +61,15 @@ ControlPanelSnapshot MaclockApp::controlPanelSnapshot()
 }
 
 bool MaclockApp::applyControlAppearance(
-    ClockFace face, ClockTheme theme, uint8_t brightness)
+    ClockFace face, ClockTheme theme, uint8_t brightness,
+    const TimeFormatSettings &time_format)
 {
     if (static_cast<uint8_t>(face) >=
             static_cast<uint8_t>(ClockFace::Count) ||
         static_cast<uint8_t>(theme) >=
             static_cast<uint8_t>(ClockTheme::Count) ||
+        static_cast<uint8_t>(time_format.hour_format) >=
+            static_cast<uint8_t>(HourFormat::Count) ||
         brightness > kBrightnessMax)
     {
         return false;
@@ -74,8 +77,10 @@ bool MaclockApp::applyControlAppearance(
 
     app_settings.clock_face = face;
     app_settings.clock_theme = theme;
+    app_settings.time_format = time_format;
     settings_store.saveClockFace(face);
     settings_store.saveClockTheme(theme);
+    settings_store.saveTimeFormat(time_format);
     settings_store.saveBrightness(brightness);
     input_service.setEncoderPosition(brightness);
     g_last_saved_encoder = brightness;
@@ -83,10 +88,10 @@ bool MaclockApp::applyControlAppearance(
     set_checked_button(
         boot_options_view.clock_face_options,
         static_cast<uint8_t>(face));
-    set_checked_button(
-        boot_options_view.clock_theme_options,
-        static_cast<uint8_t>(theme));
+    update_regional_options_ui();
+    update_display_options_ui();
 
+    clock_view.applyTimeFormatLayout();
     clock_view.applyTheme();
     if (current_state_ == UiState::Normal)
     {

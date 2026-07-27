@@ -54,11 +54,11 @@ To open Configuration:
 2. Turn Maclock off, hold **Clock**, turn Maclock on, and release the button
    when **Configuration** appears.
 
-Configuration uses 17 pages with large controls. Its first page has
+Configuration uses 18 pages with large controls. Its first page has
 rounded-square **Clock** and **Emulator** launch buttons. Every page has fixed
 **Previous**, **Exit**, and **Next** footer slots; the unavailable direction
 is left empty on the first or last page. The pages cover Start, Preferences,
-Language, Regional settings, Date / Time, clock faces and themes, Screensaver,
+Language, Regional settings, Display, Date / Time, clock faces, Screensaver,
 two Night pages, four Chime pages, Wi-Fi, Tools, and About:
 
 - **Brightness / Latest** restores the last encoder brightness.
@@ -75,6 +75,12 @@ two Night pages, four Chime pages, Wi-Fi, Tools, and About:
   RTC health.
 - **Date / Time** shows live RTC fields; select a field and adjust it directly
   with the large **-** and **+** buttons.
+- **Regional** selects date order, 12- or 24-hour display, and temperature
+  unit in a five-button 3+2 layout.
+- **Display** controls initial zero, the optional localized three-letter
+  weekday, seconds, and light/dark clock theme with four large classic-Mac
+  checkbox tiles in a 2×2 grid. Dates use a smaller crisp bitmap font while
+  the weekday is visible.
 - **About** shows the fensoft logo, author, GitHub address, and a scannable
   project QR code.
 - **Exit** returns directly to the normal clock from any page.
@@ -156,7 +162,8 @@ Maclock is connected to the configured Wi-Fi, open:
 
 The responsive control panel can:
 
-- change the clock face, light/dark theme, and brightness immediately;
+- change the clock face, light/dark theme, brightness, 12/24-hour format,
+  leading zero, weekday, and seconds immediately;
 - configure and persist all three alarms, including weekly days, sound, and
   volume;
 - save timer defaults, start or cancel the timer, and select its sound and

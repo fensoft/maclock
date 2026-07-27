@@ -186,7 +186,7 @@ LVGL callbacks are static thunks with instance context at the boundary.
 | `NORMAL` | Show the clock, date, weather, gauge, menus, and floppy indicator. |
 | `ALARM_EDITOR` / `ALARM_RINGING` | Configure alarms or run snooze/dismiss playback. |
 | `TIMER_EDITOR` / `TIMER_FINISHED` | Configure the timer or run completion playback. |
-| `BOOT_OPTIONS` | Show the multipage Configuration UI for startup, regional, date/time, display, chime, Wi-Fi, tools, and About settings. |
+| `BOOT_OPTIONS` | Show the multipage Configuration UI for startup, regional, time-format, date/time, display, chime, Wi-Fi, tools, and About settings. |
 | `EMULATOR` | Run Mini vMac synchronously and return to Boot Options after a safe exit. |
 | `DIAGNOSTICS` | Live-test GPIO inputs, encoder, touch, charging, known I2C addresses, and RTC health. |
 | `WIFI_SETUP` | Show a standard open-network Wi-Fi QR and run the optional iOS/Android-compatible captive portal. |
@@ -202,6 +202,15 @@ builds immutable clock and diagnostics snapshots, so those views do not probe
 RTC, weather, input, Wi-Fi, or I2C hardware directly. Pressing and releasing
 the clock button opens the multipage Configuration UI; its Date / Time page
 shows live RTC fields and writes each **-**/**+** adjustment immediately.
+The Regional page persists date order, 12/24-hour, and temperature-unit
+choices. The adjacent Display page persists leading-zero, optional localized
+three-letter weekdays, seconds, and light/dark theme. The shared
+date formatter supplies Macintosh, Compact, Analog, and Flip, switching those
+date labels from the 32-pixel font to a 24-pixel 1-bpp Chicago font while the
+weekday is visible. `ClockView` applies 12/24-hour formatting to Macintosh,
+Compact Digital, and Flip; seconds apply to all three digital faces, while
+leading zero remains Compact/Flip-specific, with up to six independently
+animated Flip cards.
 Holding Clock and Alarm together for two seconds remains an alternate
 Configuration shortcut. The floppy level controls the small disk icon.
 
@@ -378,7 +387,7 @@ Three storage mechanisms have different lifetimes:
 
 | Store | Data |
 | --- | --- |
-| NVS Preferences, namespace `maclock` | Appearance, regional options, alarms, timer defaults, night/chime schedules, sound paths/volumes, Wi-Fi, brightness, and boot choice |
+| NVS Preferences, namespace `maclock` | Appearance, regional/time-format options, alarms, timer defaults, night/chime schedules, sound paths/volumes, Wi-Fi, brightness, and boot choice |
 | EEPROM emulation | FT6336 calibration structure |
 | LittleFS | UI assets, audio, ROM, and mutable emulator disk images |
 

@@ -51,6 +51,21 @@ enum class ClockTheme : uint8_t
     Count
 };
 
+enum class HourFormat : uint8_t
+{
+    Hour24,
+    Hour12,
+    Count
+};
+
+struct TimeFormatSettings
+{
+    HourFormat hour_format = HourFormat::Hour24;
+    bool leading_zero = true;
+    bool show_seconds = true;
+    bool show_weekday = false;
+};
+
 enum class ScreensaverMode : uint8_t
 {
     Off,
@@ -99,6 +114,7 @@ struct AppSettings
     UiTemperatureUnit temperature_unit = UI_TEMPERATURE_CELSIUS;
     ClockFace clock_face = ClockFace::Macintosh;
     ClockTheme clock_theme = ClockTheme::Light;
+    TimeFormatSettings time_format;
     ScreensaverMode screensaver_mode = ScreensaverMode::Off;
     uint8_t screensaver_delay_index = 1;
     BootBrightness boot_brightness = BootBrightness::Latest;

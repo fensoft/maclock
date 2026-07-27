@@ -132,8 +132,6 @@ static void refresh_language_ui()
     lv_buttonmatrix_set_map(
         boot_options_view.clock_face_options, g_clock_face_map);
     lv_buttonmatrix_set_map(
-        boot_options_view.clock_theme_options, g_clock_theme_map);
-    lv_buttonmatrix_set_map(
         boot_options_view.screensaver_options, g_screensaver_map);
     lv_buttonmatrix_set_map(
         boot_options_view.screensaver_delay_options,
@@ -151,11 +149,6 @@ static void refresh_language_ui()
 
     lv_label_set_text(boot_options_view.brightness_label, tr("Brightness"));
     lv_label_set_text(boot_options_view.remember_label, tr("Default boot mode"));
-    lv_label_set_text(
-        boot_options_view.date_format_label, tr("Date format"));
-    lv_label_set_text(
-        boot_options_view.temperature_unit_label,
-        tr("Temperature unit"));
     lv_label_set_text(
         boot_options_view.screensaver_delay_label,
         tr("Start after"));
@@ -205,18 +198,11 @@ static void refresh_language_ui()
     set_checked_button(
         boot_options_view.remember_selection,
         remember_selected < 2 ? remember_selected : 1);
-    set_checked_button(
-        boot_options_view.date_format_options,
-        (uint32_t)g_date_format);
-    set_checked_button(
-        boot_options_view.temperature_unit_options,
-        (uint32_t)g_temperature_unit);
+    update_regional_options_ui();
+    update_display_options_ui();
     set_checked_button(
         boot_options_view.clock_face_options,
         (uint32_t)g_clock_face);
-    set_checked_button(
-        boot_options_view.clock_theme_options,
-        (uint32_t)g_clock_theme);
     set_checked_button(
         boot_options_view.screensaver_options,
         (uint32_t)g_screensaver_mode);
@@ -401,24 +387,42 @@ static char display_temperature_unit()
 static void format_display_date(
     const DateTime &date, char *text, size_t text_size)
 {
+    char formatted_date[16];
     switch (g_date_format)
     {
     case UI_DATE_FORMAT_MDY:
         snprintf(
-            text, text_size, "%02d/%02d/%04d",
+            formatted_date, sizeof(formatted_date),
+            "%02d/%02d/%04d",
             date.month(), date.day(), date.year());
         break;
     case UI_DATE_FORMAT_YMD:
         snprintf(
-            text, text_size, "%04d-%02d-%02d",
+            formatted_date, sizeof(formatted_date),
+            "%04d-%02d-%02d",
             date.year(), date.month(), date.day());
         break;
     default:
         snprintf(
-            text, text_size, "%02d/%02d/%04d",
+            formatted_date, sizeof(formatted_date),
+            "%02d/%02d/%04d",
             date.day(), date.month(), date.year());
         break;
     }
+
+    if (!g_time_format.show_weekday)
+    {
+        snprintf(text, text_size, "%s", formatted_date);
+        return;
+    }
+
+    static const char *weekday_keys[] = {
+        "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    const uint8_t weekday = date.dayOfTheWeek();
+    snprintf(
+        text, text_size, "%s %s",
+        tr(weekday_keys[weekday < 7 ? weekday : 0]),
+        formatted_date);
 }
 
 #endif
