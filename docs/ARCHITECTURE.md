@@ -186,7 +186,7 @@ LVGL callbacks are static thunks with instance context at the boundary.
 | `NORMAL` | Show the clock, date, weather, gauge, menus, and floppy indicator. |
 | `ALARM_EDITOR` / `ALARM_RINGING` | Configure alarms or run snooze/dismiss playback. |
 | `TIMER_EDITOR` / `TIMER_FINISHED` | Configure the timer or run completion playback. |
-| `BOOT_OPTIONS` | Show the multipage Configuration UI for startup, regional, time-format, date/time, display, chime, Wi-Fi, tools, and About settings. |
+| `BOOT_OPTIONS` | Show the four-section Configuration hub and its section-local General, Display, Sound, and System pages. |
 | `EMULATOR` | Run Mini vMac synchronously and return to Boot Options after a safe exit. |
 | `DIAGNOSTICS` | Live-test GPIO inputs, encoder, touch, charging, known I2C addresses, and RTC health. |
 | `WIFI_SETUP` | Show a standard open-network Wi-Fi QR and run the optional iOS/Android-compatible captive portal. |
@@ -200,8 +200,10 @@ In `NORMAL`, the UI refreshes at most every 100 ms, while `ClockView`
 suppresses label work until the snapshot RTC second changes. `MaclockApp`
 builds immutable clock and diagnostics snapshots, so those views do not probe
 RTC, weather, input, Wi-Fi, or I2C hardware directly. Pressing and releasing
-the clock button opens the multipage Configuration UI; its Date / Time page
-shows live RTC fields and writes each **-**/**+** adjustment immediately.
+the clock button opens Configuration on a four-section hub. General has three
+pages, Display five, Sound four, and System five; navigation and page counts
+are local to the selected section. Its Date / Time page shows live RTC fields
+and writes each **-**/**+** adjustment immediately.
 The Regional page persists date order, 12/24-hour, and temperature-unit
 choices. The adjacent Display page persists leading-zero, optional localized
 three-letter weekdays, seconds, and light/dark theme. The shared

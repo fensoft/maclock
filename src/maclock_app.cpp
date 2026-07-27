@@ -137,12 +137,11 @@ public:
 
 enum BootOptionsPage
 {
-    BOOT_OPTIONS_START,
-    BOOT_OPTIONS_PREFERENCES,
+    BOOT_OPTIONS_HOME,
     BOOT_OPTIONS_LANGUAGE,
     BOOT_OPTIONS_REGIONAL,
-    BOOT_OPTIONS_DISPLAY,
     BOOT_OPTIONS_DATETIME,
+    BOOT_OPTIONS_DISPLAY,
     BOOT_OPTIONS_CLOCK_FACE,
     BOOT_OPTIONS_SCREENSAVER,
     BOOT_OPTIONS_NIGHT_SCHEDULE,
@@ -151,10 +150,21 @@ enum BootOptionsPage
     BOOT_OPTIONS_CHIME_SOUND,
     BOOT_OPTIONS_CHIME_VOLUME,
     BOOT_OPTIONS_CHIME_QUIET,
+    BOOT_OPTIONS_PREFERENCES,
+    BOOT_OPTIONS_START,
     BOOT_OPTIONS_WIFI,
     BOOT_OPTIONS_TOOLS,
     BOOT_OPTIONS_ABOUT,
     BOOT_OPTIONS_PAGE_COUNT
+};
+
+enum BootOptionsSection : uint8_t
+{
+    BOOT_OPTIONS_SECTION_GENERAL,
+    BOOT_OPTIONS_SECTION_DISPLAY,
+    BOOT_OPTIONS_SECTION_SOUND,
+    BOOT_OPTIONS_SECTION_SYSTEM,
+    BOOT_OPTIONS_SECTION_COUNT
 };
 
 enum BootDateTimeField : uint8_t
@@ -176,13 +186,14 @@ public:
     void setPage(BootOptionsPage page);
     void refreshDateTime();
     void tick(uint32_t now);
-    BootOptionsPage page = BOOT_OPTIONS_START;
-    BootOptionsPage page_on_show = BOOT_OPTIONS_START;
+    BootOptionsPage page = BOOT_OPTIONS_HOME;
+    BootOptionsPage page_on_show = BOOT_OPTIONS_HOME;
     bool clock_armed = false;
 
     lv_obj_t *panel;
     lv_obj_t *title;
     lv_obj_t *pages[BOOT_OPTIONS_PAGE_COUNT];
+    lv_obj_t *section_labels[BOOT_OPTIONS_SECTION_COUNT];
     lv_obj_t *brightness_options;
     lv_obj_t *remember_selection;
     lv_obj_t *language_options;

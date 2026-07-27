@@ -40,8 +40,11 @@ public:
     lv_obj_t *list = nullptr;
     lv_obj_t *play_button = nullptr;
     lv_obj_t *play_label = nullptr;
+    lv_obj_t *volume_button = nullptr;
+    lv_obj_t *volume_label = nullptr;
     lv_obj_t *empty_label = nullptr;
     lv_obj_t *items[SOUND_SELECTOR_MAX_FILES] = {};
+    char preview_volume_text[5] = {};
     size_t selected = 0;
     uint8_t preview_volume = 0;
     SoundSelectorChangedCallback changed_callback = nullptr;

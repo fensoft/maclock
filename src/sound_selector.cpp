@@ -17,7 +17,12 @@ static char g_paths[SOUND_SELECTOR_MAX_FILES]
 static size_t g_path_count = 0;
 static bool g_scanned = false;
 static SoundSelectorPreviewCallback g_preview_callback = nullptr;
-static constexpr uint8_t kPreviewVolume = 80;
+static constexpr lv_coord_t kSelectorHeight = 124;
+static constexpr lv_coord_t kListWidth = 184;
+static constexpr lv_coord_t kPlayWidth = 68;
+static constexpr lv_coord_t kControlHeight = 58;
+static constexpr lv_coord_t kHorizontalInset = 8;
+static const uint8_t kPreviewVolumes[] = {25, 50, 100};
 
 static bool is_mp3_path(const char *path)
 {
@@ -187,15 +192,56 @@ static void play_event(lv_event_t *event)
     }
     g_preview_callback(
         g_paths[selector->selected],
-        kPreviewVolume);
+        selector->preview_volume);
 }
 
-static lv_obj_t *create_play_button(
-    lv_obj_t *parent, SoundSelector *selector)
+static uint8_t normalize_preview_volume(uint8_t volume)
+{
+    if (volume <= kPreviewVolumes[0])
+        return kPreviewVolumes[0];
+    if (volume < kPreviewVolumes[2])
+        return kPreviewVolumes[1];
+    return kPreviewVolumes[2];
+}
+
+static void update_preview_volume_label(
+    SoundSelector *selector)
+{
+    if (!selector)
+        return;
+    snprintf(
+        selector->preview_volume_text,
+        sizeof(selector->preview_volume_text),
+        "%u%%", (unsigned)selector->preview_volume);
+    if (selector->volume_label)
+        lv_label_set_text(
+            selector->volume_label,
+            selector->preview_volume_text);
+}
+
+static void volume_event(lv_event_t *event)
+{
+    SoundSelector *selector =
+        (SoundSelector *)lv_event_get_user_data(event);
+    if (!selector)
+        return;
+
+    if (selector->preview_volume == kPreviewVolumes[0])
+        selector->preview_volume = kPreviewVolumes[1];
+    else if (selector->preview_volume == kPreviewVolumes[1])
+        selector->preview_volume = kPreviewVolumes[2];
+    else
+        selector->preview_volume = kPreviewVolumes[0];
+    update_preview_volume_label(selector);
+}
+
+static lv_obj_t *create_side_button(
+    lv_obj_t *parent, lv_align_t alignment)
 {
     lv_obj_t *button = lv_btn_create(parent);
-    lv_obj_set_size(button, 260, 40);
-    lv_obj_align(button, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_size(button, kPlayWidth, kControlHeight);
+    lv_obj_align(
+        button, alignment, -kHorizontalInset, 0);
     lv_obj_set_style_bg_color(button, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(button, LV_OPA_COVER, 0);
     lv_obj_set_style_text_color(button, lv_color_black(), 0);
@@ -208,15 +254,38 @@ static lv_obj_t *create_play_button(
         button, lv_color_black(), LV_STATE_PRESSED);
     lv_obj_set_style_text_color(
         button, lv_color_white(), LV_STATE_PRESSED);
+    return button;
+}
 
+static lv_obj_t *create_play_button(
+    lv_obj_t *parent, SoundSelector *selector)
+{
+    lv_obj_t *button =
+        create_side_button(parent, LV_ALIGN_TOP_RIGHT);
     lv_obj_t *label = lv_label_create(button);
-    lv_label_set_text(label, tr("Play"));
-    lv_obj_set_style_text_font(label, &lv_font_chicago_8, 0);
+    lv_label_set_text(label, LV_SYMBOL_PLAY);
+    lv_obj_set_style_text_font(label, LV_FONT_DEFAULT, 0);
     lv_obj_center(label);
 
     lv_obj_add_event_cb(
         button, play_event, LV_EVENT_CLICKED, selector);
     selector->play_label = label;
+    return button;
+}
+
+static lv_obj_t *create_volume_button(
+    lv_obj_t *parent, SoundSelector *selector)
+{
+    lv_obj_t *button =
+        create_side_button(parent, LV_ALIGN_BOTTOM_RIGHT);
+    lv_obj_t *label = lv_label_create(button);
+    lv_obj_set_style_text_font(label, &lv_font_chicago_8, 0);
+    lv_obj_center(label);
+
+    lv_obj_add_event_cb(
+        button, volume_event, LV_EVENT_CLICKED, selector);
+    selector->volume_label = label;
+    update_preview_volume_label(selector);
     return button;
 }
 }
@@ -255,13 +324,17 @@ void SoundSelector::begin(
         scan();
 
     memset(selector, 0, sizeof(*selector));
-    selector->preview_volume = preview_volume;
+    selector->preview_volume =
+        normalize_preview_volume(preview_volume);
     selector->changed_callback = changed_callback;
     selector->user_data = user_data;
 
     selector->list = lv_list_create(parent);
-    lv_obj_set_size(selector->list, 260, 78);
-    lv_obj_align(selector->list, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_size(
+        selector->list, kListWidth, kSelectorHeight);
+    lv_obj_align(
+        selector->list, LV_ALIGN_LEFT_MID,
+        kHorizontalInset, 0);
     selector_list_style_container(selector->list);
 
     for (size_t i = 0; i < g_path_count; ++i)
@@ -290,9 +363,15 @@ void SoundSelector::begin(
 
     selector->play_button =
         create_play_button(parent, selector);
+    selector->volume_button =
+        create_volume_button(parent, selector);
     if (g_path_count == 0)
+    {
         lv_obj_add_state(
             selector->play_button, LV_STATE_DISABLED);
+        lv_obj_add_state(
+            selector->volume_button, LV_STATE_DISABLED);
+    }
 
     setPath(selected_path);
 }
@@ -318,13 +397,14 @@ const char *SoundSelector::path() const
 
 void SoundSelector::setPreviewVolume(uint8_t volume)
 {
-    preview_volume = volume;
+    preview_volume = normalize_preview_volume(volume);
+    update_preview_volume_label(this);
 }
 
 void SoundSelector::refreshLanguage()
 {
     if (play_label)
-        lv_label_set_text(play_label, tr("Play"));
+        lv_label_set_text(play_label, LV_SYMBOL_PLAY);
     if (empty_label)
     {
         lv_label_set_text(

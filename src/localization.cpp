@@ -18,6 +18,9 @@ static UiLanguage g_language = UI_LANGUAGE_ENGLISH;
 static const Translation g_translations[] = {
     {"Boot Options", "Options de démarrage", "Opciones de inicio", "Startoptionen", "Opzioni di avvio"},
     {"Configuration", "Configuration", "Configuración", "Konfiguration", "Configurazione"},
+    {"General", "Général", "General", "Allgemein", "Generale"},
+    {"System", "Système", "Sistema", "System", "Sistema"},
+    {"Sections", "Sections", "Secciones", "Bereiche", "Sezioni"},
     {"Start", "Démarrer", "Inicio", "Start", "Avvio"},
     {"Stop", "Arrêter", "Detener", "Stopp", "Ferma"},
     {"Preferences", "Préférences", "Preferencias", "Einstellungen", "Preferenze"},

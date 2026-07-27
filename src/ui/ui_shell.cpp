@@ -162,13 +162,24 @@ static void refresh_language_ui()
     lv_label_set_text(boot_options_view.emulator_button_label, tr("Emulator"));
     lv_label_set_text(boot_options_view.diagnostics_button_label, tr("Diagnostics"));
     lv_label_set_text(
+        boot_options_view.section_labels[BOOT_OPTIONS_SECTION_GENERAL],
+        tr("General"));
+    lv_label_set_text(
+        boot_options_view.section_labels[BOOT_OPTIONS_SECTION_DISPLAY],
+        tr("Display"));
+    lv_label_set_text(
+        boot_options_view.section_labels[BOOT_OPTIONS_SECTION_SOUND],
+        tr("Sound"));
+    lv_label_set_text(
+        boot_options_view.section_labels[BOOT_OPTIONS_SECTION_SYSTEM],
+        tr("System"));
+    lv_label_set_text(
         boot_options_view.about_author,
         tr("Author: fensoft"));
     lv_label_set_text(
         boot_options_view.calibration_label,
         tr("Press Clock for screen calibration"));
     lv_label_set_text(boot_options_view.previous_label, tr("Previous"));
-    lv_label_set_text(boot_options_view.exit_label, tr("Exit"));
     lv_label_set_text(boot_options_view.next_label, tr("Next"));
     boot_options_view.chime_sound_selector.refreshLanguage();
     boot_options_view.refreshDateTime();

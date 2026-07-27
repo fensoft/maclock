@@ -54,12 +54,19 @@ To open Configuration:
 2. Turn Maclock off, hold **Clock**, turn Maclock on, and release the button
    when **Configuration** appears.
 
-Configuration uses 18 pages with large controls. Its first page has
-rounded-square **Clock** and **Emulator** launch buttons. Every page has fixed
-**Previous**, **Exit**, and **Next** footer slots; the unavailable direction
-is left empty on the first or last page. The pages cover Start, Preferences,
-Language, Regional settings, Display, Date / Time, clock faces, Screensaver,
-two Night pages, four Chime pages, Wi-Fi, Tools, and About:
+Configuration opens on a four-button section hub instead of one long page
+sequence:
+
+- **General**: Language, Regional, and Date / Time (3 pages).
+- **Display**: Display, Clock Face, Screensaver, and the two Night pages
+  (5 pages).
+- **Sound**: Chime, Chime Sound, Chime Volume, and Quiet Hours (4 pages).
+- **System**: Preferences, Start, Wi-Fi, Tools, and About (5 pages).
+
+Each section has fixed **Previous**, **Sections**, and **Next** footer slots;
+the unavailable direction is left empty on the first or last page.
+**Sections** returns to the hub from any settings page, and **Exit** on the hub
+returns to the normal clock:
 
 - **Brightness / Latest** restores the last encoder brightness.
 - **Brightness / Lowest** starts at the lowest visible setting.
@@ -83,7 +90,8 @@ two Night pages, four Chime pages, Wi-Fi, Tools, and About:
   the weekday is visible.
 - **About** shows the fensoft logo, author, GitHub address, and a scannable
   project QR code.
-- **Exit** returns directly to the normal clock from any page.
+- **Sections** returns to the configuration hub from any settings page.
+- **Exit** returns from the hub to the normal clock.
 
 The brightness choice is saved as it is changed. The boot mode is saved only
 when **Remember** is selected.

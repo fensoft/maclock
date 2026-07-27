@@ -27,6 +27,31 @@ void BootOptionsView::init(lv_obj_t *screen)
             create_boot_options_page(boot_options_view.panel);
     }
 
+    lv_obj_t *home_page =
+        boot_options_view.pages[BOOT_OPTIONS_HOME];
+    const char *section_names[BOOT_OPTIONS_SECTION_COUNT] = {
+        tr("General"), tr("Display"), tr("Sound"), tr("System")};
+    const lv_align_t section_alignments[BOOT_OPTIONS_SECTION_COUNT] = {
+        LV_ALIGN_TOP_LEFT, LV_ALIGN_TOP_RIGHT,
+        LV_ALIGN_BOTTOM_LEFT, LV_ALIGN_BOTTOM_RIGHT};
+    const int16_t section_x[BOOT_OPTIONS_SECTION_COUNT] = {
+        4, -4, 4, -4};
+    for (uint8_t i = 0; i < BOOT_OPTIONS_SECTION_COUNT; ++i)
+    {
+        lv_obj_t *button =
+            create_action_button(
+                home_page, section_names[i],
+                boot_options_section_event);
+        boot_options_view.section_labels[i] =
+            lv_obj_get_child(button, 0);
+        lv_obj_set_user_data(
+            button, (void *)(uintptr_t)i);
+        lv_obj_set_size(button, 130, 58);
+        lv_obj_align(
+            button, section_alignments[i],
+            section_x[i], 0);
+    }
+
     lv_obj_t *preferences_page =
         boot_options_view.pages[BOOT_OPTIONS_PREFERENCES];
     boot_options_view.brightness_label = lv_label_create(preferences_page);
@@ -791,7 +816,7 @@ void BootOptionsView::init(lv_obj_t *screen)
         lv_obj_get_child(boot_options_view.next, 0);
 
     lv_obj_add_flag(boot_options_view.panel, LV_OBJ_FLAG_HIDDEN);
-    boot_options_view.setPage(BOOT_OPTIONS_START);
+    boot_options_view.setPage(BOOT_OPTIONS_HOME);
 }
 
 void BootOptionsView::show()
@@ -831,7 +856,7 @@ void BootOptionsView::show()
     boot_options_view.setPage(
         boot_options_view.page_on_show);
     boot_options_view.page_on_show =
-        BOOT_OPTIONS_START;
+        BOOT_OPTIONS_HOME;
 
     char rtc_status[64];
     if (format_rtc_health(rtc_status, sizeof(rtc_status)))
