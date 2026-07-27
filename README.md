@@ -31,9 +31,9 @@ disassembly, wiring, firmware preparation, and flashing.
 | Control | Clock mode | Mini vMac mode |
 | --- | --- | --- |
 | Rotary encoder | Adjust brightness from off to maximum | Adjust brightness from off to maximum |
-| Clock button | Open the date/time editor; dismiss a ringing alarm; wake night mode | Enter key |
+| Clock button | Open Configuration; dismiss a ringing alarm; wake night mode | Enter key |
 | Alarm button | Open alarms and timers; snooze a ringing alarm; wake night mode | Escape key |
-| Clock + Alarm, held for 2 seconds | Open Boot Options | Safely exit to Boot Options |
+| Clock + Alarm, held for 2 seconds | Open Configuration | Safely exit to Configuration |
 | Floppy switch | Advance startup and show the floppy icon | No emulator action |
 | Display touchscreen | Operate menus, show the pointer, and wake night mode | Move the Macintosh pointer using relative motion |
 | Discrete touch sensor (red wire) | Force full brightness for 10 seconds; snooze a ringing alarm | Macintosh mouse button |
@@ -48,18 +48,18 @@ Maclock can start either the clock or Mini vMac, regardless of the physical
 floppy-switch position. The saved default determines which mode starts at
 power-on.
 
-To open the boot-options screen:
+To open Configuration:
 
-1. From the normal clock screen, hold **Clock** and **Alarm** together for two
-   seconds; or
+1. Press **Clock** from the normal clock screen; or
 2. Turn Maclock off, hold **Clock**, turn Maclock on, and release the button
-   when **Boot Options** appears.
+   when **Configuration** appears.
 
-Boot Options uses eleven pages with large controls. Its first page has
+Configuration uses 17 pages with large controls. Its first page has
 rounded-square **Clock** and **Emulator** launch buttons. Every page has fixed
 **Previous**, **Exit**, and **Next** footer slots; the unavailable direction
 is left empty on the first or last page. The pages cover Start, Preferences,
-Language, two Night pages, four Chime pages, Wi-Fi, and Tools:
+Language, Regional settings, Date / Time, clock faces and themes, Screensaver,
+two Night pages, four Chime pages, Wi-Fi, Tools, and About:
 
 - **Brightness / Latest** restores the last encoder brightness.
 - **Brightness / Lowest** starts at the lowest visible setting.
@@ -73,6 +73,10 @@ Language, two Night pages, four Chime pages, Wi-Fi, and Tools:
 - **Diagnostics** opens a live hardware test screen for both buttons, the
   floppy switch, encoder, touch sensor, charging input, known I²C devices, and
   RTC health.
+- **Date / Time** shows live RTC fields; select a field and adjust it directly
+  with the large **-** and **+** buttons.
+- **About** shows the fensoft logo, author, GitHub address, and a scannable
+  project QR code.
 - **Exit** returns directly to the normal clock from any page.
 
 The brightness choice is saved as it is changed. The boot mode is saved only
@@ -80,7 +84,7 @@ when **Remember** is selected.
 
 ### Scheduled Night Mode
 
-Night mode is configured on the two Night pages in **Boot Options**:
+Night mode is configured on the two Night pages in **Configuration**:
 
 1. Enable the schedule and select the hours to start dimming and return to
    normal brightness.
@@ -96,7 +100,7 @@ screen. A ringing alarm or finished timer also restores the normal display.
 
 ### Hourly Chime
 
-The four Chime pages in **Boot Options** configure:
+The four Chime pages in **Configuration** configure:
 
 - **Off**, **Hourly**, or **Quarter hour** playback. Quarter-hour mode plays
   at `:00`, `:15`, `:30`, and `:45`.
@@ -116,8 +120,9 @@ local weather sensor continue to work without a network.
 
 To configure it:
 
-1. Open the **Wi-Fi** page in Boot Options and choose **Setup Wi-Fi**.
-2. Connect a phone or computer to the `Maclock Setup` access point.
+1. Open the **Wi-Fi** page in Configuration and choose **Setup Wi-Fi**.
+2. Scan the on-screen QR code with an iPhone or Android camera to join the
+   open `Maclock Setup` access point, or connect to it manually.
 3. Open `http://192.168.4.1` if the setup page does not appear automatically.
 4. Enter the Wi-Fi name, password, and city, then save.
 5. Return to Maclock and press **Back**.
@@ -186,9 +191,9 @@ single-file build and header generation used by PlatformIO.
 
 ### Calibrating The Touchscreen
 
-Calibration is entered from the boot-options screen:
+Calibration is entered from Configuration:
 
-1. Open **Boot Options** as described above.
+1. Open **Configuration** as described above.
 2. Release the Clock button.
 3. Press the **Clock** button again.
 4. Touch and release each crosshair in order:
@@ -196,7 +201,7 @@ Calibration is entered from the boot-options screen:
 
 After the fourth point, the calibration is saved and Maclock opens the normal
 clock display. Press **Clock** during calibration to cancel and return to Boot
-Options without changing the saved calibration.
+Configuration without changing the saved calibration.
 
 <p align="center">
   <img src="img/config_calib.jpg" alt="Maclock touchscreen calibration crosshair" width="640">
@@ -301,10 +306,12 @@ and the timer sound repeats. Tap **Dismiss**, or press either **Clock** or
 
 ### Setting The Date And Time
 
-1. Press the **Clock** button from the main screen.
-2. Tap the hour, minute, second, day, month, or year field.
-3. Use **-** and **+** to change the selected value. Hold a button to repeat.
-4. Tap **Save** to write the value to the RTC, or **Cancel** to discard it.
+1. Press **Clock** from the main screen.
+2. Open the **Date / Time** page. Its hour, minute, second, day, month, and
+   year buttons refresh live from the RTC.
+3. Tap the field to change.
+4. Use **-** and **+** to write the new value directly to the RTC. Hold a
+   button to repeat.
 
 <p align="center">
   <img src="img/config_date.jpg" alt="Maclock date and time editor" width="640">
@@ -312,10 +319,10 @@ and the timer sound repeats. Tap **Dismiss**, or press either **Clock** or
 
 Supported RTCs are DS1307 and DS3231 at I²C address `0x68`. Without a working
 RTC, the firmware falls back to `01/01/2000 00:00:00`, and the startup plugin
-diagnostic will not complete. Boot Options and Diagnostics also warn when a
+diagnostic will not complete. Configuration and Diagnostics also warn when a
 DS1307 is stopped, a DS3231 reports lost power, the date is invalid, or the
 year is earlier than 2024. A healthy RTC does not add a status line to Boot
-Options. If the date returns to 2000 after unplugging Maclock, check or replace
+Configuration. If the date returns to 2000 after unplugging Maclock, check or replace
 the RTC backup battery, then set the date again.
 
 ### Using Mini vMac

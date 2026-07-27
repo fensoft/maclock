@@ -758,6 +758,15 @@ onBeforeUnmount(() => {
           <span aria-hidden="true">•</span>
           This is the everyday control panel. The “Maclock Setup” Wi-Fi portal
           remains separate and is only used to join a network.
+          <span aria-hidden="true">•</span>
+          <a
+            class="github-link"
+            href="https://github.com/fensoft/maclock"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View on GitHub
+          </a>
         </footer>
       </template>
     </main>

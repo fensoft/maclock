@@ -487,7 +487,7 @@ void MaclockApp::tick()
         {
             clock_press_pending_ = false;
             alarm_press_pending_ = false;
-            requested_state_ = UI_STATE_SET_DATETIME;
+            requested_state_ = UI_STATE_BOOT_OPTIONS;
             state_start_ms_ = now;
         }
         else if (alarm_press_pending_ && !alarm_button_down)
@@ -589,6 +589,7 @@ void MaclockApp::tick()
             lv_obj_clear_flag(ui_shell.corners, LV_OBJ_FLAG_HIDDEN);
             boot_options_view.show();
         }
+        boot_options_view.tick(now);
         lv_timer_handler();
         if (!boot_options_view.clock_armed)
         {
@@ -644,14 +645,8 @@ void MaclockApp::tick()
             now - wifi_setup_view.last_update_ms >= 500)
         {
             const WifiModeSnapshot wifi = wifi_service.snapshot();
-            char setup_status[180];
-            snprintf(
-                setup_status, sizeof(setup_status),
-                tr("1. Connect to Wi-Fi:\nMaclock Setup\n\n"
-                   "2. Open 192.168.4.1\n\n%s"),
-                tr(wifi.status));
-            lv_label_set_text(
-                wifi_setup_view.status, setup_status);
+            update_wifi_setup_status_label(
+                wifi.status);
             lv_timer_handler();
             wifi_setup_view.last_update_ms = now;
         }

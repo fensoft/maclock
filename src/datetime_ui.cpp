@@ -187,7 +187,7 @@ static void datetime_save_event(lv_event_t *e)
     {
         g_events->adjustRtc(
             DateTime(year, month, day, hour, minute, second));
-        g_events->requestState(UiState::Normal);
+        g_events->requestState(UiState::BootOptions);
     }
 }
 
@@ -195,7 +195,7 @@ static void datetime_cancel_event(lv_event_t *e)
 {
     (void)e;
     if (g_events)
-        g_events->requestState(UiState::Normal);
+        g_events->requestState(UiState::BootOptions);
 }
 
 static lv_obj_t *create_spinbox_column(lv_obj_t *parent, int min_value, int max_value, int digits, int init_value)

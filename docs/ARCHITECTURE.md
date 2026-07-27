@@ -184,13 +184,12 @@ LVGL callbacks are static thunks with instance context at the boundary.
 | `BOOT_PLUGINS` | Probe and progressively reveal codec, touch, weather, and RTC plugin icons. |
 | `WAIT_FLOPPY_SOUND` | Wait for the floppy sound to finish. |
 | `NORMAL` | Show the clock, date, weather, gauge, menus, and floppy indicator. |
-| `SET_DATETIME` | Show the RTC date/time editor. |
 | `ALARM_EDITOR` / `ALARM_RINGING` | Configure alarms or run snooze/dismiss playback. |
 | `TIMER_EDITOR` / `TIMER_FINISHED` | Configure the timer or run completion playback. |
-| `BOOT_OPTIONS` | Select startup brightness, launch clock/emulator, optionally remember the default, or open diagnostics. |
+| `BOOT_OPTIONS` | Show the multipage Configuration UI for startup, regional, date/time, display, chime, Wi-Fi, tools, and About settings. |
 | `EMULATOR` | Run Mini vMac synchronously and return to Boot Options after a safe exit. |
 | `DIAGNOSTICS` | Live-test GPIO inputs, encoder, touch, charging, known I2C addresses, and RTC health. |
-| `WIFI_SETUP` | Run the optional local configuration portal. |
+| `WIFI_SETUP` | Show a standard open-network Wi-Fi QR and run the optional iOS/Android-compatible captive portal. |
 | `CALIBRATION` | Capture four raw FT6336 corner samples and persist their bounds. |
 
 The plugin diagnostic is fail-stop by design. Each expected device must be
@@ -201,9 +200,10 @@ In `NORMAL`, the UI refreshes at most every 100 ms, while `ClockView`
 suppresses label work until the snapshot RTC second changes. `MaclockApp`
 builds immutable clock and diagnostics snapshots, so those views do not probe
 RTC, weather, input, Wi-Fi, or I2C hardware directly. Pressing and releasing
-the clock button opens the date/time editor. Holding Clock and Alarm together
-for two seconds opens Boot Options. The floppy level controls the small disk
-icon.
+the clock button opens the multipage Configuration UI; its Date / Time page
+shows live RTC fields and writes each **-**/**+** adjustment immediately.
+Holding Clock and Alarm together for two seconds remains an alternate
+Configuration shortcut. The floppy level controls the small disk icon.
 
 ## UI Composition
 

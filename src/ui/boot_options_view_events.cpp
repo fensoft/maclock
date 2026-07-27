@@ -219,6 +219,7 @@ static void date_format_event(lv_event_t *event)
     g_date_format = (UiDateFormat)selected;
     settings_store.saveDateFormat(g_date_format);
     datetime_editor.setDateFormat(g_date_format);
+    boot_options_view.refreshDateTime();
 }
 
 static void temperature_unit_event(lv_event_t *event)
@@ -500,6 +501,236 @@ static void diagnostics_back_event(lv_event_t *event)
     request_state(UI_STATE_BOOT_OPTIONS);
 }
 
+static uint8_t datetime_days_in_month(
+    uint16_t year, uint8_t month)
+{
+    static const uint8_t days[] = {
+        31, 28, 31, 30, 31, 30,
+        31, 31, 30, 31, 30, 31};
+    if (month == 2)
+    {
+        const bool leap =
+            (year % 4 == 0 && year % 100 != 0) ||
+            year % 400 == 0;
+        return leap ? 29 : 28;
+    }
+    return days[month - 1];
+}
+
+static void datetime_set_enabled(bool enabled)
+{
+    lv_obj_t *objects[] = {
+        boot_options_view.datetime_fields,
+        boot_options_view.datetime_minus,
+        boot_options_view.datetime_plus};
+    for (lv_obj_t *object : objects)
+    {
+        if (!object)
+            continue;
+        if (enabled)
+            lv_obj_remove_state(object, LV_STATE_DISABLED);
+        else
+            lv_obj_add_state(object, LV_STATE_DISABLED);
+    }
+}
+
+void BootOptionsView::refreshDateTime()
+{
+    if (!boot_options_view.datetime_fields)
+        return;
+
+    if (!rtc_service.available())
+    {
+        for (uint8_t i = 0;
+             i < BOOT_DATETIME_FIELD_COUNT; ++i)
+        {
+            strlcpy(
+                boot_options_view.datetime_text[i], "--",
+                sizeof(boot_options_view.datetime_text[i]));
+        }
+        datetime_set_enabled(false);
+    }
+    else
+    {
+        datetime_set_enabled(true);
+        const DateTime current = rtc_now();
+        snprintf(
+            boot_options_view.datetime_text[BOOT_DATETIME_HOUR],
+            sizeof(boot_options_view.datetime_text[0]),
+            "%s\n%02u", tr("Hour"), current.hour());
+        snprintf(
+            boot_options_view.datetime_text[BOOT_DATETIME_MINUTE],
+            sizeof(boot_options_view.datetime_text[0]),
+            "%s\n%02u", tr("Minute"), current.minute());
+        snprintf(
+            boot_options_view.datetime_text[BOOT_DATETIME_SECOND],
+            sizeof(boot_options_view.datetime_text[0]),
+            "%s\n%02u", tr("Second"), current.second());
+        snprintf(
+            boot_options_view.datetime_text[BOOT_DATETIME_DAY],
+            sizeof(boot_options_view.datetime_text[0]),
+            "%s\n%02u", tr("Day"), current.day());
+        snprintf(
+            boot_options_view.datetime_text[BOOT_DATETIME_MONTH],
+            sizeof(boot_options_view.datetime_text[0]),
+            "%s\n%02u", tr("Month"), current.month());
+        snprintf(
+            boot_options_view.datetime_text[BOOT_DATETIME_YEAR],
+            sizeof(boot_options_view.datetime_text[0]),
+            "%s\n%04u", tr("Year"), current.year());
+    }
+
+    boot_options_view.datetime_field_order[0] =
+        BOOT_DATETIME_HOUR;
+    boot_options_view.datetime_field_order[1] =
+        BOOT_DATETIME_MINUTE;
+    boot_options_view.datetime_field_order[2] =
+        BOOT_DATETIME_SECOND;
+    switch (g_date_format)
+    {
+    case UI_DATE_FORMAT_MDY:
+        boot_options_view.datetime_field_order[3] =
+            BOOT_DATETIME_MONTH;
+        boot_options_view.datetime_field_order[4] =
+            BOOT_DATETIME_DAY;
+        boot_options_view.datetime_field_order[5] =
+            BOOT_DATETIME_YEAR;
+        break;
+    case UI_DATE_FORMAT_YMD:
+        boot_options_view.datetime_field_order[3] =
+            BOOT_DATETIME_YEAR;
+        boot_options_view.datetime_field_order[4] =
+            BOOT_DATETIME_MONTH;
+        boot_options_view.datetime_field_order[5] =
+            BOOT_DATETIME_DAY;
+        break;
+    default:
+        boot_options_view.datetime_field_order[3] =
+            BOOT_DATETIME_DAY;
+        boot_options_view.datetime_field_order[4] =
+            BOOT_DATETIME_MONTH;
+        boot_options_view.datetime_field_order[5] =
+            BOOT_DATETIME_YEAR;
+        break;
+    }
+
+    for (uint8_t i = 0; i < 3; ++i)
+    {
+        boot_options_view.datetime_map[i] =
+            boot_options_view.datetime_text[
+                boot_options_view.datetime_field_order[i]];
+        boot_options_view.datetime_map[i + 4] =
+            boot_options_view.datetime_text[
+                boot_options_view.datetime_field_order[i + 3]];
+    }
+    boot_options_view.datetime_map[3] = "\n";
+    boot_options_view.datetime_map[7] = "";
+    lv_buttonmatrix_set_map(
+        boot_options_view.datetime_fields,
+        boot_options_view.datetime_map);
+
+    uint32_t selected_button = 0;
+    for (uint8_t i = 0;
+         i < BOOT_DATETIME_FIELD_COUNT; ++i)
+    {
+        if (boot_options_view.datetime_field_order[i] ==
+            boot_options_view.datetime_selected)
+        {
+            selected_button = i;
+            break;
+        }
+    }
+    set_checked_button(
+        boot_options_view.datetime_fields, selected_button);
+}
+
+static void boot_datetime_field_event(lv_event_t *event)
+{
+    lv_obj_t *matrix =
+        (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(matrix);
+    if (selected >= BOOT_DATETIME_FIELD_COUNT)
+        return;
+    boot_options_view.datetime_selected =
+        boot_options_view.datetime_field_order[selected];
+    set_checked_button(matrix, selected);
+}
+
+static void adjust_boot_datetime(int delta)
+{
+    if (!rtc_service.available())
+        return;
+
+    const DateTime current = rtc_now();
+    int year = current.year();
+    int month = current.month();
+    int day = current.day();
+    int hour = current.hour();
+    int minute = current.minute();
+    int second = current.second();
+
+    switch (boot_options_view.datetime_selected)
+    {
+    case BOOT_DATETIME_HOUR:
+        hour = constrain(hour + delta, 0, 23);
+        break;
+    case BOOT_DATETIME_MINUTE:
+        minute = constrain(minute + delta, 0, 59);
+        break;
+    case BOOT_DATETIME_SECOND:
+        second = constrain(second + delta, 0, 59);
+        break;
+    case BOOT_DATETIME_DAY:
+        day = constrain(
+            day + delta, 1,
+            (int)datetime_days_in_month(year, month));
+        break;
+    case BOOT_DATETIME_MONTH:
+        month = constrain(month + delta, 1, 12);
+        day = min(
+            day,
+            (int)datetime_days_in_month(year, month));
+        break;
+    case BOOT_DATETIME_YEAR:
+        year = constrain(year + delta, 2000, 2099);
+        day = min(
+            day,
+            (int)datetime_days_in_month(year, month));
+        break;
+    default:
+        return;
+    }
+
+    app_events.adjustRtc(
+        DateTime(year, month, day, hour, minute, second));
+    boot_options_view.refreshDateTime();
+}
+
+static void boot_datetime_minus_event(lv_event_t *event)
+{
+    (void)event;
+    adjust_boot_datetime(-1);
+}
+
+static void boot_datetime_plus_event(lv_event_t *event)
+{
+    (void)event;
+    adjust_boot_datetime(1);
+}
+
+void BootOptionsView::tick(uint32_t now)
+{
+    if (boot_options_view.page != BOOT_OPTIONS_DATETIME)
+        return;
+    if (!boot_options_view.datetime_last_refresh_ms ||
+        now - boot_options_view.datetime_last_refresh_ms >= 250)
+    {
+        boot_options_view.datetime_last_refresh_ms = now;
+        boot_options_view.refreshDateTime();
+    }
+}
+
 void BootOptionsView::setPage(BootOptionsPage page)
 {
     if (page >= BOOT_OPTIONS_PAGE_COUNT)
@@ -507,21 +738,26 @@ void BootOptionsView::setPage(BootOptionsPage page)
 
     const char *page_names[BOOT_OPTIONS_PAGE_COUNT] = {
         tr("Start"), tr("Preferences"), tr("Language"),
-        tr("Regional"), tr("Clock Face"), tr("Clock Theme"),
-        tr("Screensaver"),
+        tr("Regional"), tr("Date / Time"), tr("Clock Face"),
+        tr("Clock Theme"), tr("Screensaver"),
         tr("Night Schedule"), tr("Night Screen"), tr("Chime"),
         tr("Chime Sound"), tr("Chime Volume"), tr("Quiet Hours"),
-        tr("Wi-Fi"), tr("Tools")};
+        tr("Wi-Fi"), tr("Tools"), tr("About")};
     boot_options_view.page = page;
     for (size_t i = 0; i < BOOT_OPTIONS_PAGE_COUNT; ++i)
         lv_obj_add_flag(
             boot_options_view.pages[i], LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(
         boot_options_view.pages[page], LV_OBJ_FLAG_HIDDEN);
+    if (page == BOOT_OPTIONS_DATETIME)
+    {
+        boot_options_view.datetime_last_refresh_ms = 0;
+        boot_options_view.refreshDateTime();
+    }
 
     char title[72];
     snprintf(title, sizeof(title), "%s - %s (%u/%u)",
-             tr("Boot Options"), page_names[page],
+             tr("Configuration"), page_names[page],
              (unsigned)page + 1,
              (unsigned)BOOT_OPTIONS_PAGE_COUNT);
     lv_label_set_text(boot_options_view.title, title);
@@ -533,7 +769,7 @@ void BootOptionsView::setPage(BootOptionsPage page)
         lv_obj_clear_flag(
             boot_options_view.previous, LV_OBJ_FLAG_HIDDEN);
 
-    if (page == BOOT_OPTIONS_TOOLS)
+    if (page == BOOT_OPTIONS_ABOUT)
         lv_obj_add_flag(
             boot_options_view.next, LV_OBJ_FLAG_HIDDEN);
     else
@@ -554,7 +790,7 @@ static void boot_options_previous_event(lv_event_t *event)
 static void boot_options_next_event(lv_event_t *event)
 {
     (void)event;
-    if (boot_options_view.page < BOOT_OPTIONS_TOOLS)
+    if (boot_options_view.page < BOOT_OPTIONS_ABOUT)
     {
         boot_options_view.setPage(
             (BootOptionsPage)(boot_options_view.page + 1));

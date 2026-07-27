@@ -34,6 +34,23 @@ void DiagnosticsView::init(lv_obj_t *screen)
     lv_obj_add_flag(diagnostics_view.panel, LV_OBJ_FLAG_HIDDEN);
 }
 
+static void update_wifi_setup_status_label(
+    const char *status)
+{
+    if (!wifi_setup_view.status)
+        return;
+
+    char setup_status[180];
+    snprintf(
+        setup_status, sizeof(setup_status),
+        tr("Scan to join\nMaclock Setup\n"
+           "(iPhone / Android)\n\n"
+           "Open 192.168.4.1\n%s"),
+        tr(status));
+    lv_label_set_text(
+        wifi_setup_view.status, setup_status);
+}
+
 void WifiSetupView::init(lv_obj_t *screen)
 {
     wifi_setup_view.panel = lv_obj_create(screen);
@@ -54,20 +71,37 @@ void WifiSetupView::init(lv_obj_t *screen)
     lv_obj_set_style_text_font(wifi_setup_view.title, &lv_font_chicago_8, 0);
     lv_obj_align(wifi_setup_view.title, LV_ALIGN_TOP_MID, 0, 0);
 
+    wifi_setup_view.qr =
+        lv_qrcode_create(wifi_setup_view.panel);
+    lv_qrcode_set_size(wifi_setup_view.qr, 112);
+    lv_qrcode_set_dark_color(
+        wifi_setup_view.qr, lv_color_black());
+    lv_qrcode_set_light_color(
+        wifi_setup_view.qr, lv_color_white());
+    lv_qrcode_set_quiet_zone(
+        wifi_setup_view.qr, true);
+    // Standard Wi-Fi QR payload recognized by both iOS and Android.
+    // The setup access point is intentionally open.
+    lv_qrcode_set_data(
+        wifi_setup_view.qr,
+        "WIFI:T:nopass;S:Maclock Setup;;");
+    lv_obj_align(
+        wifi_setup_view.qr,
+        LV_ALIGN_TOP_LEFT, 0, 24);
+
     wifi_setup_view.status =
         lv_label_create(wifi_setup_view.panel);
-    lv_label_set_text(
-        wifi_setup_view.status,
-        tr("Connect to: Maclock Setup\nThen open: 192.168.4.1"));
-    lv_obj_set_width(wifi_setup_view.status, 250);
+    update_wifi_setup_status_label(
+        "Connect to Maclock Setup");
+    lv_obj_set_width(wifi_setup_view.status, 140);
     lv_obj_set_style_text_font(
         wifi_setup_view.status, &lv_font_chicago_8, 0);
     lv_obj_set_style_text_align(
         wifi_setup_view.status, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_line_space(
-        wifi_setup_view.status, 4, 0);
+        wifi_setup_view.status, 2, 0);
     lv_obj_align(
-        wifi_setup_view.status, LV_ALIGN_TOP_MID, 0, 28);
+        wifi_setup_view.status, LV_ALIGN_TOP_RIGHT, 0, 28);
 
     lv_obj_t *back_button =
         create_action_button(
@@ -135,20 +169,23 @@ static void refresh_language_ui()
     lv_label_set_text(boot_options_view.emulator_button_label, tr("Emulator"));
     lv_label_set_text(boot_options_view.diagnostics_button_label, tr("Diagnostics"));
     lv_label_set_text(
+        boot_options_view.about_author,
+        tr("Author: fensoft"));
+    lv_label_set_text(
         boot_options_view.calibration_label,
         tr("Press Clock for screen calibration"));
     lv_label_set_text(boot_options_view.previous_label, tr("Previous"));
     lv_label_set_text(boot_options_view.exit_label, tr("Exit"));
     lv_label_set_text(boot_options_view.next_label, tr("Next"));
     boot_options_view.chime_sound_selector.refreshLanguage();
+    boot_options_view.refreshDateTime();
 
     lv_label_set_text(diagnostics_view.title, tr("Hardware Diagnostics"));
     lv_label_set_text(diagnostics_view.back_label, tr("Back"));
     lv_label_set_text(wifi_setup_view.title, tr("Wi-Fi Setup"));
     lv_label_set_text(wifi_setup_view.back_label, tr("Back"));
-    lv_label_set_text(
-        wifi_setup_view.status,
-        tr("Connect to: Maclock Setup\nThen open: 192.168.4.1"));
+    update_wifi_setup_status_label(
+        wifi_service.snapshot().status);
     ui_shell.updateBootMessage();
     ui_shell.updateMenuTitles();
     lv_label_set_text(ui_shell.clock_label, tr("Clock"));

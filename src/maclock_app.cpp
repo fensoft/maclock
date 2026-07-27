@@ -39,6 +39,7 @@
 #include "audio_service.h"
 #include "control_panel.h"
 #include "settings_store.h"
+#include "fensoft_logo.h"
 
 LV_FONT_DECLARE(lv_font_chicago_8);
 LV_FONT_DECLARE(lv_font_chicago_32);
@@ -138,6 +139,7 @@ enum BootOptionsPage
     BOOT_OPTIONS_PREFERENCES,
     BOOT_OPTIONS_LANGUAGE,
     BOOT_OPTIONS_REGIONAL,
+    BOOT_OPTIONS_DATETIME,
     BOOT_OPTIONS_CLOCK_FACE,
     BOOT_OPTIONS_CLOCK_THEME,
     BOOT_OPTIONS_SCREENSAVER,
@@ -149,7 +151,19 @@ enum BootOptionsPage
     BOOT_OPTIONS_CHIME_QUIET,
     BOOT_OPTIONS_WIFI,
     BOOT_OPTIONS_TOOLS,
+    BOOT_OPTIONS_ABOUT,
     BOOT_OPTIONS_PAGE_COUNT
+};
+
+enum BootDateTimeField : uint8_t
+{
+    BOOT_DATETIME_HOUR,
+    BOOT_DATETIME_MINUTE,
+    BOOT_DATETIME_SECOND,
+    BOOT_DATETIME_DAY,
+    BOOT_DATETIME_MONTH,
+    BOOT_DATETIME_YEAR,
+    BOOT_DATETIME_FIELD_COUNT
 };
 
 class BootOptionsView
@@ -158,7 +172,10 @@ public:
     void init(lv_obj_t *screen);
     void show();
     void setPage(BootOptionsPage page);
+    void refreshDateTime();
+    void tick(uint32_t now);
     BootOptionsPage page = BOOT_OPTIONS_START;
+    BootOptionsPage page_on_show = BOOT_OPTIONS_START;
     bool clock_armed = false;
 
     lv_obj_t *panel;
@@ -170,6 +187,14 @@ public:
     lv_obj_t *language_items[UI_LANGUAGE_COUNT];
     lv_obj_t *date_format_options;
     lv_obj_t *temperature_unit_options;
+    lv_obj_t *datetime_fields;
+    lv_obj_t *datetime_minus;
+    lv_obj_t *datetime_plus;
+    char datetime_text[BOOT_DATETIME_FIELD_COUNT][24];
+    const char *datetime_map[8];
+    BootDateTimeField datetime_field_order[BOOT_DATETIME_FIELD_COUNT];
+    BootDateTimeField datetime_selected = BOOT_DATETIME_HOUR;
+    uint32_t datetime_last_refresh_ms = 0;
     lv_obj_t *clock_face_options;
     lv_obj_t *clock_theme_options;
     lv_obj_t *screensaver_options;
@@ -188,6 +213,10 @@ public:
     lv_obj_t *wifi_enabled_options;
     lv_obj_t *wifi_status;
     lv_obj_t *rtc_status;
+    lv_obj_t *about_logo;
+    lv_obj_t *about_qr;
+    lv_obj_t *about_author;
+    lv_obj_t *about_link;
     lv_obj_t *previous;
     lv_obj_t *previous_label;
     lv_obj_t *exit;
@@ -353,6 +382,7 @@ public:
 
     lv_obj_t *panel;
     lv_obj_t *title;
+    lv_obj_t *qr;
     lv_obj_t *status;
     lv_obj_t *back_label;
     unsigned long last_update_ms = 0;

@@ -776,6 +776,7 @@ hr {
 
 footer {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: center;
   margin: 32px auto 0;
@@ -785,6 +786,19 @@ footer {
   box-shadow: 2px 2px 0 #000;
   font-size: 12px;
   text-align: center;
+}
+
+.github-link {
+  padding: 0 3px;
+  color: #000;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.github-link:hover {
+  color: #fff;
+  background: #000;
+  text-decoration: none;
 }
 
 .startup-screen {

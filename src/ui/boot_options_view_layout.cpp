@@ -15,7 +15,7 @@ void BootOptionsView::init(lv_obj_t *screen)
 
     boot_options_view.title =
         lv_label_create(boot_options_view.panel);
-    lv_label_set_text(boot_options_view.title, tr("Boot Options"));
+    lv_label_set_text(boot_options_view.title, tr("Configuration"));
     lv_obj_set_style_text_font(
         boot_options_view.title, &lv_font_chicago_8, 0);
     lv_obj_align(
@@ -178,6 +178,64 @@ void BootOptionsView::init(lv_obj_t *screen)
     lv_obj_add_event_cb(
         boot_options_view.temperature_unit_options,
         temperature_unit_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *datetime_page =
+        boot_options_view.pages[BOOT_OPTIONS_DATETIME];
+    boot_options_view.datetime_fields =
+        lv_buttonmatrix_create(datetime_page);
+    lv_buttonmatrix_set_button_ctrl_all(
+        boot_options_view.datetime_fields,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        boot_options_view.datetime_fields,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        boot_options_view.datetime_fields, true);
+    lv_obj_set_size(
+        boot_options_view.datetime_fields, 260, 76);
+    lv_obj_align(
+        boot_options_view.datetime_fields,
+        LV_ALIGN_TOP_MID, 0, 0);
+    style_boot_options_matrix(
+        boot_options_view.datetime_fields);
+    lv_obj_set_style_pad_row(
+        boot_options_view.datetime_fields, 6, 0);
+    lv_obj_set_style_pad_column(
+        boot_options_view.datetime_fields, 6, 0);
+    lv_obj_add_event_cb(
+        boot_options_view.datetime_fields,
+        boot_datetime_field_event,
+        LV_EVENT_VALUE_CHANGED, nullptr);
+
+    boot_options_view.datetime_minus =
+        create_action_button(
+            datetime_page, "-",
+            boot_datetime_minus_event);
+    lv_obj_set_size(
+        boot_options_view.datetime_minus, 126, 46);
+    lv_obj_align(
+        boot_options_view.datetime_minus,
+        LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_add_event_cb(
+        boot_options_view.datetime_minus,
+        boot_datetime_minus_event,
+        LV_EVENT_LONG_PRESSED_REPEAT, nullptr);
+
+    boot_options_view.datetime_plus =
+        create_action_button(
+            datetime_page, "+",
+            boot_datetime_plus_event);
+    lv_obj_set_size(
+        boot_options_view.datetime_plus, 126, 46);
+    lv_obj_align(
+        boot_options_view.datetime_plus,
+        LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_add_event_cb(
+        boot_options_view.datetime_plus,
+        boot_datetime_plus_event,
+        LV_EVENT_LONG_PRESSED_REPEAT, nullptr);
+
+    boot_options_view.refreshDateTime();
 
     lv_obj_t *clock_face_page =
         boot_options_view.pages[BOOT_OPTIONS_CLOCK_FACE];
@@ -640,6 +698,64 @@ void BootOptionsView::init(lv_obj_t *screen)
     lv_obj_set_style_text_font(calibration_label, &lv_font_chicago_8, 0);
     lv_obj_align(calibration_label, LV_ALIGN_BOTTOM_MID, 0, 0);
 
+    lv_obj_t *about_page =
+        boot_options_view.pages[BOOT_OPTIONS_ABOUT];
+
+    boot_options_view.about_author =
+        lv_label_create(about_page);
+    lv_label_set_text(
+        boot_options_view.about_author,
+        tr("Author: fensoft"));
+    lv_obj_set_style_text_font(
+        boot_options_view.about_author,
+        &lv_font_chicago_8, 0);
+    lv_obj_align(
+        boot_options_view.about_author,
+        LV_ALIGN_TOP_LEFT, 0, 0);
+
+    boot_options_view.about_link =
+        lv_label_create(about_page);
+    lv_label_set_text(
+        boot_options_view.about_link,
+        "github.com/fensoft/\nmaclock");
+    lv_obj_set_style_text_font(
+        boot_options_view.about_link,
+        &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_line_space(
+        boot_options_view.about_link, 2, 0);
+    lv_obj_align(
+        boot_options_view.about_link,
+        LV_ALIGN_TOP_LEFT, 0, 18);
+
+    boot_options_view.about_logo =
+        lv_image_create(about_page);
+    lv_image_set_src(
+        boot_options_view.about_logo, &fensoft_logo);
+    lv_obj_set_size(
+        boot_options_view.about_logo, 64, 64);
+    lv_image_set_inner_align(
+        boot_options_view.about_logo, LV_IMAGE_ALIGN_CONTAIN);
+    lv_obj_align(
+        boot_options_view.about_logo,
+        LV_ALIGN_TOP_LEFT, 4, 56);
+
+    boot_options_view.about_qr =
+        lv_qrcode_create(about_page);
+    lv_qrcode_set_size(
+        boot_options_view.about_qr, 112);
+    lv_qrcode_set_dark_color(
+        boot_options_view.about_qr, lv_color_black());
+    lv_qrcode_set_light_color(
+        boot_options_view.about_qr, lv_color_white());
+    lv_qrcode_set_quiet_zone(
+        boot_options_view.about_qr, true);
+    lv_qrcode_set_data(
+        boot_options_view.about_qr,
+        "https://github.com/fensoft/maclock");
+    lv_obj_align(
+        boot_options_view.about_qr,
+        LV_ALIGN_RIGHT_MID, 0, 0);
+
     boot_options_view.previous =
         create_action_button(
             boot_options_view.panel, tr("Previous"),
@@ -718,7 +834,10 @@ void BootOptionsView::show()
     update_night_options_ui();
     update_chime_options_ui();
     update_wifi_options_ui();
-    boot_options_view.setPage(BOOT_OPTIONS_START);
+    boot_options_view.setPage(
+        boot_options_view.page_on_show);
+    boot_options_view.page_on_show =
+        BOOT_OPTIONS_START;
 
     char rtc_status[64];
     if (format_rtc_health(rtc_status, sizeof(rtc_status)))

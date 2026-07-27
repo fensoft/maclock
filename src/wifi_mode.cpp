@@ -839,7 +839,11 @@ static void configure_portal_routes()
     g_web_server.on("/", HTTP_GET, send_setup_page);
     g_web_server.on("/save", HTTP_POST, save_setup);
     g_web_server.on("/generate_204", HTTP_ANY, send_setup_page);
+    g_web_server.on("/gen_204", HTTP_ANY, send_setup_page);
     g_web_server.on("/hotspot-detect.html", HTTP_ANY, send_setup_page);
+    g_web_server.on(
+        "/library/test/success.html",
+        HTTP_ANY, send_setup_page);
     g_web_server.onNotFound(send_setup_page);
     g_portal_routes_ready = true;
 }
