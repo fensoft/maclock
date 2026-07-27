@@ -12,7 +12,11 @@ core.
 
 ## High-Level Boot Flow
 
-`setup()` in `src/main.cpp` is the composition root.
+`src/main.cpp` is intentionally only the Arduino adapter: its static
+`MaclockApp` forwards `setup()` to `MaclockApp::begin()` and `loop()` to
+`MaclockApp::tick()`. `MaclockApp` is the composition root and owns settings,
+I2C, RTC, weather, input, display, audio, Wi-Fi, alarm, timer, and date/time
+services.
 
 1. Start serial output at 115200 baud and keep the TFT backlight off.
 2. Open the `maclock` Preferences namespace and load the boot-brightness and
@@ -63,6 +67,25 @@ The project-specific emulator boundary remains tracked:
   contract.
 - `patches/` makes changes to generated upstream sources reproducible.
 
+Application code is divided by ownership:
+
+- `SettingsStore` owns the `maclock` Preferences namespace and validation.
+- `I2cBus`, `RtcService`, `WeatherService`, `InputService`, `DisplayService`,
+  and `AudioService` own hardware-facing state.
+- `WifiService`, `AlarmService`, and `TimerService` own their worker and
+  persisted runtime state.
+- `UiShell`, `StartupView`, `ClockView`, `BootOptionsView`,
+  `DateTimeEditor`, `AlarmView`, `TimerView`, `DiagnosticsView`,
+  `WifiSetupView`, and `CalibrationView` own UI state.
+- `SoundSelector` is a reusable stateful widget shared by alarm and chime
+  configuration.
+
+The focused files under `src/ui/` are guarded implementation units included by
+`maclock_app.cpp`. This keeps each source unit small while preserving a single
+translation unit for private LVGL callbacks and their instance compatibility
+thunks. PlatformIO may discover those `.cpp` files separately; without
+`MACLOCK_COMBINED_SOURCE` they intentionally compile empty.
+
 ## Flash Layout And LittleFS
 
 `partitions.csv` defines:
@@ -93,15 +116,16 @@ border and a 16-pixel right border around a 304x224 logical surface.
 
 ### Clock mode
 
-`setup_lvgl_display()` creates a 304x224 LVGL display with a full-frame RGB565
-buffer used in partial render mode. `lvgl_to_TFT_eSPI()` flushes LVGL areas at a
-physical Y offset of 16 pixels. It clears the panel once and then writes only
-invalidated areas.
+`DisplayService::beginLvgl()` creates a 304x224 LVGL display with a full-frame
+RGB565 buffer used in partial render mode. Its flush thunk recovers the
+`DisplayService` instance from LVGL user data and writes areas at a physical Y
+offset of 16 pixels. It clears the panel once and then writes only invalidated
+areas.
 
-`lvgl_fs_init_littlefs()` registers drive `S:` using `fs::File` wrappers for
-open, close, read, seek, and tell. `init_ui_assets()` decodes frequently reused
-PNG assets once and retains duplicated LVGL draw buffers to reduce repeated
-decode work.
+`DisplayService::registerLittleFs()` registers drive `S:` using `fs::File`
+wrappers for open, close, read, seek, and tell. `UiShell::init()` decodes
+frequently reused PNG assets once and retains duplicated LVGL draw buffers to
+reduce repeated decode work.
 
 All LVGL object creation and mutation occurs in the Arduino setup/loop context.
 The FreeRTOS input task publishes simple input state rather than touching LVGL.
@@ -125,9 +149,10 @@ control overlay above the emulated screen.
 
 ## Normal Clock State Machine
 
-`loop()` maintains an integer `UiState`, a state-entry timestamp, and small
-state-specific counters. Event callbacks request transitions through
-`g_requested_state`; the loop applies them before dispatching the next state.
+`MaclockApp::tick()` maintains a typed `UiState`, state-entry timestamp, and
+common scheduling state as class members. Views report transitions and RTC,
+alarm, or timer actions through `AppEventSink`, implemented by `MaclockApp`.
+LVGL callbacks are static thunks with instance context at the boundary.
 
 | State | Behavior |
 | --- | --- |
@@ -139,24 +164,29 @@ state-specific counters. Event callbacks request transitions through
 | `WAIT_FLOPPY_SOUND` | Wait for the floppy sound to finish. |
 | `NORMAL` | Show the clock, date, weather, gauge, menus, and floppy indicator. |
 | `SET_DATETIME` | Show the RTC date/time editor. |
+| `ALARM_EDITOR` / `ALARM_RINGING` | Configure alarms or run snooze/dismiss playback. |
+| `TIMER_EDITOR` / `TIMER_FINISHED` | Configure the timer or run completion playback. |
 | `BOOT_OPTIONS` | Select startup brightness, launch clock/emulator, optionally remember the default, or open diagnostics. |
 | `EMULATOR` | Run Mini vMac synchronously and return to Boot Options after a safe exit. |
 | `DIAGNOSTICS` | Live-test GPIO inputs, encoder, touch, charging, known I2C addresses, and RTC health. |
+| `WIFI_SETUP` | Run the optional local configuration portal. |
 | `CALIBRATION` | Capture four raw FT6336 corner samples and persist their bounds. |
 
 The plugin diagnostic is fail-stop by design. Each expected device must be
 present. A missing device displays its icon in red and blinks forever instead
 of advancing to the clock.
 
-In `NORMAL`, the UI refreshes at most every 100 ms, while
-`update_clock_labels()` suppresses work until the RTC second changes. Pressing
-and releasing the clock button opens the date/time editor. Holding Clock and
-Alarm together for two seconds opens Boot Options. The floppy level controls
-the small disk icon.
+In `NORMAL`, the UI refreshes at most every 100 ms, while `ClockView`
+suppresses label work until the snapshot RTC second changes. `MaclockApp`
+builds immutable clock and diagnostics snapshots, so those views do not probe
+RTC, weather, input, Wi-Fi, or I2C hardware directly. Pressing and releasing
+the clock button opens the date/time editor. Holding Clock and Alarm together
+for two seconds opens Boot Options. The floppy level controls the small disk
+icon.
 
 ## UI Composition
 
-`init_ui_assets()` creates one LVGL screen containing:
+`UiShell::init()` creates one LVGL screen containing:
 
 - Background and corner-frame images.
 - Startup missing-disk and boot/plugin layers.
@@ -166,13 +196,13 @@ the small disk icon.
 - Date/time editor, boot-options and diagnostics panels, calibration
   label/crosshair, and a touch cursor that hides after two seconds.
 
-`hide_all_ui()` is the common transition primitive. It hides every layer before
-the active state reveals its own set, preventing stale state-specific objects
-from remaining visible.
+`UiShell::hideAll()` is the common transition primitive. It hides every layer
+before the active state reveals its own set, preventing stale state-specific
+objects from remaining visible.
 
-`datetime_ui.cpp` owns its widgets and styles but deliberately leaves RTC
-ownership in `main.cpp`. Saving calls `rtc_adjust_datetime()`; Save and Cancel
-both request a transition back to `NORMAL`.
+`DateTimeEditor` owns its widgets and styles but deliberately leaves RTC
+ownership in `RtcService`. Save sends the new value through `AppEventSink`;
+Save and Cancel request a transition back to `NORMAL`.
 
 ## Input Architecture
 
@@ -202,16 +232,17 @@ sample so the next touch starts with zero delta.
 
 ### Buttons and encoder
 
-`input_task` runs every 20 ms on core 1:
+`InputService` runs its task every 20 ms on core 1:
 
 - Floppy is retained as a level.
 - Alarm, clock, and discrete touch are published as rising-edge events.
 - A FreeRTOS critical section protects the shared `InputState`.
 
-The loop consumes one-shot edges and clears them while retaining the floppy
-level. The encoder count is clamped to 0–12 and mapped through a perceptual
-backlight PWM curve. Brightness changes are written to Preferences after a
-500 ms debounce. A touch edge overrides PWM to full brightness for ten seconds.
+`MaclockApp::tick()` consumes one-shot edges and clears them while retaining
+the floppy level. The encoder count is clamped to 0–12 and mapped through a
+perceptual backlight PWM curve. Brightness changes are written through
+`SettingsStore` after a 500 ms debounce. A touch edge overrides PWM to full
+brightness for ten seconds.
 
 The alarm edge is collected but currently has no state-machine behavior.
 The normal state reads both button levels directly for the two-second
@@ -243,13 +274,13 @@ invalid dates, and dates earlier than 2024.
 
 ## Audio
 
-Normal mode initializes the ES8311 codec and an `AudioOutputI2S` instance at
-44.1 kHz. The main loop creates `AudioFileSourceLittleFS` and
-`AudioGeneratorMP3` objects for startup/floppy effects.
+`DisplayService` owns the ES8311 codec and `AudioOutputI2S` instance, initialized
+at 44.1 kHz for normal mode. `AudioService` owns
+`AudioFileSourceLittleFS`/`AudioGeneratorMP3` playback for clock sounds.
 
-`audio_task` runs every 10 ms on core 0. It advances the decoder and publishes a
-completion flag under `g_mp3_mux`, allowing the UI state machine to wait without
-performing decoding itself.
+The `AudioService` task runs on core 0. It advances the decoder and publishes a
+completion flag under its instance lock, allowing the UI state machine to wait
+without performing decoding itself.
 
 Mini vMac produces unsigned 8-bit mono PCM at its native 22,255 Hz rate.
 `src/minivmac_OSGLUE.c` forwards each completed 512-sample block to the Arduino
@@ -257,8 +288,9 @@ bridge, which converts it to signed 16-bit samples and writes it to both I2S
 channels. The ES8311 uses the divider ratio from its 22,050 Hz table entry while
 the I2S peripheral supplies the exact Mini vMac clock.
 
-The bridge initializes the codec on demand for a saved-default emulator boot,
-stops and reconfigures the shared `AudioOutputI2S` object for Mini vMac, and
+`EmulatorHardwareBridge` exposes only the shared TFT, codec, and audio accessors
+needed by Mini vMac. It initializes the codec on demand for a saved-default
+emulator boot, stops and reconfigures the shared `AudioOutputI2S` object, and
 restores its 44.1 kHz clock-mode configuration on exit. When Mini vMac is
 launched from Boot Options, the normal `audio_task` remains alive but its MP3
 decoder is stopped, leaving I2S ownership with the synchronous emulator path.

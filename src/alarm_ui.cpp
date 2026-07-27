@@ -8,11 +8,6 @@
 LV_FONT_DECLARE(lv_font_chicago_8);
 LV_FONT_DECLARE(lv_font_chicago_48);
 
-extern void request_normal_state();
-extern void request_timer_state();
-extern void alarm_snooze_current();
-extern void alarm_dismiss_current();
-
 namespace
 {
 static constexpr uint32_t kAlarmStorageMagic = 0x414C524D; // 'ALRM'
@@ -84,28 +79,61 @@ struct AlarmRingingUi
     lv_obj_t *dismiss_label;
 };
 
-static Preferences *g_preferences = nullptr;
-static AlarmConfig g_alarms[kAlarmCount] = {};
-static AlarmConfig g_edit_alarms[kAlarmCount] = {};
-static char g_alarm_sound_paths[kAlarmCount]
-                               [SOUND_SELECTOR_PATH_MAX] = {};
-static char g_edit_alarm_sound_paths[kAlarmCount]
-                                    [SOUND_SELECTOR_PATH_MAX] = {};
-static uint32_t g_last_trigger_minute[kAlarmCount] = {};
-static int g_snooze_alarm = -1;
-static uint32_t g_snooze_at = 0;
-static size_t g_selected_alarm = 0;
-static AlarmEditorPage g_editor_page = ALARM_PAGE_HOME;
-static AlarmEditorUi g_editor = {};
-static AlarmRingingUi g_ringing = {};
+} // namespace
 
-static const char *g_slot_map[4] = {};
-static const char *g_enabled_map[3] = {};
-static const char *g_time_map[5] = {};
-static const char *g_days_map[9] = {};
+struct AlarmService::State
+{
+    Preferences *preferences = nullptr;
+    AlarmConfig alarms[kAlarmCount] = {};
+    AlarmConfig edit_alarms[kAlarmCount] = {};
+    char alarm_sound_paths[kAlarmCount]
+                          [SOUND_SELECTOR_PATH_MAX] = {};
+    char edit_alarm_sound_paths[kAlarmCount]
+                               [SOUND_SELECTOR_PATH_MAX] = {};
+    uint32_t last_trigger_minute[kAlarmCount] = {};
+    int snooze_alarm = -1;
+    uint32_t snooze_at = 0;
+    size_t selected_alarm = 0;
+    AlarmEditorPage editor_page = ALARM_PAGE_HOME;
+    AlarmEditorUi editor = {};
+    AlarmRingingUi ringing = {};
+    AppEventSink *events = nullptr;
+    const char *slot_map[4] = {};
+    const char *enabled_map[3] = {};
+    const char *time_map[5] = {};
+    const char *days_map[9] = {};
+    const char *page_names[ALARM_PAGE_COUNT] = {};
+};
+
+namespace
+{
+AlarmService *active_alarm_service = nullptr;
+
+#define g_preferences (active_alarm_service->state().preferences)
+#define g_alarms (active_alarm_service->state().alarms)
+#define g_edit_alarms (active_alarm_service->state().edit_alarms)
+#define g_alarm_sound_paths \
+    (active_alarm_service->state().alarm_sound_paths)
+#define g_edit_alarm_sound_paths \
+    (active_alarm_service->state().edit_alarm_sound_paths)
+#define g_last_trigger_minute \
+    (active_alarm_service->state().last_trigger_minute)
+#define g_snooze_alarm (active_alarm_service->state().snooze_alarm)
+#define g_snooze_at (active_alarm_service->state().snooze_at)
+#define g_selected_alarm \
+    (active_alarm_service->state().selected_alarm)
+#define g_editor_page (active_alarm_service->state().editor_page)
+#define g_editor (active_alarm_service->state().editor)
+#define g_ringing (active_alarm_service->state().ringing)
+#define g_events (active_alarm_service->state().events)
+#define g_slot_map (active_alarm_service->state().slot_map)
+#define g_enabled_map (active_alarm_service->state().enabled_map)
+#define g_time_map (active_alarm_service->state().time_map)
+#define g_days_map (active_alarm_service->state().days_map)
+#define g_page_names (active_alarm_service->state().page_names)
+
 static const char *g_volume_map[] = {
     "25%", "50%", "\n", "75%", "100%", ""};
-static const char *g_page_names[ALARM_PAGE_COUNT] = {};
 static const char *g_legacy_sound_paths[kLegacyAlarmSoundCount] = {
     "/quack.mp3",
     "/startup.mp3",
@@ -352,7 +380,7 @@ static void UpdateSummary()
              alarm.enabled ? tr("Enabled") : tr("Disabled"),
              tr("Days"),
              days,
-             sound_selector_display_name(
+             SoundSelector::displayName(
                  g_edit_alarm_sound_paths[g_selected_alarm]),
              (unsigned)g_volume_values[alarm.volume]);
     lv_label_set_text(g_editor.summary, text);
@@ -440,8 +468,7 @@ static void VolumeEvent(lv_event_t *event)
     if (selected < kAlarmVolumeCount)
     {
         g_edit_alarms[g_selected_alarm].volume = (uint8_t)selected;
-        sound_selector_set_preview_volume(
-            &g_editor.sound_selector,
+        g_editor.sound_selector.setPreviewVolume(
             g_volume_values[selected]);
     }
 }
@@ -466,19 +493,17 @@ static void LoadEditorAlarm(size_t alarm_index)
                 LV_BUTTONMATRIX_CTRL_CHECKED);
         }
     }
-    sound_selector_set_path(
-        &g_editor.sound_selector,
+    g_editor.sound_selector.setPath(
         g_edit_alarm_sound_paths[alarm_index]);
     const char *resolved_sound =
-        sound_selector_get_path(&g_editor.sound_selector);
+        g_editor.sound_selector.path();
     if (resolved_sound)
     {
         strlcpy(
             g_edit_alarm_sound_paths[alarm_index],
             resolved_sound, SOUND_SELECTOR_PATH_MAX);
     }
-    sound_selector_set_preview_volume(
-        &g_editor.sound_selector,
+    g_editor.sound_selector.setPreviewVolume(
         g_volume_values[alarm.volume]);
     SetMatrixChecked(
         g_editor.volume_matrix, kAlarmVolumeCount, alarm.volume);
@@ -512,13 +537,15 @@ static void SaveEvent(lv_event_t *event)
         g_snooze_at = 0;
     }
     SaveAlarms();
-    request_normal_state();
+    if (g_events)
+        g_events->requestState(UiState::Normal);
 }
 
 static void CancelEvent(lv_event_t *event)
 {
     (void)event;
-    request_normal_state();
+    if (g_events)
+        g_events->requestState(UiState::Normal);
 }
 
 static void SetEditorPage(AlarmEditorPage page);
@@ -526,7 +553,8 @@ static void SetEditorPage(AlarmEditorPage page);
 static void OpenTimerEvent(lv_event_t *event)
 {
     (void)event;
-    request_timer_state();
+    if (g_events)
+        g_events->requestState(UiState::TimerEditor);
 }
 
 static void OpenAlarmSettingsEvent(lv_event_t *event)
@@ -583,13 +611,15 @@ static void NextPageEvent(lv_event_t *event)
 static void SnoozeEvent(lv_event_t *event)
 {
     (void)event;
-    alarm_snooze_current();
+    if (g_events)
+        g_events->snoozeActiveAlarm();
 }
 
 static void DismissEvent(lv_event_t *event)
 {
     (void)event;
-    alarm_dismiss_current();
+    if (g_events)
+        g_events->dismissActiveAlarm();
 }
 
 static lv_obj_t *CreateEditorPage(lv_obj_t *parent)
@@ -702,8 +732,7 @@ static void InitEditorUi(lv_obj_t *screen)
         LV_EVENT_VALUE_CHANGED, nullptr);
 
     lv_obj_t *sound_page = g_editor.pages[ALARM_PAGE_SOUND];
-    sound_selector_create(
-        &g_editor.sound_selector,
+    g_editor.sound_selector.begin(
         sound_page,
         "/quack.mp3",
         g_volume_values[2],
@@ -808,8 +837,16 @@ static void InitRingingUi(lv_obj_t *screen)
 }
 }
 
-void alarms_init(Preferences &preferences)
+AlarmService::State &AlarmService::state()
 {
+    return *state_;
+}
+
+void AlarmService::begin(Preferences &preferences)
+{
+    if (!state_)
+        state_ = new State();
+    active_alarm_service = this;
     g_preferences = &preferences;
     SetAlarmDefaults();
     g_snooze_alarm = -1;
@@ -836,7 +873,7 @@ void alarms_init(Preferences &preferences)
     LoadAlarmSoundPaths(preferences);
 }
 
-int alarms_due(const DateTime &now)
+int AlarmService::due(const DateTime &now)
 {
     const uint32_t now_seconds = now.unixtime();
     if (g_snooze_alarm >= 0 && now_seconds >= g_snooze_at)
@@ -869,7 +906,8 @@ int alarms_due(const DateTime &now)
     return first_due_alarm;
 }
 
-void alarms_snooze(size_t alarm_index, const DateTime &now)
+void AlarmService::snooze(
+    size_t alarm_index, const DateTime &now)
 {
     if (alarm_index >= kAlarmCount)
         return;
@@ -877,13 +915,13 @@ void alarms_snooze(size_t alarm_index, const DateTime &now)
     g_snooze_at = now.unixtime() + kAlarmSnoozeSeconds;
 }
 
-void alarms_dismiss()
+void AlarmService::dismiss()
 {
     g_snooze_alarm = -1;
     g_snooze_at = 0;
 }
 
-bool alarms_have_active_indicator()
+bool AlarmService::hasActiveIndicator() const
 {
     if (g_snooze_alarm >= 0)
         return true;
@@ -895,29 +933,30 @@ bool alarms_have_active_indicator()
     return false;
 }
 
-const char *alarms_sound_path(size_t alarm_index)
+const char *AlarmService::soundPath(size_t alarm_index) const
 {
     if (alarm_index >= kAlarmCount)
-        return sound_selector_resolve_path(
+        return SoundSelector::resolvePath(
             "/quack.mp3", "/quack.mp3");
-    return sound_selector_resolve_path(
+    return SoundSelector::resolvePath(
         g_alarm_sound_paths[alarm_index], "/quack.mp3");
 }
 
-uint8_t alarms_volume(size_t alarm_index)
+uint8_t AlarmService::volume(size_t alarm_index) const
 {
     if (alarm_index >= kAlarmCount)
         return g_volume_values[2];
     return g_volume_values[g_alarms[alarm_index].volume];
 }
 
-void alarm_ui_init(lv_obj_t *screen)
+void AlarmView::begin(lv_obj_t *screen, AppEventSink &events)
 {
+    g_events = &events;
     InitEditorUi(screen);
     InitRingingUi(screen);
 }
 
-void alarm_ui_hide()
+void AlarmView::hide()
 {
     if (g_editor.panel)
         lv_obj_add_flag(g_editor.panel, LV_OBJ_FLAG_HIDDEN);
@@ -925,7 +964,7 @@ void alarm_ui_hide()
         lv_obj_add_flag(g_ringing.panel, LV_OBJ_FLAG_HIDDEN);
 }
 
-void alarm_ui_enter()
+void AlarmView::enter()
 {
     memcpy(g_edit_alarms, g_alarms, sizeof(g_edit_alarms));
     memcpy(
@@ -937,13 +976,13 @@ void alarm_ui_enter()
     SetEditorPage(ALARM_PAGE_HOME);
 }
 
-void alarm_ui_show_editor()
+void AlarmView::showEditor()
 {
     if (g_editor.panel)
         lv_obj_clear_flag(g_editor.panel, LV_OBJ_FLAG_HIDDEN);
 }
 
-void alarm_ui_show_ringing(size_t alarm_index)
+void AlarmView::showRinging(size_t alarm_index)
 {
     if (!g_ringing.panel || alarm_index >= kAlarmCount)
         return;
@@ -959,12 +998,12 @@ void alarm_ui_show_ringing(size_t alarm_index)
     lv_label_set_text(g_ringing.time, time);
     lv_label_set_text(
         g_ringing.sound,
-        sound_selector_display_name(
+        SoundSelector::displayName(
             g_alarm_sound_paths[alarm_index]));
     lv_obj_clear_flag(g_ringing.panel, LV_OBJ_FLAG_HIDDEN);
 }
 
-void alarm_ui_refresh_language()
+void AlarmView::refreshLanguage()
 {
     UpdateLanguageMaps();
     if (!g_editor.panel)
@@ -982,7 +1021,7 @@ void alarm_ui_refresh_language()
     lv_label_set_text(g_editor.next_label, tr("Next"));
     lv_label_set_text(g_ringing.snooze_label, tr("Snooze 9 min"));
     lv_label_set_text(g_ringing.dismiss_label, tr("Dismiss"));
-    sound_selector_refresh_language(&g_editor.sound_selector);
+    g_editor.sound_selector.refreshLanguage();
     SetEditorPage(g_editor_page);
     UpdateSummary();
 }

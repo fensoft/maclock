@@ -25,15 +25,26 @@ struct WifiModeSnapshot
     uint32_t forecast_age_seconds;
 };
 
-void wifi_mode_begin(Preferences &preferences);
-void wifi_mode_start_task();
-void wifi_mode_set_enabled(bool enabled);
-WifiModeSnapshot wifi_mode_snapshot();
+class WifiService
+{
+public:
+    struct State;
 
-void wifi_mode_start_portal();
-void wifi_mode_process_portal();
-void wifi_mode_stop_portal();
+    void begin(Preferences &preferences);
+    void startTask();
+    void setEnabled(bool enabled);
+    WifiModeSnapshot snapshot();
 
-bool wifi_mode_take_time_sync(uint32_t &local_epoch);
-void wifi_mode_pause();
-void wifi_mode_resume();
+    void startPortal();
+    void processPortal();
+    void stopPortal();
+
+    bool takeTimeSync(uint32_t &local_epoch);
+    void pause();
+    void resume();
+
+    State &state();
+
+private:
+    State *state_ = nullptr;
+};

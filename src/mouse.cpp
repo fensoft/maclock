@@ -1,9 +1,7 @@
 #include "mouse.h"
 
-#include "TouchSensor.h"
+#include "input_service.h"
 #include "touch.h"
-
-extern TouchSensor touch;
 
 MouseClass Mouse;
 
@@ -154,5 +152,5 @@ void MouseClass::Update()
 
 bool MouseClass::ReadButton()
 {
-    return touch.update();
+    return emulator_mouse_button_read();
 }

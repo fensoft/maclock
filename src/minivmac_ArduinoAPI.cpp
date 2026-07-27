@@ -18,8 +18,11 @@
 #include "ArduinoAPI.h"
 #include "audio_output.h"
 #include "brightness.h"
+#include "display_service.h"
+#include "input_service.h"
 #include "es8311.h"
 #include "localization.h"
+#include "settings_store.h"
 
 #include "SYSDEPNS.h"
 #include "CNFGGLOB.h"
@@ -28,12 +31,9 @@
 
 #include "mouse.h"
 
-extern TFT_eSPI my_lcd;
-extern ESP32Encoder encoder;
-extern Preferences preferences;
-extern AudioOutputI2S *audio_out;
-extern es8311_handle_t es8311_handle;
-extern void setup_codec();
+#define my_lcd (EmulatorHardwareBridge::display())
+#define audio_out (EmulatorHardwareBridge::audioOutput())
+#define es8311_handle (EmulatorHardwareBridge::codec())
 
 int vMacMouseX = 0;
 int vMacMouseY = 0;
@@ -370,7 +370,7 @@ uint8_t ArduinoAPI_Sound_Init(uint32_t sample_rate)
      * entry with the same MCLK/256 ratio, so its divider values remain correct
      * when the I2S peripheral supplies the native 22,255 Hz MCLK.
      */
-    setup_codec();
+    EmulatorHardwareBridge::ensureCodec();
     if (!audio_out || !es8311_handle)
         return 0;
 
@@ -532,13 +532,13 @@ static void EmulatorButtonUpdate(EmulatorButton &button,
 
 static int EmulatorReadBrightness()
 {
-    int brightness = (int)encoder.getCount();
+    int brightness = (int)emulator_encoder().getCount();
     if (brightness < 0)
         brightness = 0;
     if (brightness > kBrightnessMax)
         brightness = kBrightnessMax;
-    if (brightness != encoder.getCount())
-        encoder.setCount(brightness);
+    if (brightness != emulator_encoder().getCount())
+        emulator_encoder().setCount(brightness);
     return brightness;
 }
 
@@ -595,7 +595,7 @@ static void EmulatorInputsUpdate()
     if (brightness != EmulatorSavedBrightness &&
         (uint32_t)(now - EmulatorBrightnessSaveMs) >= 500)
     {
-        preferences.putUChar("brightness", (uint8_t)brightness);
+        emulator_preferences().putUChar("brightness", (uint8_t)brightness);
         EmulatorSavedBrightness = brightness;
         EmulatorBrightnessSaveMs = now;
     }

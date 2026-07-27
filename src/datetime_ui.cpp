@@ -4,9 +4,6 @@
 LV_FONT_DECLARE(lv_font_chicago_8);
 LV_FONT_DECLARE(lv_font_chicago_32);
 
-extern void rtc_adjust_datetime(const DateTime &date_time);
-extern void request_normal_state();
-
 struct DateTimeUi
 {
     lv_obj_t *panel;
@@ -30,17 +27,41 @@ struct DateTimeUi
     lv_obj_t *cancel_label;
 };
 
-static DateTimeUi g_dt_ui = {};
-static lv_obj_t *g_dt_spinboxes[6] = {};
-static uint8_t g_dt_spinbox_digits[6] = {};
-static int32_t g_dt_spinbox_min[6] = {};
-static int32_t g_dt_spinbox_max[6] = {};
-static int g_dt_spinbox_count = 0;
-static lv_style_t g_spinbox_style;
-static lv_style_t g_spinbox_style_active;
-static lv_style_t g_btn_style;
-static lv_style_t g_btn_style_pressed;
-static UiDateFormat g_date_format = UI_DATE_FORMAT_DMY;
+struct DateTimeEditor::State
+{
+    DateTimeUi ui = {};
+    lv_obj_t *spinboxes[6] = {};
+    uint8_t spinbox_digits[6] = {};
+    int32_t spinbox_min[6] = {};
+    int32_t spinbox_max[6] = {};
+    int spinbox_count = 0;
+    lv_style_t spinbox_style;
+    lv_style_t spinbox_style_active;
+    lv_style_t button_style;
+    lv_style_t button_style_pressed;
+    UiDateFormat date_format = UI_DATE_FORMAT_DMY;
+    AppEventSink *events = nullptr;
+};
+
+static DateTimeEditor *active_datetime_editor = nullptr;
+
+#define g_dt_ui (active_datetime_editor->state().ui)
+#define g_dt_spinboxes (active_datetime_editor->state().spinboxes)
+#define g_dt_spinbox_digits \
+    (active_datetime_editor->state().spinbox_digits)
+#define g_dt_spinbox_min (active_datetime_editor->state().spinbox_min)
+#define g_dt_spinbox_max (active_datetime_editor->state().spinbox_max)
+#define g_dt_spinbox_count \
+    (active_datetime_editor->state().spinbox_count)
+#define g_spinbox_style \
+    (active_datetime_editor->state().spinbox_style)
+#define g_spinbox_style_active \
+    (active_datetime_editor->state().spinbox_style_active)
+#define g_btn_style (active_datetime_editor->state().button_style)
+#define g_btn_style_pressed \
+    (active_datetime_editor->state().button_style_pressed)
+#define g_date_format (active_datetime_editor->state().date_format)
+#define g_events (active_datetime_editor->state().events)
 
 static void update_date_order()
 {
@@ -162,14 +183,19 @@ static void datetime_save_event(lv_event_t *e)
     int hour = lv_spinbox_get_value(g_dt_ui.hour);
     int minute = lv_spinbox_get_value(g_dt_ui.minute);
     int second = lv_spinbox_get_value(g_dt_ui.second);
-    rtc_adjust_datetime(DateTime(year, month, day, hour, minute, second));
-    request_normal_state();
+    if (g_events)
+    {
+        g_events->adjustRtc(
+            DateTime(year, month, day, hour, minute, second));
+        g_events->requestState(UiState::Normal);
+    }
 }
 
 static void datetime_cancel_event(lv_event_t *e)
 {
     (void)e;
-    request_normal_state();
+    if (g_events)
+        g_events->requestState(UiState::Normal);
 }
 
 static lv_obj_t *create_spinbox_column(lv_obj_t *parent, int min_value, int max_value, int digits, int init_value)
@@ -221,8 +247,19 @@ static lv_obj_t *create_spinbox_column(lv_obj_t *parent, int min_value, int max_
     return spinbox;
 }
 
-void datetime_ui_init(lv_obj_t *scr)
+DateTimeEditor::State &DateTimeEditor::state()
 {
+    active_datetime_editor = this;
+    if (!state_)
+        state_ = new State();
+    return *state_;
+}
+
+void DateTimeEditor::begin(
+    lv_obj_t *scr, AppEventSink &events)
+{
+    state();
+    g_events = &events;
     lv_style_init(&g_spinbox_style);
     lv_style_set_bg_color(&g_spinbox_style, lv_color_white());
     lv_style_set_bg_opa(&g_spinbox_style, LV_OPA_COVER);
@@ -409,19 +446,19 @@ void datetime_ui_init(lv_obj_t *scr)
     lv_obj_add_flag(g_dt_ui.panel, LV_OBJ_FLAG_HIDDEN);
 }
 
-void datetime_ui_hide()
+void DateTimeEditor::hide()
 {
     if (g_dt_ui.panel)
         lv_obj_add_flag(g_dt_ui.panel, LV_OBJ_FLAG_HIDDEN);
 }
 
-void datetime_ui_show()
+void DateTimeEditor::show()
 {
     if (g_dt_ui.panel)
         lv_obj_clear_flag(g_dt_ui.panel, LV_OBJ_FLAG_HIDDEN);
 }
 
-void datetime_ui_enter(const DateTime &current)
+void DateTimeEditor::enter(const DateTime &current)
 {
     if (!g_dt_ui.panel)
         return;
@@ -439,8 +476,9 @@ void datetime_ui_enter(const DateTime &current)
     select_last_digit(g_dt_ui.active_spinbox);
 }
 
-void datetime_ui_set_date_format(UiDateFormat format)
+void DateTimeEditor::setDateFormat(UiDateFormat format)
 {
+    state();
     g_date_format =
         format < UI_DATE_FORMAT_COUNT
             ? format
@@ -448,7 +486,7 @@ void datetime_ui_set_date_format(UiDateFormat format)
     update_date_order();
 }
 
-void datetime_ui_refresh_language()
+void DateTimeEditor::refreshLanguage()
 {
     if (!g_dt_ui.panel)
         return;

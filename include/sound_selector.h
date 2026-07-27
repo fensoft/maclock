@@ -13,39 +13,35 @@ using SoundSelectorChangedCallback =
 using SoundSelectorPreviewCallback =
     bool (*)(const char *path, uint8_t volume);
 
-struct SoundSelector
+class SoundSelector
 {
-    lv_obj_t *list;
-    lv_obj_t *play_button;
-    lv_obj_t *play_label;
-    lv_obj_t *empty_label;
-    lv_obj_t *items[SOUND_SELECTOR_MAX_FILES];
-    size_t selected;
-    uint8_t preview_volume;
-    SoundSelectorChangedCallback changed_callback;
-    void *user_data;
+public:
+    static void scan();
+    static void setPreviewCallback(
+        SoundSelectorPreviewCallback callback);
+    static const char *resolvePath(
+        const char *path, const char *fallback_path);
+    static const char *displayName(const char *path);
+
+    void begin(
+        lv_obj_t *parent,
+        const char *selected_path,
+        uint8_t preview_volume,
+        SoundSelectorChangedCallback changed_callback,
+        void *user_data);
+    void setPath(const char *path);
+    const char *path() const;
+    void setPreviewVolume(uint8_t volume);
+    void refreshLanguage();
+
+    // LVGL callbacks use these fields through their instance user data.
+    lv_obj_t *list = nullptr;
+    lv_obj_t *play_button = nullptr;
+    lv_obj_t *play_label = nullptr;
+    lv_obj_t *empty_label = nullptr;
+    lv_obj_t *items[SOUND_SELECTOR_MAX_FILES] = {};
+    size_t selected = 0;
+    uint8_t preview_volume = 0;
+    SoundSelectorChangedCallback changed_callback = nullptr;
+    void *user_data = nullptr;
 };
-
-void sound_selector_scan();
-void sound_selector_set_preview_callback(
-    SoundSelectorPreviewCallback callback);
-
-void sound_selector_create(
-    SoundSelector *selector,
-    lv_obj_t *parent,
-    const char *selected_path,
-    uint8_t preview_volume,
-    SoundSelectorChangedCallback changed_callback,
-    void *user_data);
-
-void sound_selector_set_path(
-    SoundSelector *selector, const char *path);
-const char *sound_selector_get_path(
-    const SoundSelector *selector);
-void sound_selector_set_preview_volume(
-    SoundSelector *selector, uint8_t volume);
-void sound_selector_refresh_language(SoundSelector *selector);
-
-const char *sound_selector_resolve_path(
-    const char *path, const char *fallback_path);
-const char *sound_selector_display_name(const char *path);

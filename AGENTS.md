@@ -23,7 +23,9 @@ Main stack:
 
 ## Runtime Shape
 
-`setup()` in `src/main.cpp` owns the boot decision.
+`src/main.cpp` is a minimal Arduino adapter. Its static `MaclockApp` delegates
+`setup()` to `begin()` and `loop()` to `tick()`; `MaclockApp` owns the boot
+decision and service graph.
 
 - It initializes NVS preferences, LittleFS, the TFT, and touch first.
 - Holding the clock button at boot requests the boot-options UI.
@@ -34,7 +36,7 @@ Main stack:
   opens.
 - The normal path initializes the ES8311 codec, LVGL, LittleFS's LVGL driver,
   UI assets, RTC, encoder, input/audio tasks, and weather sensor.
-- The Arduino `loop()` then runs the UI state machine, can call `minivmac()`
+- `MaclockApp::tick()` then runs the UI state machine, can call `minivmac()`
   again from Boot Options, and remains the only owner of LVGL calls.
 - In the normal clock state, holding Clock+Alarm for two seconds opens Boot
   Options; a Clock-only press opens date/time editing on release.
@@ -51,12 +53,19 @@ LittleFS, and boot lifecycle.
   partition.
 - `prepare.sh`: downloads and extracts Mini vMac 36.04, applies tracked
   patches, and downloads ignored ROM/disk images when absent.
-- `src/main.cpp`: composition root, boot decision, I2C detection, FreeRTOS
-  tasks, preferences, and normal-mode UI state machine.
-- `src/init.cpp`: TFT/LVGL bridge, LVGL pointer input, LittleFS LVGL driver,
-  and ES8311/I2S setup.
-- `src/datetime_ui.cpp`: date/time editor; it talks back to `main.cpp` through
-  `rtc_adjust_datetime()` and `request_normal_state()`.
+- `src/main.cpp`: the under-50-line Arduino adapter.
+- `include/maclock_app.h`, `src/maclock_app.cpp`: composition root, owned
+  services, typed state, event sink, and private UI callback context.
+- `src/ui/*.cpp`: focused Boot Options, clock-face, shared-shell, asset, and
+  state-machine implementation units. They are included into
+  `maclock_app.cpp` under `MACLOCK_COMBINED_SOURCE` and intentionally compile
+  empty when PlatformIO discovers them separately.
+- `include/*_service.h`, matching `src/*.cpp`: settings, I2C, RTC, weather,
+  input, display, audio, Wi-Fi, alarm, and timer ownership.
+- `src/init.cpp`: `DisplayService`, including TFT/LVGL, LittleFS LVGL driver,
+  ES8311/I2S ownership, and the narrow Mini vMac hardware bridge.
+- `src/datetime_ui.cpp`: state-owning date/time editor; it reports RTC changes
+  and transitions through `AppEventSink`.
 - `src/touch.cpp`, `include/touch.h`: FT6336 coordinate mapping and
   EEPROM-backed four-corner calibration.
 - `src/FT6336.cpp`, `include/FT6336.h`: low-level I2C touch-controller driver.
@@ -128,10 +137,10 @@ and device-address assumptions when changing any peripheral.
 
 ## Concurrency
 
-- `input_task` runs on core 1 every 20 ms and publishes floppy state plus
+- The `InputService` task runs on core 1 every 20 ms and publishes floppy state plus
   alarm, clock, and touch rising edges.
-- `audio_task` runs on core 0 every 10 ms and advances the normal-mode MP3
-  decoder. `g_mp3_mux` protects its completion flag.
+- The `AudioService` task runs on core 0 and advances the normal-mode MP3
+  decoder. Its instance lock protects playback and completion state.
 - Emulator mode creates `RenderTask` on core 0. `RenderTaskLock` coordinates
   screen-buffer handoff and `SPIBusLock` serializes emulator display/filesystem
   operations.
@@ -140,13 +149,14 @@ and device-address assumptions when changing any peripheral.
   must be stopped while the emulator owns I2S.
 - Mini vMac allocates large blocks from PSRAM through the Arduino API.
 
-Do not remove these locks or access their shared globals from another task
-without defining a replacement ownership model.
+Do not remove these locks or access service state from another task without
+defining a replacement ownership model.
 
 ## Persistent Settings And Filesystem
 
-- Namespace `maclock` in `Preferences` stores `brightness`,
-  `boot_brightness`, and `floppy_emulator`.
+- `SettingsStore` owns namespace `maclock` in `Preferences`, existing keys,
+  defaults, and validation. Alarm and Wi-Fi receive its Preferences handle to
+  preserve their existing storage formats.
 - EEPROM stores FT6336 calibration with the `TOUC` magic value.
 - LittleFS paths use `/name` through Arduino and `S:/name` through LVGL.
 - Mini vMac expects `/vMac.ROM` and sequential `/disk1.dsk`,

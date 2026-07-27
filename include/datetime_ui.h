@@ -4,10 +4,22 @@
 #include <RTClib.h>
 
 #include "regional_settings.h"
+#include "app_event_sink.h"
 
-void datetime_ui_init(lv_obj_t *scr);
-void datetime_ui_hide();
-void datetime_ui_show();
-void datetime_ui_enter(const DateTime &current);
-void datetime_ui_set_date_format(UiDateFormat format);
-void datetime_ui_refresh_language();
+class DateTimeEditor
+{
+public:
+    struct State;
+
+    void begin(lv_obj_t *screen, AppEventSink &events);
+    void hide();
+    void show();
+    void enter(const DateTime &current);
+    void setDateFormat(UiDateFormat format);
+    void refreshLanguage();
+
+    State &state();
+
+private:
+    State *state_ = nullptr;
+};

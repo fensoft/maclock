@@ -221,7 +221,7 @@ static lv_obj_t *create_play_button(
 }
 }
 
-void sound_selector_scan()
+void SoundSelector::scan()
 {
     g_path_count = 0;
     fs::File root = LittleFS.open("/");
@@ -235,24 +235,24 @@ void sound_selector_scan()
         (unsigned)g_path_count);
 }
 
-void sound_selector_set_preview_callback(
+void SoundSelector::setPreviewCallback(
     SoundSelectorPreviewCallback callback)
 {
     g_preview_callback = callback;
 }
 
-void sound_selector_create(
-    SoundSelector *selector,
+void SoundSelector::begin(
     lv_obj_t *parent,
     const char *selected_path,
     uint8_t preview_volume,
     SoundSelectorChangedCallback changed_callback,
     void *user_data)
 {
-    if (!selector || !parent)
+    SoundSelector *selector = this;
+    if (!parent)
         return;
     if (!g_scanned)
-        sound_selector_scan();
+        scan();
 
     memset(selector, 0, sizeof(*selector));
     selector->preview_volume = preview_volume;
@@ -294,59 +294,50 @@ void sound_selector_create(
         lv_obj_add_state(
             selector->play_button, LV_STATE_DISABLED);
 
-    sound_selector_set_path(selector, selected_path);
+    setPath(selected_path);
 }
 
-void sound_selector_set_path(
-    SoundSelector *selector, const char *path)
+void SoundSelector::setPath(const char *path)
 {
-    if (!selector)
-        return;
-
     size_t selected = find_path(path);
     if (selected == SIZE_MAX)
         selected = find_path("/quack.mp3");
     if (selected == SIZE_MAX && g_path_count > 0)
         selected = 0;
 
-    selector->selected = selected;
-    update_selection_visuals(selector, true);
+    this->selected = selected;
+    update_selection_visuals(this, true);
 }
 
-const char *sound_selector_get_path(
-    const SoundSelector *selector)
+const char *SoundSelector::path() const
 {
-    if (!selector || selector->selected >= g_path_count)
+    if (selected >= g_path_count)
         return nullptr;
-    return g_paths[selector->selected];
+    return g_paths[selected];
 }
 
-void sound_selector_set_preview_volume(
-    SoundSelector *selector, uint8_t volume)
+void SoundSelector::setPreviewVolume(uint8_t volume)
 {
-    if (selector)
-        selector->preview_volume = volume;
+    preview_volume = volume;
 }
 
-void sound_selector_refresh_language(SoundSelector *selector)
+void SoundSelector::refreshLanguage()
 {
-    if (!selector)
-        return;
-    if (selector->play_label)
-        lv_label_set_text(selector->play_label, tr("Play"));
-    if (selector->empty_label)
+    if (play_label)
+        lv_label_set_text(play_label, tr("Play"));
+    if (empty_label)
     {
         lv_label_set_text(
-            selector->empty_label,
+            empty_label,
             tr("No MP3 files in LittleFS"));
     }
 }
 
-const char *sound_selector_resolve_path(
+const char *SoundSelector::resolvePath(
     const char *path, const char *fallback_path)
 {
     if (!g_scanned)
-        sound_selector_scan();
+        scan();
 
     size_t selected = find_path(path);
     if (selected != SIZE_MAX)
@@ -357,11 +348,11 @@ const char *sound_selector_resolve_path(
     return g_path_count > 0 ? g_paths[0] : fallback_path;
 }
 
-const char *sound_selector_display_name(const char *path)
+const char *SoundSelector::displayName(const char *path)
 {
     static char display_name[SOUND_SELECTOR_PATH_MAX];
     format_display_name(
-        sound_selector_resolve_path(path, "/quack.mp3"),
+        resolvePath(path, "/quack.mp3"),
         display_name, sizeof(display_name));
     return display_name;
 }

@@ -7,9 +7,6 @@
 LV_FONT_DECLARE(lv_font_chicago_8);
 LV_FONT_DECLARE(lv_font_chicago_48);
 
-extern void request_normal_state();
-extern void timer_dismiss_current();
-
 namespace
 {
 struct TimerUi
@@ -29,12 +26,35 @@ struct TimerUi
     lv_obj_t *finished_help;
 };
 
-static bool g_timer_active = false;
-static bool g_timer_finished_pending = false;
-static uint32_t g_timer_end_ms = 0;
-static uint32_t g_last_ui_seconds = UINT32_MAX;
-static uint16_t g_selected_minutes = 25;
-static TimerUi g_timer_ui = {};
+} // namespace
+
+struct TimerService::State
+{
+    bool active = false;
+    bool finished_pending = false;
+    uint32_t end_ms = 0;
+    uint32_t last_ui_seconds = UINT32_MAX;
+    uint16_t selected_minutes = 25;
+    TimerUi ui = {};
+    TimerView *view = nullptr;
+    AppEventSink *events = nullptr;
+};
+
+namespace
+{
+TimerService *active_timer_service = nullptr;
+
+#define g_timer_active (active_timer_service->state().active)
+#define g_timer_finished_pending \
+    (active_timer_service->state().finished_pending)
+#define g_timer_end_ms (active_timer_service->state().end_ms)
+#define g_last_ui_seconds \
+    (active_timer_service->state().last_ui_seconds)
+#define g_selected_minutes \
+    (active_timer_service->state().selected_minutes)
+#define g_timer_ui (active_timer_service->state().ui)
+#define g_timer_view (active_timer_service->state().view)
+#define g_events (active_timer_service->state().events)
 
 static const char *g_adjustment_map[] = {
     "-10", "-1", "+1", "+10", ""};
@@ -141,7 +161,7 @@ static void StyleAdjustmentMatrix(lv_obj_t *matrix)
 
 static void AdjustMinutes(int delta)
 {
-    if (timer_is_active())
+    if (g_timer_active)
         return;
 
     int minutes = (int)g_selected_minutes + delta;
@@ -181,26 +201,31 @@ static void StartEvent(lv_event_t *event)
 {
     (void)event;
     StartSelectedTimer();
-    request_normal_state();
+    if (g_events)
+        g_events->requestState(UiState::Normal);
 }
 
 static void StopEvent(lv_event_t *event)
 {
     (void)event;
-    timer_cancel();
-    timer_ui_enter(millis());
+    g_timer_active = false;
+    g_timer_finished_pending = false;
+    if (g_timer_view)
+        g_timer_view->enter(millis());
 }
 
 static void BackEvent(lv_event_t *event)
 {
     (void)event;
-    request_normal_state();
+    if (g_events)
+        g_events->requestState(UiState::Normal);
 }
 
 static void DismissEvent(lv_event_t *event)
 {
     (void)event;
-    timer_dismiss_current();
+    if (g_events)
+        g_events->dismissTimer();
 }
 
 static void InitTimerPanel(lv_obj_t *screen)
@@ -310,7 +335,14 @@ static void InitFinishedPanel(lv_obj_t *screen)
 }
 }
 
-void timer_update(uint32_t now_ms)
+TimerService::State &TimerService::state()
+{
+    if (!state_)
+        state_ = new State();
+    return *state_;
+}
+
+void TimerService::update(uint32_t now_ms)
 {
     if (g_timer_active &&
         (int32_t)(now_ms - g_timer_end_ms) >= 0)
@@ -320,7 +352,7 @@ void timer_update(uint32_t now_ms)
     }
 }
 
-bool timer_take_finished()
+bool TimerService::takeFinished()
 {
     if (!g_timer_finished_pending)
         return false;
@@ -328,12 +360,12 @@ bool timer_take_finished()
     return true;
 }
 
-bool timer_is_active()
+bool TimerService::active() const
 {
     return g_timer_active;
 }
 
-uint32_t timer_remaining_seconds(uint32_t now_ms)
+uint32_t TimerService::remainingSeconds(uint32_t now_ms) const
 {
     if (!g_timer_active ||
         (int32_t)(now_ms - g_timer_end_ms) >= 0)
@@ -345,37 +377,40 @@ uint32_t timer_remaining_seconds(uint32_t now_ms)
     return (remaining_ms + 999U) / 1000U;
 }
 
-void timer_format_remaining(uint32_t now_ms,
-                            char *text,
-                            size_t text_size)
+void TimerService::formatRemaining(
+    uint32_t now_ms, char *text, size_t text_size) const
 {
-    FormatSeconds(timer_remaining_seconds(now_ms), text, text_size);
+    FormatSeconds(remainingSeconds(now_ms), text, text_size);
 }
 
-void timer_cancel()
+void TimerService::cancel()
 {
     g_timer_active = false;
     g_timer_finished_pending = false;
     g_timer_end_ms = 0;
 }
 
-const char *timer_sound_path()
+const char *TimerService::soundPath() const
 {
     return "/quack.mp3";
 }
 
-uint8_t timer_volume()
+uint8_t TimerService::volume() const
 {
     return 75;
 }
 
-void timer_ui_init(lv_obj_t *screen)
+void TimerView::begin(lv_obj_t *screen, AppEventSink &events)
 {
+    active_timer_service = &service_;
+    service_.state();
+    g_timer_view = this;
+    g_events = &events;
     InitTimerPanel(screen);
     InitFinishedPanel(screen);
 }
 
-void timer_ui_hide()
+void TimerView::hide()
 {
     if (g_timer_ui.panel)
         lv_obj_add_flag(g_timer_ui.panel, LV_OBJ_FLAG_HIDDEN);
@@ -383,12 +418,12 @@ void timer_ui_hide()
         lv_obj_add_flag(g_timer_ui.finished_panel, LV_OBJ_FLAG_HIDDEN);
 }
 
-void timer_ui_enter(uint32_t now_ms)
+void TimerView::enter(uint32_t now_ms)
 {
     g_last_ui_seconds = UINT32_MAX;
-    if (timer_is_active())
+    if (service_.active())
     {
-        SetCountdownSeconds(timer_remaining_seconds(now_ms));
+        SetCountdownSeconds(service_.remainingSeconds(now_ms));
         lv_label_set_text(g_timer_ui.status, tr("Running in background"));
         lv_obj_clear_flag(
             g_timer_ui.stop_button, LV_OBJ_FLAG_HIDDEN);
@@ -407,14 +442,14 @@ void timer_ui_enter(uint32_t now_ms)
     }
 }
 
-void timer_ui_show(uint32_t now_ms)
+void TimerView::show(uint32_t now_ms)
 {
     if (!g_timer_ui.panel)
         return;
 
-    if (timer_is_active())
+    if (service_.active())
     {
-        SetCountdownSeconds(timer_remaining_seconds(now_ms));
+        SetCountdownSeconds(service_.remainingSeconds(now_ms));
     }
     else
     {
@@ -424,7 +459,7 @@ void timer_ui_show(uint32_t now_ms)
     lv_obj_clear_flag(g_timer_ui.panel, LV_OBJ_FLAG_HIDDEN);
 }
 
-void timer_ui_show_finished()
+void TimerView::showFinished()
 {
     if (g_timer_ui.finished_panel)
     {
@@ -433,7 +468,7 @@ void timer_ui_show_finished()
     }
 }
 
-void timer_ui_refresh_language()
+void TimerView::refreshLanguage()
 {
     if (!g_timer_ui.panel)
         return;
@@ -448,7 +483,7 @@ void timer_ui_refresh_language()
         tr("Press Clock or Alarm to dismiss"));
     lv_label_set_text(
         g_timer_ui.status,
-        tr(timer_is_active()
+        tr(service_.active()
                ? "Running in background"
                : "Adjust duration"));
 }

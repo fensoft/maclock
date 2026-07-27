@@ -43,26 +43,63 @@ struct DetectedNetwork
     bool secured;
 };
 
-static Preferences *g_preferences = nullptr;
-static SemaphoreHandle_t g_lock = nullptr;
-static TaskHandle_t g_task = nullptr;
-static WifiSettings g_settings = {};
-static WifiModeSnapshot g_snapshot = {};
-static DNSServer g_dns_server;
-static WebServer g_web_server(80);
-static volatile bool g_pause_requested = false;
-static volatile bool g_pause_acknowledged = false;
-static volatile bool g_portal_active = false;
-static bool g_portal_routes_ready = false;
-static bool g_portal_server_active = false;
-static bool g_time_sync_pending = false;
-static uint32_t g_pending_local_epoch = 0;
-static uint32_t g_last_forecast_ms = 0;
-static uint32_t g_last_ntp_ms = 0;
-static DetectedNetwork
-    g_detected_networks[kMaxDetectedNetworks] = {};
-static size_t g_detected_network_count = 0;
-static bool g_network_scan_succeeded = false;
+} // namespace
+
+struct WifiService::State
+{
+    Preferences *preferences = nullptr;
+    SemaphoreHandle_t lock = nullptr;
+    TaskHandle_t task = nullptr;
+    WifiSettings settings = {};
+    WifiModeSnapshot snapshot = {};
+    DNSServer dns_server;
+    WebServer web_server{80};
+    volatile bool pause_requested = false;
+    volatile bool pause_acknowledged = false;
+    volatile bool portal_active = false;
+    bool portal_routes_ready = false;
+    bool portal_server_active = false;
+    bool time_sync_pending = false;
+    uint32_t pending_local_epoch = 0;
+    uint32_t last_forecast_ms = 0;
+    uint32_t last_ntp_ms = 0;
+    DetectedNetwork detected_networks[kMaxDetectedNetworks] = {};
+    size_t detected_network_count = 0;
+    bool network_scan_succeeded = false;
+};
+
+namespace
+{
+WifiService *active_wifi_service = nullptr;
+
+#define g_preferences (active_wifi_service->state().preferences)
+#define g_lock (active_wifi_service->state().lock)
+#define g_task (active_wifi_service->state().task)
+#define g_settings (active_wifi_service->state().settings)
+#define g_snapshot (active_wifi_service->state().snapshot)
+#define g_dns_server (active_wifi_service->state().dns_server)
+#define g_web_server (active_wifi_service->state().web_server)
+#define g_pause_requested (active_wifi_service->state().pause_requested)
+#define g_pause_acknowledged \
+    (active_wifi_service->state().pause_acknowledged)
+#define g_portal_active (active_wifi_service->state().portal_active)
+#define g_portal_routes_ready \
+    (active_wifi_service->state().portal_routes_ready)
+#define g_portal_server_active \
+    (active_wifi_service->state().portal_server_active)
+#define g_time_sync_pending \
+    (active_wifi_service->state().time_sync_pending)
+#define g_pending_local_epoch \
+    (active_wifi_service->state().pending_local_epoch)
+#define g_last_forecast_ms \
+    (active_wifi_service->state().last_forecast_ms)
+#define g_last_ntp_ms (active_wifi_service->state().last_ntp_ms)
+#define g_detected_networks \
+    (active_wifi_service->state().detected_networks)
+#define g_detected_network_count \
+    (active_wifi_service->state().detected_network_count)
+#define g_network_scan_succeeded \
+    (active_wifi_service->state().network_scan_succeeded)
 
 static void lock_state()
 {
@@ -534,7 +571,8 @@ static bool connect_station(const WifiSettings &settings)
 
 static void wifi_task(void *parameter)
 {
-    (void)parameter;
+    active_wifi_service =
+        static_cast<WifiService *>(parameter);
     uint32_t next_connection_attempt = 0;
 
     for (;;)
@@ -807,8 +845,16 @@ static void configure_portal_routes()
 }
 } // namespace
 
-void wifi_mode_begin(Preferences &preferences)
+WifiService::State &WifiService::state()
 {
+    return *state_;
+}
+
+void WifiService::begin(Preferences &preferences)
+{
+    if (!state_)
+        state_ = new State();
+    active_wifi_service = this;
     g_preferences = &preferences;
     if (!g_lock)
         g_lock = xSemaphoreCreateMutex();
@@ -859,12 +905,12 @@ void wifi_mode_begin(Preferences &preferences)
     unlock_state();
 }
 
-void wifi_mode_start_task()
+void WifiService::startTask()
 {
     if (g_task)
         return;
     const BaseType_t created = xTaskCreatePinnedToCore(
-        wifi_task, "wifi_task", 10240, nullptr, 1, &g_task, 0);
+        wifi_task, "wifi_task", 10240, this, 1, &g_task, 0);
     if (created != pdPASS)
     {
         g_task = nullptr;
@@ -872,7 +918,7 @@ void wifi_mode_start_task()
     }
 }
 
-void wifi_mode_set_enabled(bool enabled)
+void WifiService::setEnabled(bool enabled)
 {
     lock_state();
     g_settings.enabled = enabled;
@@ -888,7 +934,7 @@ void wifi_mode_set_enabled(bool enabled)
         g_preferences->putBool("wifi_on", enabled);
 }
 
-WifiModeSnapshot wifi_mode_snapshot()
+WifiModeSnapshot WifiService::snapshot()
 {
     lock_state();
     WifiModeSnapshot snapshot = g_snapshot;
@@ -921,12 +967,12 @@ WifiModeSnapshot wifi_mode_snapshot()
     return snapshot;
 }
 
-void wifi_mode_start_portal()
+void WifiService::startPortal()
 {
     if (g_portal_active)
         return;
 
-    wifi_mode_pause();
+    pause();
     configure_portal_routes();
     WiFi.mode(WIFI_STA);
     delay(50);
@@ -952,7 +998,7 @@ void wifi_mode_start_portal()
     unlock_state();
 }
 
-void wifi_mode_process_portal()
+void WifiService::processPortal()
 {
     if (!g_portal_active)
         return;
@@ -962,7 +1008,7 @@ void wifi_mode_process_portal()
     g_web_server.handleClient();
 }
 
-void wifi_mode_stop_portal()
+void WifiService::stopPortal()
 {
     if (!g_portal_active)
         return;
@@ -978,10 +1024,10 @@ void wifi_mode_stop_portal()
     lock_state();
     g_snapshot.portal_active = false;
     unlock_state();
-    wifi_mode_resume();
+    resume();
 }
 
-bool wifi_mode_take_time_sync(uint32_t &local_epoch)
+bool WifiService::takeTimeSync(uint32_t &local_epoch)
 {
     lock_state();
     const bool pending = g_time_sync_pending;
@@ -994,7 +1040,7 @@ bool wifi_mode_take_time_sync(uint32_t &local_epoch)
     return pending;
 }
 
-void wifi_mode_pause()
+void WifiService::pause()
 {
     if (!g_task)
         return;
@@ -1007,7 +1053,7 @@ void wifi_mode_pause()
     }
 }
 
-void wifi_mode_resume()
+void WifiService::resume()
 {
     g_pause_requested = false;
 }

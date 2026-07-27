@@ -1,0 +1,207 @@
+#include "settings_store.h"
+
+#include "brightness.h"
+
+namespace
+{
+SettingsStore *g_settings_store = nullptr;
+
+template <typename Enum>
+Enum load_enum(Preferences &preferences,
+               const char *key,
+               Enum fallback,
+               Enum count)
+{
+    const uint8_t saved =
+        preferences.getUChar(key, static_cast<uint8_t>(fallback));
+    return saved < static_cast<uint8_t>(count)
+               ? static_cast<Enum>(saved)
+               : fallback;
+}
+}
+
+bool SettingsStore::begin()
+{
+    g_settings_store = this;
+    return preferences_.begin("maclock", false);
+}
+
+AppSettings SettingsStore::load()
+{
+    AppSettings settings;
+    const uint8_t saved_language = preferences_.getUChar(
+        "language", UI_LANGUAGE_ENGLISH);
+    settings.language =
+        saved_language < UI_LANGUAGE_COUNT
+            ? static_cast<UiLanguage>(saved_language)
+            : UI_LANGUAGE_ENGLISH;
+    const uint8_t saved_date_format = preferences_.getUChar(
+        "date_format", UI_DATE_FORMAT_DMY);
+    settings.date_format =
+        saved_date_format < UI_DATE_FORMAT_COUNT
+            ? static_cast<UiDateFormat>(saved_date_format)
+            : UI_DATE_FORMAT_DMY;
+    const uint8_t saved_temperature_unit = preferences_.getUChar(
+        "temp_unit", UI_TEMPERATURE_CELSIUS);
+    settings.temperature_unit =
+        saved_temperature_unit < UI_TEMPERATURE_UNIT_COUNT
+            ? static_cast<UiTemperatureUnit>(saved_temperature_unit)
+            : UI_TEMPERATURE_CELSIUS;
+    settings.clock_face = load_enum(
+        preferences_, "clock_face",
+        ClockFace::Macintosh, ClockFace::Count);
+    settings.clock_theme = load_enum(
+        preferences_, "clock_theme",
+        ClockTheme::Light, ClockTheme::Count);
+    settings.screensaver_mode = load_enum(
+        preferences_, "screen_mode",
+        ScreensaverMode::Off, ScreensaverMode::Count);
+    settings.screensaver_delay_index =
+        preferences_.getUChar("screen_delay", 1);
+    if (settings.screensaver_delay_index >= 4)
+        settings.screensaver_delay_index = 1;
+    settings.boot_brightness = load_enum(
+        preferences_, "boot_brightness",
+        BootBrightness::Latest,
+        static_cast<BootBrightness>(3));
+    settings.boot_floppy_emulator =
+        preferences_.getBool("floppy_emulator", true);
+
+    settings.night_mode.enabled =
+        preferences_.getBool("night_enabled", false);
+    settings.night_mode.start_hour =
+        preferences_.getUChar("night_start", 22);
+    settings.night_mode.end_hour =
+        preferences_.getUChar("night_end", 7);
+    settings.night_mode.screen_off_enabled =
+        preferences_.getBool("night_off", false);
+    settings.night_mode.screen_off_hour =
+        preferences_.getUChar("night_off_at", 23);
+    if (settings.night_mode.start_hour >= 24)
+        settings.night_mode.start_hour = 22;
+    if (settings.night_mode.end_hour >= 24)
+        settings.night_mode.end_hour = 7;
+    if (settings.night_mode.screen_off_hour >= 24)
+        settings.night_mode.screen_off_hour = 23;
+
+    settings.chime.mode = load_enum(
+        preferences_, "chime_mode",
+        ChimeMode::Off, ChimeMode::Count);
+    settings.chime.sound = preferences_.getUChar("chime_sound", 0);
+    settings.chime.volume = preferences_.getUChar("chime_volume", 1);
+    settings.chime.quiet_enabled =
+        preferences_.getBool("chime_quiet", true);
+    settings.chime.quiet_start_hour =
+        preferences_.getUChar("quiet_start", 22);
+    settings.chime.quiet_end_hour =
+        preferences_.getUChar("quiet_end", 7);
+    if (settings.chime.sound >= 3)
+        settings.chime.sound = 0;
+    if (settings.chime.volume >= 4)
+        settings.chime.volume = 1;
+    if (settings.chime.quiet_start_hour >= 24)
+        settings.chime.quiet_start_hour = 22;
+    if (settings.chime.quiet_end_hour >= 24)
+        settings.chime.quiet_end_hour = 7;
+    return settings;
+}
+
+Preferences &SettingsStore::preferences()
+{
+    return preferences_;
+}
+
+void SettingsStore::saveLanguage(UiLanguage value)
+{
+    preferences_.putUChar("language", static_cast<uint8_t>(value));
+}
+
+void SettingsStore::saveDateFormat(UiDateFormat value)
+{
+    preferences_.putUChar("date_format", static_cast<uint8_t>(value));
+}
+
+void SettingsStore::saveTemperatureUnit(UiTemperatureUnit value)
+{
+    preferences_.putUChar("temp_unit", static_cast<uint8_t>(value));
+}
+
+void SettingsStore::saveClockFace(ClockFace value)
+{
+    preferences_.putUChar("clock_face", static_cast<uint8_t>(value));
+}
+
+void SettingsStore::saveClockTheme(ClockTheme value)
+{
+    preferences_.putUChar("clock_theme", static_cast<uint8_t>(value));
+}
+
+void SettingsStore::saveScreensaverMode(ScreensaverMode value)
+{
+    preferences_.putUChar("screen_mode", static_cast<uint8_t>(value));
+}
+
+void SettingsStore::saveScreensaverDelay(uint8_t value)
+{
+    preferences_.putUChar("screen_delay", value);
+}
+
+void SettingsStore::saveBootBrightness(BootBrightness value)
+{
+    preferences_.putUChar(
+        "boot_brightness", static_cast<uint8_t>(value));
+}
+
+void SettingsStore::saveBootMode(bool emulator)
+{
+    preferences_.putBool("floppy_emulator", emulator);
+}
+
+void SettingsStore::saveBrightness(uint8_t value)
+{
+    preferences_.putUChar("brightness", value);
+}
+
+uint8_t SettingsStore::loadBrightness() const
+{
+    uint8_t brightness =
+        const_cast<Preferences &>(preferences_)
+            .getUChar("brightness", 6);
+    return brightness <= kBrightnessMax ? brightness : 6;
+}
+
+void SettingsStore::saveNightMode(const NightModeSettings &value)
+{
+    preferences_.putBool("night_enabled", value.enabled);
+    preferences_.putUChar("night_start", value.start_hour);
+    preferences_.putUChar("night_end", value.end_hour);
+    preferences_.putBool("night_off", value.screen_off_enabled);
+    preferences_.putUChar("night_off_at", value.screen_off_hour);
+}
+
+void SettingsStore::saveChime(const ChimeSettings &value,
+                              const char *sound_path)
+{
+    preferences_.putUChar(
+        "chime_mode", static_cast<uint8_t>(value.mode));
+    preferences_.putUChar("chime_sound", value.sound);
+    preferences_.putUChar("chime_volume", value.volume);
+    preferences_.putBool("chime_quiet", value.quiet_enabled);
+    preferences_.putUChar(
+        "quiet_start", value.quiet_start_hour);
+    preferences_.putUChar(
+        "quiet_end", value.quiet_end_hour);
+    if (sound_path)
+        preferences_.putString("chime_path", sound_path);
+}
+
+String SettingsStore::loadChimePath(const char *fallback) const
+{
+    return const_cast<Preferences &>(preferences_)
+        .getString("chime_path", fallback);
+}
+
+Preferences &emulator_preferences()
+{
+    return g_settings_store->preferences();
+}
