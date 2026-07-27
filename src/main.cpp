@@ -17,6 +17,7 @@
 #include "TouchSensor.h"
 #include <Wire.h>
 #include <LittleFS.h>
+#include <math.h>
 #include "datetime_ui.h"
 #include "alarm_ui.h"
 #include "timer_ui.h"
@@ -129,6 +130,8 @@ enum BootOptionsPage
     BOOT_OPTIONS_PREFERENCES,
     BOOT_OPTIONS_LANGUAGE,
     BOOT_OPTIONS_REGIONAL,
+    BOOT_OPTIONS_CLOCK_FACE,
+    BOOT_OPTIONS_SCREENSAVER,
     BOOT_OPTIONS_NIGHT_SCHEDULE,
     BOOT_OPTIONS_NIGHT_SCREEN,
     BOOT_OPTIONS_CHIME,
@@ -151,6 +154,9 @@ struct BootOptionsUi
     lv_obj_t *language_items[UI_LANGUAGE_COUNT];
     lv_obj_t *date_format_options;
     lv_obj_t *temperature_unit_options;
+    lv_obj_t *clock_face_options;
+    lv_obj_t *screensaver_options;
+    lv_obj_t *screensaver_delay_options;
     lv_obj_t *night_enabled_options;
     lv_obj_t *night_start_options;
     lv_obj_t *night_end_options;
@@ -175,6 +181,7 @@ struct BootOptionsUi
     lv_obj_t *remember_label;
     lv_obj_t *date_format_label;
     lv_obj_t *temperature_unit_label;
+    lv_obj_t *screensaver_delay_label;
     lv_obj_t *dim_from_label;
     lv_obj_t *normal_at_label;
     lv_obj_t *screen_off_label;
@@ -185,6 +192,62 @@ struct BootOptionsUi
     lv_obj_t *emulator_button_label;
     lv_obj_t *diagnostics_button_label;
     lv_obj_t *calibration_label;
+};
+
+enum ClockFace
+{
+    CLOCK_FACE_MACINTOSH,
+    CLOCK_FACE_COMPACT,
+    CLOCK_FACE_ANALOG,
+    CLOCK_FACE_FLIP,
+    CLOCK_FACE_COUNT
+};
+
+enum ScreensaverMode
+{
+    SCREENSAVER_OFF,
+    SCREENSAVER_AFTER_DARK,
+    SCREENSAVER_MODE_COUNT
+};
+
+static constexpr size_t kScreensaverStarCount = 24;
+
+struct ClockFacesUi
+{
+    lv_obj_t *compact;
+    lv_obj_t *compact_title;
+    lv_obj_t *compact_time;
+    lv_obj_t *compact_date;
+    lv_obj_t *compact_weather;
+    lv_obj_t *analog;
+    lv_obj_t *analog_dial;
+    lv_obj_t *analog_numbers[12];
+    lv_obj_t *analog_hour_hand;
+    lv_obj_t *analog_minute_hand;
+    lv_obj_t *analog_second_hand;
+    lv_point_precise_t analog_hour_points[2];
+    lv_point_precise_t analog_minute_points[2];
+    lv_point_precise_t analog_second_points[2];
+    lv_obj_t *analog_date;
+    lv_obj_t *flip;
+    lv_obj_t *flip_hour_card;
+    lv_obj_t *flip_minute_card;
+    lv_obj_t *flip_hour;
+    lv_obj_t *flip_minute;
+    lv_obj_t *flip_colon;
+    lv_obj_t *flip_title;
+    lv_obj_t *flip_date;
+    lv_obj_t *screensaver;
+    lv_obj_t *screensaver_stars[kScreensaverStarCount];
+    int16_t screensaver_star_x[kScreensaverStarCount];
+    int16_t screensaver_star_y[kScreensaverStarCount];
+    uint8_t screensaver_star_speed[kScreensaverStarCount];
+    lv_obj_t *screensaver_clock;
+    lv_obj_t *screensaver_time;
+    int16_t screensaver_clock_x;
+    int16_t screensaver_clock_y;
+    int8_t screensaver_clock_dx;
+    int8_t screensaver_clock_dy;
 };
 
 struct DiagnosticsUi
@@ -271,6 +334,7 @@ static portMUX_TYPE g_input_state_mux = portMUX_INITIALIZER_UNLOCKED;
 static UiImages g_ui = {};
 static CalibUi g_calib_ui = {};
 static BootOptionsUi g_boot_options_ui = {};
+static ClockFacesUi g_clock_faces_ui = {};
 static DiagnosticsUi g_diagnostics_ui = {};
 static WifiSetupUi g_wifi_setup_ui = {};
 static bool g_mp3_finished = false;
@@ -284,6 +348,11 @@ static BootBrightness g_boot_brightness = BOOT_BRIGHTNESS_LATEST;
 static UiDateFormat g_date_format = UI_DATE_FORMAT_DMY;
 static UiTemperatureUnit g_temperature_unit =
     UI_TEMPERATURE_CELSIUS;
+static ClockFace g_clock_face = CLOCK_FACE_MACINTOSH;
+static ScreensaverMode g_screensaver_mode = SCREENSAVER_OFF;
+static uint8_t g_screensaver_delay_index = 1;
+static bool g_screensaver_active = false;
+static unsigned long g_last_clock_activity_ms = 0;
 static BootOptionsPage g_boot_options_page = BOOT_OPTIONS_START;
 static bool g_boot_floppy_emulator = true;
 static NightModeSettings g_night_mode = {false, 22, 7, false, 23};
@@ -318,6 +387,11 @@ static const char *g_date_format_map[] = {
     "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", ""};
 static const char *g_temperature_unit_map[] = {
     "°C", "°F", ""};
+static const char *g_clock_face_map[7] = {};
+static const char *g_screensaver_map[3] = {};
+static const uint8_t g_screensaver_delays_minutes[] = {
+    1, 5, 10, 30};
+static const char *g_screensaver_delay_map[7] = {};
 static const char *g_night_enabled_map[3] = {};
 static const char *g_night_screen_map[3] = {};
 static const char *g_chime_mode_map[6] = {};
@@ -791,6 +865,21 @@ static void update_boot_translation_maps()
     g_remember_map[0] = tr("One time");
     g_remember_map[1] = tr("Remember");
     g_remember_map[2] = "";
+    g_clock_face_map[0] = tr("Macintosh");
+    g_clock_face_map[1] = tr("Compact");
+    g_clock_face_map[2] = "\n";
+    g_clock_face_map[3] = tr("Analog");
+    g_clock_face_map[4] = tr("Flip");
+    g_clock_face_map[5] = "";
+    g_screensaver_map[0] = tr("Off");
+    g_screensaver_map[1] = tr("After Dark");
+    g_screensaver_map[2] = "";
+    g_screensaver_delay_map[0] = tr("1 min");
+    g_screensaver_delay_map[1] = tr("5 min");
+    g_screensaver_delay_map[2] = "\n";
+    g_screensaver_delay_map[3] = tr("10 min");
+    g_screensaver_delay_map[4] = tr("30 min");
+    g_screensaver_delay_map[5] = "";
     g_night_enabled_map[0] = tr("Disabled");
     g_night_enabled_map[1] = tr("Enabled");
     g_night_enabled_map[2] = "";
@@ -942,6 +1031,45 @@ static void temperature_unit_event(lv_event_t *event)
     g_temperature_unit = (UiTemperatureUnit)selected;
     preferences.putUChar(
         "temp_unit", (uint8_t)g_temperature_unit);
+}
+
+static void clock_face_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected >= CLOCK_FACE_COUNT)
+        return;
+    g_clock_face = (ClockFace)selected;
+    preferences.putUChar("clock_face", (uint8_t)g_clock_face);
+}
+
+static void screensaver_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected >= SCREENSAVER_MODE_COUNT)
+        return;
+    g_screensaver_mode = (ScreensaverMode)selected;
+    preferences.putUChar(
+        "screen_mode", (uint8_t)g_screensaver_mode);
+}
+
+static void screensaver_delay_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected >=
+        sizeof(g_screensaver_delays_minutes) /
+            sizeof(g_screensaver_delays_minutes[0]))
+    {
+        return;
+    }
+    g_screensaver_delay_index = (uint8_t)selected;
+    preferences.putUChar(
+        "screen_delay", g_screensaver_delay_index);
 }
 
 static void chime_mode_event(lv_event_t *event)
@@ -1172,7 +1300,7 @@ static void set_boot_options_page(BootOptionsPage page)
 
     const char *page_names[BOOT_OPTIONS_PAGE_COUNT] = {
         tr("Start"), tr("Preferences"), tr("Language"),
-        tr("Regional"),
+        tr("Regional"), tr("Clock Face"), tr("Screensaver"),
         tr("Night Schedule"), tr("Night Screen"), tr("Chime"),
         tr("Chime Sound"), tr("Chime Volume"), tr("Quiet Hours"),
         tr("Wi-Fi"), tr("Tools")};
@@ -1484,6 +1612,94 @@ static void init_boot_options_ui(lv_obj_t *screen)
     lv_obj_add_event_cb(
         g_boot_options_ui.temperature_unit_options,
         temperature_unit_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *clock_face_page =
+        g_boot_options_ui.pages[BOOT_OPTIONS_CLOCK_FACE];
+    g_boot_options_ui.clock_face_options =
+        lv_buttonmatrix_create(clock_face_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.clock_face_options,
+        g_clock_face_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.clock_face_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.clock_face_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        g_boot_options_ui.clock_face_options, true);
+    lv_obj_set_size(
+        g_boot_options_ui.clock_face_options, 260, 124);
+    lv_obj_center(g_boot_options_ui.clock_face_options);
+    style_boot_options_matrix(
+        g_boot_options_ui.clock_face_options);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.clock_face_options,
+        clock_face_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *screensaver_page =
+        g_boot_options_ui.pages[BOOT_OPTIONS_SCREENSAVER];
+    g_boot_options_ui.screensaver_options =
+        lv_buttonmatrix_create(screensaver_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.screensaver_options,
+        g_screensaver_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.screensaver_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.screensaver_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        g_boot_options_ui.screensaver_options, true);
+    lv_obj_set_size(
+        g_boot_options_ui.screensaver_options, 260, 38);
+    lv_obj_align(
+        g_boot_options_ui.screensaver_options,
+        LV_ALIGN_TOP_MID, 0, 0);
+    style_boot_options_matrix(
+        g_boot_options_ui.screensaver_options);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.screensaver_options,
+        screensaver_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    g_boot_options_ui.screensaver_delay_label =
+        lv_label_create(screensaver_page);
+    lv_label_set_text(
+        g_boot_options_ui.screensaver_delay_label,
+        tr("Start after"));
+    lv_obj_set_style_text_font(
+        g_boot_options_ui.screensaver_delay_label,
+        &lv_font_chicago_8, 0);
+    lv_obj_align(
+        g_boot_options_ui.screensaver_delay_label,
+        LV_ALIGN_TOP_MID, 0, 44);
+
+    g_boot_options_ui.screensaver_delay_options =
+        lv_buttonmatrix_create(screensaver_page);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.screensaver_delay_options,
+        g_screensaver_delay_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.screensaver_delay_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_boot_options_ui.screensaver_delay_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        g_boot_options_ui.screensaver_delay_options, true);
+    lv_obj_set_size(
+        g_boot_options_ui.screensaver_delay_options, 260, 64);
+    lv_obj_align(
+        g_boot_options_ui.screensaver_delay_options,
+        LV_ALIGN_BOTTOM_MID, 0, 0);
+    style_boot_options_matrix(
+        g_boot_options_ui.screensaver_delay_options);
+    lv_obj_set_style_pad_row(
+        g_boot_options_ui.screensaver_delay_options, 5, 0);
+    lv_obj_add_event_cb(
+        g_boot_options_ui.screensaver_delay_options,
+        screensaver_delay_event, LV_EVENT_VALUE_CHANGED, nullptr);
 
     lv_obj_t *night_schedule_page =
         g_boot_options_ui.pages[BOOT_OPTIONS_NIGHT_SCHEDULE];
@@ -1897,6 +2113,15 @@ static void show_boot_options_ui()
     set_checked_button(
         g_boot_options_ui.temperature_unit_options,
         (uint32_t)g_temperature_unit);
+    set_checked_button(
+        g_boot_options_ui.clock_face_options,
+        (uint32_t)g_clock_face);
+    set_checked_button(
+        g_boot_options_ui.screensaver_options,
+        (uint32_t)g_screensaver_mode);
+    set_checked_button(
+        g_boot_options_ui.screensaver_delay_options,
+        g_screensaver_delay_index);
     update_language_selection(true);
     update_night_options_ui();
     update_chime_options_ui();
@@ -2013,6 +2238,13 @@ static void refresh_language_ui()
     lv_buttonmatrix_set_map(
         g_boot_options_ui.remember_selection, g_remember_map);
     lv_buttonmatrix_set_map(
+        g_boot_options_ui.clock_face_options, g_clock_face_map);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.screensaver_options, g_screensaver_map);
+    lv_buttonmatrix_set_map(
+        g_boot_options_ui.screensaver_delay_options,
+        g_screensaver_delay_map);
+    lv_buttonmatrix_set_map(
         g_boot_options_ui.night_enabled_options, g_night_enabled_map);
     lv_buttonmatrix_set_map(
         g_boot_options_ui.night_screen_options, g_night_screen_map);
@@ -2030,6 +2262,9 @@ static void refresh_language_ui()
     lv_label_set_text(
         g_boot_options_ui.temperature_unit_label,
         tr("Temperature unit"));
+    lv_label_set_text(
+        g_boot_options_ui.screensaver_delay_label,
+        tr("Start after"));
     lv_label_set_text(g_boot_options_ui.dim_from_label, tr("Dim from"));
     lv_label_set_text(g_boot_options_ui.normal_at_label, tr("Normal at"));
     lv_label_set_text(g_boot_options_ui.screen_off_label, tr("Screen off at"));
@@ -2058,6 +2293,10 @@ static void refresh_language_ui()
     update_boot_message();
     update_menu_titles();
     lv_label_set_text(g_ui.clock_label, tr("Clock"));
+    lv_label_set_text(
+        g_clock_faces_ui.compact_title, tr("Clock"));
+    lv_label_set_text(
+        g_clock_faces_ui.flip_title, tr("Clock"));
     lv_label_set_text(g_calib_ui.label, tr("Touch the crosshair"));
 
     alarm_ui_refresh_language();
@@ -2076,6 +2315,15 @@ static void refresh_language_ui()
     set_checked_button(
         g_boot_options_ui.temperature_unit_options,
         (uint32_t)g_temperature_unit);
+    set_checked_button(
+        g_boot_options_ui.clock_face_options,
+        (uint32_t)g_clock_face);
+    set_checked_button(
+        g_boot_options_ui.screensaver_options,
+        (uint32_t)g_screensaver_mode);
+    set_checked_button(
+        g_boot_options_ui.screensaver_delay_options,
+        g_screensaver_delay_index);
     update_night_options_ui();
     update_chime_options_ui();
     update_wifi_options_ui();
@@ -2105,6 +2353,18 @@ static void hide_all_ui()
     lv_obj_add_flag(g_ui.alarm_indicator, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
+    if (g_clock_faces_ui.compact)
+        lv_obj_add_flag(
+            g_clock_faces_ui.compact, LV_OBJ_FLAG_HIDDEN);
+    if (g_clock_faces_ui.analog)
+        lv_obj_add_flag(
+            g_clock_faces_ui.analog, LV_OBJ_FLAG_HIDDEN);
+    if (g_clock_faces_ui.flip)
+        lv_obj_add_flag(
+            g_clock_faces_ui.flip, LV_OBJ_FLAG_HIDDEN);
+    if (g_clock_faces_ui.screensaver)
+        lv_obj_add_flag(
+            g_clock_faces_ui.screensaver, LV_OBJ_FLAG_HIDDEN);
     if (g_boot_options_ui.panel)
         lv_obj_add_flag(g_boot_options_ui.panel, LV_OBJ_FLAG_HIDDEN);
     if (g_diagnostics_ui.panel)
@@ -2459,6 +2719,536 @@ static void update_alarm_indicator_layout(bool active)
         g_ui.alarm_indicator, LV_OBJ_FLAG_HIDDEN);
 }
 
+static lv_obj_t *create_clock_face_root(
+    lv_obj_t *screen, lv_color_t color)
+{
+    lv_obj_t *root = lv_obj_create(screen);
+    lv_obj_remove_style_all(root);
+    lv_obj_set_size(root, lv_pct(100), lv_pct(100));
+    lv_obj_set_pos(root, 0, 0);
+    lv_obj_set_style_bg_color(root, color, 0);
+    lv_obj_set_style_bg_opa(root, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(root, LV_OBJ_FLAG_HIDDEN);
+    return root;
+}
+
+static lv_obj_t *create_clock_face_label(
+    lv_obj_t *parent, const lv_font_t *font,
+    lv_color_t color)
+{
+    lv_obj_t *label = lv_label_create(parent);
+    lv_obj_remove_style_all(label);
+    lv_obj_set_style_text_font(label, font, 0);
+    lv_obj_set_style_text_color(label, color, 0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    return label;
+}
+
+static void set_analog_hand(
+    lv_obj_t *hand, lv_point_precise_t points[2],
+    float angle_degrees, float length, float tail)
+{
+    static constexpr float kDegreesToRadians =
+        3.14159265358979323846f / 180.0f;
+    static constexpr float kCenter = 84.0f;
+    const float angle = (angle_degrees - 90.0f) *
+                        kDegreesToRadians;
+    const float x = cosf(angle);
+    const float y = sinf(angle);
+    points[0].x = (lv_value_precise_t)lroundf(
+        kCenter - x * tail);
+    points[0].y = (lv_value_precise_t)lroundf(
+        kCenter - y * tail);
+    points[1].x = (lv_value_precise_t)lroundf(
+        kCenter + x * length);
+    points[1].y = (lv_value_precise_t)lroundf(
+        kCenter + y * length);
+    lv_line_set_points_mutable(hand, points, 2);
+}
+
+static lv_obj_t *create_flip_card(lv_obj_t *parent, int16_t x)
+{
+    lv_obj_t *card = lv_obj_create(parent);
+    lv_obj_remove_style_all(card);
+    lv_obj_set_size(card, 120, 96);
+    lv_obj_set_pos(card, x, 42);
+    lv_obj_set_style_bg_color(card, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(card, lv_color_black(), 0);
+    lv_obj_set_style_border_width(card, 2, 0);
+    lv_obj_set_style_radius(card, 8, 0);
+    lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *hinge = lv_obj_create(card);
+    lv_obj_remove_style_all(hinge);
+    lv_obj_set_size(hinge, lv_pct(100), 1);
+    lv_obj_align(hinge, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(hinge, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(hinge, LV_OPA_50, 0);
+    return card;
+}
+
+static void init_clock_faces_ui(lv_obj_t *screen)
+{
+    g_clock_faces_ui.compact =
+        create_clock_face_root(screen, lv_color_white());
+    g_clock_faces_ui.compact_title =
+        create_clock_face_label(
+            g_clock_faces_ui.compact,
+            &lv_font_chicago_8, lv_color_black());
+    lv_label_set_text(
+        g_clock_faces_ui.compact_title, tr("Clock"));
+    lv_obj_align(
+        g_clock_faces_ui.compact_title,
+        LV_ALIGN_TOP_MID, 0, 13);
+
+    g_clock_faces_ui.compact_time =
+        create_clock_face_label(
+            g_clock_faces_ui.compact,
+            &lv_font_chicago_48, lv_color_black());
+    lv_label_set_text(
+        g_clock_faces_ui.compact_time, "00:00:00");
+    lv_obj_set_width(g_clock_faces_ui.compact_time, 300);
+    lv_obj_align(
+        g_clock_faces_ui.compact_time,
+        LV_ALIGN_TOP_MID, 0, 38);
+
+    g_clock_faces_ui.compact_date =
+        create_clock_face_label(
+            g_clock_faces_ui.compact,
+            &lv_font_chicago_32, lv_color_black());
+    lv_label_set_text(
+        g_clock_faces_ui.compact_date, "00/00/0000");
+    lv_obj_set_width(g_clock_faces_ui.compact_date, 300);
+    lv_obj_align(
+        g_clock_faces_ui.compact_date,
+        LV_ALIGN_TOP_MID, 0, 112);
+
+    g_clock_faces_ui.compact_weather =
+        create_clock_face_label(
+            g_clock_faces_ui.compact,
+            &lv_font_chicago_8, lv_color_black());
+    lv_label_set_text(
+        g_clock_faces_ui.compact_weather, "--");
+    lv_obj_set_width(g_clock_faces_ui.compact_weather, 292);
+    lv_label_set_long_mode(
+        g_clock_faces_ui.compact_weather,
+        LV_LABEL_LONG_CLIP);
+    lv_obj_align(
+        g_clock_faces_ui.compact_weather,
+        LV_ALIGN_BOTTOM_MID, 0, -14);
+
+    g_clock_faces_ui.analog =
+        create_clock_face_root(screen, lv_color_white());
+    g_clock_faces_ui.analog_dial =
+        lv_obj_create(g_clock_faces_ui.analog);
+    lv_obj_remove_style_all(g_clock_faces_ui.analog_dial);
+    lv_obj_set_size(g_clock_faces_ui.analog_dial, 170, 170);
+    lv_obj_align(
+        g_clock_faces_ui.analog_dial,
+        LV_ALIGN_TOP_MID, 0, 5);
+    lv_obj_set_style_bg_color(
+        g_clock_faces_ui.analog_dial, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(
+        g_clock_faces_ui.analog_dial, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(
+        g_clock_faces_ui.analog_dial, lv_color_black(), 0);
+    lv_obj_set_style_border_width(
+        g_clock_faces_ui.analog_dial, 2, 0);
+    lv_obj_set_style_radius(
+        g_clock_faces_ui.analog_dial, LV_RADIUS_CIRCLE, 0);
+    lv_obj_remove_flag(
+        g_clock_faces_ui.analog_dial,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    for (size_t i = 0; i < 12; ++i)
+    {
+        char number[3];
+        snprintf(number, sizeof(number), "%u",
+                 (unsigned)i + 1);
+        lv_obj_t *label = create_clock_face_label(
+            g_clock_faces_ui.analog_dial,
+            &lv_font_chicago_8, lv_color_black());
+        g_clock_faces_ui.analog_numbers[i] = label;
+        lv_label_set_text(label, number);
+        const float angle =
+            (float)(i + 1) * 30.0f *
+            3.14159265358979323846f / 180.0f;
+        lv_obj_align(
+            label, LV_ALIGN_CENTER,
+            (int16_t)lroundf(sinf(angle) * 68.0f),
+            (int16_t)lroundf(-cosf(angle) * 68.0f));
+    }
+
+    g_clock_faces_ui.analog_hour_hand =
+        lv_line_create(g_clock_faces_ui.analog_dial);
+    lv_obj_set_style_line_color(
+        g_clock_faces_ui.analog_hour_hand,
+        lv_color_black(), 0);
+    lv_obj_set_style_line_width(
+        g_clock_faces_ui.analog_hour_hand, 5, 0);
+    lv_obj_set_style_line_rounded(
+        g_clock_faces_ui.analog_hour_hand, true, 0);
+
+    g_clock_faces_ui.analog_minute_hand =
+        lv_line_create(g_clock_faces_ui.analog_dial);
+    lv_obj_set_style_line_color(
+        g_clock_faces_ui.analog_minute_hand,
+        lv_color_black(), 0);
+    lv_obj_set_style_line_width(
+        g_clock_faces_ui.analog_minute_hand, 3, 0);
+    lv_obj_set_style_line_rounded(
+        g_clock_faces_ui.analog_minute_hand, true, 0);
+
+    g_clock_faces_ui.analog_second_hand =
+        lv_line_create(g_clock_faces_ui.analog_dial);
+    lv_obj_set_style_line_color(
+        g_clock_faces_ui.analog_second_hand,
+        lv_color_black(), 0);
+    lv_obj_set_style_line_width(
+        g_clock_faces_ui.analog_second_hand, 1, 0);
+
+    set_analog_hand(
+        g_clock_faces_ui.analog_hour_hand,
+        g_clock_faces_ui.analog_hour_points, 0, 43, 5);
+    set_analog_hand(
+        g_clock_faces_ui.analog_minute_hand,
+        g_clock_faces_ui.analog_minute_points, 0, 61, 6);
+    set_analog_hand(
+        g_clock_faces_ui.analog_second_hand,
+        g_clock_faces_ui.analog_second_points, 0, 68, 8);
+
+    lv_obj_t *center = lv_obj_create(
+        g_clock_faces_ui.analog_dial);
+    lv_obj_remove_style_all(center);
+    lv_obj_set_size(center, 8, 8);
+    lv_obj_set_style_bg_color(center, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(center, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(center, LV_RADIUS_CIRCLE, 0);
+    lv_obj_center(center);
+
+    g_clock_faces_ui.analog_date =
+        create_clock_face_label(
+            g_clock_faces_ui.analog,
+            &lv_font_chicago_32, lv_color_black());
+    lv_label_set_text(
+        g_clock_faces_ui.analog_date, "00/00/0000");
+    lv_obj_set_width(g_clock_faces_ui.analog_date, 300);
+    lv_obj_align(
+        g_clock_faces_ui.analog_date,
+        LV_ALIGN_BOTTOM_MID, 0, -8);
+
+    g_clock_faces_ui.flip =
+        create_clock_face_root(screen, lv_color_white());
+    g_clock_faces_ui.flip_title = create_clock_face_label(
+        g_clock_faces_ui.flip,
+        &lv_font_chicago_8, lv_color_black());
+    lv_label_set_text(
+        g_clock_faces_ui.flip_title, tr("Clock"));
+    lv_obj_align(
+        g_clock_faces_ui.flip_title,
+        LV_ALIGN_TOP_MID, 0, 13);
+
+    g_clock_faces_ui.flip_hour_card =
+        create_flip_card(g_clock_faces_ui.flip, 25);
+    g_clock_faces_ui.flip_minute_card =
+        create_flip_card(g_clock_faces_ui.flip, 159);
+    g_clock_faces_ui.flip_hour =
+        create_clock_face_label(
+            g_clock_faces_ui.flip_hour_card,
+            &lv_font_chicago_48, lv_color_white());
+    lv_label_set_text(g_clock_faces_ui.flip_hour, "00");
+    lv_obj_center(g_clock_faces_ui.flip_hour);
+    g_clock_faces_ui.flip_minute =
+        create_clock_face_label(
+            g_clock_faces_ui.flip_minute_card,
+            &lv_font_chicago_48, lv_color_white());
+    lv_label_set_text(g_clock_faces_ui.flip_minute, "00");
+    lv_obj_center(g_clock_faces_ui.flip_minute);
+    g_clock_faces_ui.flip_colon =
+        create_clock_face_label(
+            g_clock_faces_ui.flip,
+            &lv_font_chicago_32, lv_color_black());
+    lv_label_set_text(g_clock_faces_ui.flip_colon, ":");
+    lv_obj_align(
+        g_clock_faces_ui.flip_colon,
+        LV_ALIGN_TOP_MID, 0, 71);
+
+    g_clock_faces_ui.flip_date =
+        create_clock_face_label(
+            g_clock_faces_ui.flip,
+            &lv_font_chicago_32, lv_color_black());
+    lv_label_set_text(
+        g_clock_faces_ui.flip_date, "00/00/0000");
+    lv_obj_set_width(g_clock_faces_ui.flip_date, 300);
+    lv_obj_align(
+        g_clock_faces_ui.flip_date,
+        LV_ALIGN_BOTTOM_MID, 0, -16);
+
+    g_clock_faces_ui.screensaver =
+        create_clock_face_root(screen, lv_color_black());
+    for (size_t i = 0; i < kScreensaverStarCount; ++i)
+    {
+        lv_obj_t *star =
+            lv_obj_create(g_clock_faces_ui.screensaver);
+        lv_obj_remove_style_all(star);
+        const uint8_t size = (i % 5 == 0) ? 2 : 1;
+        lv_obj_set_size(star, size, size);
+        lv_obj_set_style_bg_color(star, lv_color_white(), 0);
+        lv_obj_set_style_bg_opa(star, LV_OPA_COVER, 0);
+        g_clock_faces_ui.screensaver_stars[i] = star;
+        g_clock_faces_ui.screensaver_star_x[i] =
+            (int16_t)((i * 47 + 13) % 304);
+        g_clock_faces_ui.screensaver_star_y[i] =
+            (int16_t)((i * 83 + 7) % 224);
+        g_clock_faces_ui.screensaver_star_speed[i] =
+            (uint8_t)(1 + i % 3);
+        lv_obj_set_pos(
+            star,
+            g_clock_faces_ui.screensaver_star_x[i],
+            g_clock_faces_ui.screensaver_star_y[i]);
+    }
+
+    g_clock_faces_ui.screensaver_clock =
+        lv_obj_create(g_clock_faces_ui.screensaver);
+    lv_obj_remove_style_all(
+        g_clock_faces_ui.screensaver_clock);
+    lv_obj_set_size(
+        g_clock_faces_ui.screensaver_clock, 144, 66);
+    lv_obj_set_style_bg_color(
+        g_clock_faces_ui.screensaver_clock,
+        lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(
+        g_clock_faces_ui.screensaver_clock,
+        LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(
+        g_clock_faces_ui.screensaver_clock,
+        lv_color_white(), 0);
+    lv_obj_set_style_border_width(
+        g_clock_faces_ui.screensaver_clock, 1, 0);
+    lv_obj_set_style_radius(
+        g_clock_faces_ui.screensaver_clock, 4, 0);
+    lv_obj_remove_flag(
+        g_clock_faces_ui.screensaver_clock,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    g_clock_faces_ui.screensaver_time =
+        create_clock_face_label(
+            g_clock_faces_ui.screensaver_clock,
+            &lv_font_chicago_48, lv_color_white());
+    lv_label_set_text(
+        g_clock_faces_ui.screensaver_time, "00:00");
+    lv_obj_center(g_clock_faces_ui.screensaver_time);
+    g_clock_faces_ui.screensaver_clock_x = 8;
+    g_clock_faces_ui.screensaver_clock_y = 8;
+    g_clock_faces_ui.screensaver_clock_dx = 1;
+    g_clock_faces_ui.screensaver_clock_dy = 1;
+    lv_obj_set_pos(
+        g_clock_faces_ui.screensaver_clock,
+        g_clock_faces_ui.screensaver_clock_x,
+        g_clock_faces_ui.screensaver_clock_y);
+}
+
+static void show_selected_clock_face()
+{
+    hide_all_ui();
+    g_screensaver_active = false;
+
+    if (g_clock_face == CLOCK_FACE_MACINTOSH)
+    {
+        lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.menu, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.menu_titles, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.menu_right, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.clock, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.clock_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.time, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.date, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.temp, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.gauge_icon, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.gauge_line, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
+        update_alarm_indicator_layout(
+            alarms_have_active_indicator());
+        lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    lv_obj_t *face = nullptr;
+    if (g_clock_face == CLOCK_FACE_COMPACT)
+        face = g_clock_faces_ui.compact;
+    else if (g_clock_face == CLOCK_FACE_ANALOG)
+        face = g_clock_faces_ui.analog;
+    else
+        face = g_clock_faces_ui.flip;
+    lv_obj_clear_flag(face, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(face);
+}
+
+static void update_selected_clock_face(unsigned long now_ms)
+{
+    update_clock_labels();
+    if (g_clock_face == CLOCK_FACE_MACINTOSH)
+    {
+        if (timer_is_active())
+        {
+            char remaining[12];
+            timer_format_remaining(
+                now_ms, remaining, sizeof(remaining));
+            lv_label_set_text(g_ui.date, remaining);
+        }
+        update_alarm_indicator_layout(
+            alarms_have_active_indicator());
+        return;
+    }
+
+    const DateTime current = rtc_now();
+    char time_text[16];
+    char footer[24];
+    if (timer_is_active())
+        timer_format_remaining(
+            now_ms, footer, sizeof(footer));
+    else
+        format_display_date(current, footer, sizeof(footer));
+
+    if (g_clock_face == CLOCK_FACE_COMPACT)
+    {
+        snprintf(
+            time_text, sizeof(time_text), "%02d:%02d:%02d",
+            current.hour(), current.minute(), current.second());
+        lv_label_set_text(
+            g_clock_faces_ui.compact_time, time_text);
+        lv_label_set_text(
+            g_clock_faces_ui.compact_date, footer);
+        lv_label_set_text(
+            g_clock_faces_ui.compact_weather,
+            lv_label_get_text(g_ui.temp));
+    }
+    else if (g_clock_face == CLOCK_FACE_ANALOG)
+    {
+        const float seconds = (float)current.second();
+        const float minutes =
+            (float)current.minute() + seconds / 60.0f;
+        const float hours =
+            (float)(current.hour() % 12) + minutes / 60.0f;
+        set_analog_hand(
+            g_clock_faces_ui.analog_hour_hand,
+            g_clock_faces_ui.analog_hour_points,
+            hours * 30.0f, 43, 5);
+        set_analog_hand(
+            g_clock_faces_ui.analog_minute_hand,
+            g_clock_faces_ui.analog_minute_points,
+            minutes * 6.0f, 61, 6);
+        set_analog_hand(
+            g_clock_faces_ui.analog_second_hand,
+            g_clock_faces_ui.analog_second_points,
+            seconds * 6.0f, 68, 8);
+        lv_label_set_text(
+            g_clock_faces_ui.analog_date, footer);
+    }
+    else
+    {
+        snprintf(
+            time_text, sizeof(time_text), "%02d",
+            current.hour());
+        lv_label_set_text(
+            g_clock_faces_ui.flip_hour, time_text);
+        snprintf(
+            time_text, sizeof(time_text), "%02d",
+            current.minute());
+        lv_label_set_text(
+            g_clock_faces_ui.flip_minute, time_text);
+        lv_obj_set_style_text_opa(
+            g_clock_faces_ui.flip_colon,
+            current.second() % 2 ? LV_OPA_40 : LV_OPA_COVER,
+            0);
+        lv_label_set_text(
+            g_clock_faces_ui.flip_date, footer);
+    }
+}
+
+static void show_after_dark_screensaver()
+{
+    hide_all_ui();
+    g_screensaver_active = true;
+    if (g_cursor)
+        lv_obj_add_flag(g_cursor, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(
+        g_clock_faces_ui.screensaver, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(g_clock_faces_ui.screensaver);
+}
+
+static void update_after_dark_screensaver()
+{
+    static unsigned long last_move_ms = 0;
+    static int last_second = -1;
+    const unsigned long now_ms = millis();
+    const DateTime current = rtc_now();
+    if (current.second() != last_second)
+    {
+        char time_text[8];
+        snprintf(
+            time_text, sizeof(time_text), "%02d:%02d",
+            current.hour(), current.minute());
+        lv_label_set_text(
+            g_clock_faces_ui.screensaver_time, time_text);
+        last_second = current.second();
+    }
+    if (last_move_ms && now_ms - last_move_ms < 60)
+        return;
+    last_move_ms = now_ms;
+
+    for (size_t i = 0; i < kScreensaverStarCount; ++i)
+    {
+        int16_t y =
+            g_clock_faces_ui.screensaver_star_y[i] +
+            g_clock_faces_ui.screensaver_star_speed[i];
+        if (y >= 224)
+        {
+            y = 0;
+            g_clock_faces_ui.screensaver_star_x[i] =
+                (int16_t)(
+                    (g_clock_faces_ui.screensaver_star_x[i] +
+                     73 + i * 11) %
+                    304);
+        }
+        g_clock_faces_ui.screensaver_star_y[i] = y;
+        lv_obj_set_pos(
+            g_clock_faces_ui.screensaver_stars[i],
+            g_clock_faces_ui.screensaver_star_x[i], y);
+    }
+
+    int16_t x = g_clock_faces_ui.screensaver_clock_x +
+                g_clock_faces_ui.screensaver_clock_dx;
+    int16_t y = g_clock_faces_ui.screensaver_clock_y +
+                g_clock_faces_ui.screensaver_clock_dy;
+    if (x <= 0 || x >= 160)
+    {
+        g_clock_faces_ui.screensaver_clock_dx =
+            -g_clock_faces_ui.screensaver_clock_dx;
+        if (x < 0)
+            x = 0;
+        else if (x > 160)
+            x = 160;
+    }
+    if (y <= 0 || y >= 158)
+    {
+        g_clock_faces_ui.screensaver_clock_dy =
+            -g_clock_faces_ui.screensaver_clock_dy;
+        if (y < 0)
+            y = 0;
+        else if (y > 158)
+            y = 158;
+    }
+    g_clock_faces_ui.screensaver_clock_x = x;
+    g_clock_faces_ui.screensaver_clock_y = y;
+    lv_obj_set_pos(
+        g_clock_faces_ui.screensaver_clock, x, y);
+}
+
 static void setup_weather_sensor()
 {
     if (bmp.begin(BMP5XX_ALTERNATIVE_ADDRESS, &Wire))
@@ -2659,6 +3449,7 @@ static void init_ui_assets()
     set_image_src(g_ui.corners, g_ui.corners_buf, "S:/corners.png");
     lv_obj_center(g_ui.corners);
 
+    init_clock_faces_ui(scr);
     datetime_ui_init(scr);
     alarm_ui_init(scr);
     timer_ui_init(scr);
@@ -2971,6 +3762,26 @@ void setup()
         saved_temperature_unit < UI_TEMPERATURE_UNIT_COUNT
             ? (UiTemperatureUnit)saved_temperature_unit
             : UI_TEMPERATURE_CELSIUS;
+    const uint8_t saved_clock_face =
+        preferences.getUChar("clock_face", CLOCK_FACE_MACINTOSH);
+    g_clock_face =
+        saved_clock_face < CLOCK_FACE_COUNT
+            ? (ClockFace)saved_clock_face
+            : CLOCK_FACE_MACINTOSH;
+    const uint8_t saved_screensaver_mode =
+        preferences.getUChar("screen_mode", SCREENSAVER_OFF);
+    g_screensaver_mode =
+        saved_screensaver_mode < SCREENSAVER_MODE_COUNT
+            ? (ScreensaverMode)saved_screensaver_mode
+            : SCREENSAVER_OFF;
+    g_screensaver_delay_index =
+        preferences.getUChar("screen_delay", 1);
+    if (g_screensaver_delay_index >=
+        sizeof(g_screensaver_delays_minutes) /
+            sizeof(g_screensaver_delays_minutes[0]))
+    {
+        g_screensaver_delay_index = 1;
+    }
     datetime_ui_set_date_format(g_date_format);
     g_mp3_lock = xSemaphoreCreateMutex();
     alarms_init(preferences);
@@ -3126,11 +3937,19 @@ void loop()
     static unsigned long last_encoder_save_ms = 0;
     static unsigned long full_brightness_until = 0;
     static unsigned long last_night_check_ms = 0;
+    static int screensaver_last_encoder = INT32_MIN;
     static NightDisplayState scheduled_display_state =
         NIGHT_DISPLAY_NORMAL;
 
     unsigned long now = millis();
     InputState inputs = read_input_state();
+    const bool screen_touch_pressed =
+        touch_consume_press_edge();
+    const int observed_encoder = encoder.getCount();
+    const bool rotary_activity =
+        screensaver_last_encoder != INT32_MIN &&
+        observed_encoder != screensaver_last_encoder;
+    screensaver_last_encoder = observed_encoder;
     timer_update(now);
 
     if (g_requested_state != 0)
@@ -3199,6 +4018,7 @@ void loop()
     const bool temporary_wake_active =
         (int32_t)(full_brightness_until - now) > 0;
     if (currentState == UI_STATE_NORMAL &&
+        !g_screensaver_active &&
         scheduled_display_state != NIGHT_DISPLAY_NORMAL &&
         !temporary_wake_active &&
         (inputs.clock || inputs.alarm))
@@ -3391,45 +4211,70 @@ void loop()
         if (currentState != lastState)
         {
             wifi_mode_start_task();
+            lastClockUpdate = 0;
             dual_key_hold_start = 0;
             dual_key_handled = false;
             clock_press_pending = false;
             alarm_press_pending = false;
-            hide_all_ui();
-            lv_obj_clear_flag(g_ui.background, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(g_ui.white_bar, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(g_ui.black_line, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(g_ui.menu, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(g_ui.menu_titles, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(g_ui.menu_right, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(g_ui.clock, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(g_ui.clock_label, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(g_ui.time, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(g_ui.date, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(g_ui.temp, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(g_ui.gauge_icon, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(g_ui.gauge_line, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(g_ui.gauge_box, LV_OBJ_FLAG_HIDDEN);
-            update_alarm_indicator_layout(
-                alarms_have_active_indicator());
-            lv_obj_clear_flag(g_ui.corners, LV_OBJ_FLAG_HIDDEN);
+            g_last_clock_activity_ms = now;
+            screensaver_last_encoder = observed_encoder;
+            show_selected_clock_face();
+            update_selected_clock_face(now);
             lv_timer_handler();
         }
+
+        const bool clock_activity =
+            inputs.clock || inputs.alarm || inputs.touch ||
+            screen_touch_pressed || rotary_activity;
+        if (g_screensaver_active)
+        {
+            if (clock_activity)
+            {
+                g_last_clock_activity_ms = now;
+                full_brightness_until = now + 10000;
+                inputs.clock = false;
+                inputs.alarm = false;
+                inputs.touch = false;
+                dual_key_hold_start = 0;
+                dual_key_handled = false;
+                clock_press_pending = false;
+                alarm_press_pending = false;
+                show_selected_clock_face();
+                update_selected_clock_face(now);
+            }
+            else
+            {
+                update_after_dark_screensaver();
+            }
+            lv_timer_handler();
+            break;
+        }
+
+        if (clock_activity)
+            g_last_clock_activity_ms = now;
+        const unsigned long screensaver_delay_ms =
+            (unsigned long)
+                g_screensaver_delays_minutes[
+                    g_screensaver_delay_index] *
+            60000UL;
+        if (g_screensaver_mode == SCREENSAVER_AFTER_DARK &&
+            now - g_last_clock_activity_ms >=
+                screensaver_delay_ms)
+        {
+            show_after_dark_screensaver();
+            update_after_dark_screensaver();
+            lv_timer_handler();
+            break;
+        }
+
         if (!lastClockUpdate || now - lastClockUpdate >= 100)
         {
-            if (inputs.floppy)
+            if (g_clock_face == CLOCK_FACE_MACINTOSH &&
+                inputs.floppy)
                 lv_obj_clear_flag(g_ui.icon, LV_OBJ_FLAG_HIDDEN);
             else
                 lv_obj_add_flag(g_ui.icon, LV_OBJ_FLAG_HIDDEN);
-            update_clock_labels();
-            if (timer_is_active())
-            {
-                char remaining[12];
-                timer_format_remaining(now, remaining, sizeof(remaining));
-                lv_label_set_text(g_ui.date, remaining);
-            }
-            update_alarm_indicator_layout(
-                alarms_have_active_indicator());
+            update_selected_clock_face(now);
             lv_timer_handler();
             lastClockUpdate = now;
         }
@@ -3753,7 +4598,6 @@ void loop()
 
     lastState = currentState;
 
-    const bool screen_touch_pressed = touch_consume_press_edge();
     if (inputs.touch ||
         (screen_touch_pressed &&
          currentState == UI_STATE_NORMAL &&
