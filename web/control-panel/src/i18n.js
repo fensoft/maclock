@@ -22,6 +22,17 @@ const translations = [
     welcome:
       "Adjust your clock from any computer or phone on the same network. Changes are saved directly to Maclock.",
     connected: "Connected locally",
+    launcherTitle: "Control Panels",
+    launcherMouseHint:
+      "Single-click to select. Double-click an icon to open it.",
+    launcherTouchHint: "Tap an icon to open it.",
+    openApp: "Open {title}",
+    closeWindow: "Close {title}",
+    unsavedTitle: "Unsaved Changes",
+    unsavedMessage:
+      "The changes in “{title}” have not been saved.",
+    keepEditing: "Keep Editing",
+    discardChanges: "Discard Changes",
     appearance: "Appearance",
     location: "Location",
     city: "City",
@@ -138,6 +149,17 @@ const translations = [
     welcome:
       "Réglez votre horloge depuis un ordinateur ou un téléphone connecté au même réseau. Les modifications sont enregistrées directement dans Maclock.",
     connected: "Connecté localement",
+    launcherTitle: "Panneaux de contrôle",
+    launcherMouseHint:
+      "Cliquez une fois pour sélectionner. Double-cliquez sur une icône pour l’ouvrir.",
+    launcherTouchHint: "Touchez une icône pour l’ouvrir.",
+    openApp: "Ouvrir {title}",
+    closeWindow: "Fermer {title}",
+    unsavedTitle: "Modifications non enregistrées",
+    unsavedMessage:
+      "Les modifications de « {title} » n’ont pas été enregistrées.",
+    keepEditing: "Continuer la modification",
+    discardChanges: "Ignorer les modifications",
     appearance: "Apparence",
     location: "Localisation",
     city: "Ville",
@@ -254,6 +276,17 @@ const translations = [
     welcome:
       "Ajusta el reloj desde cualquier ordenador o teléfono conectado a la misma red. Los cambios se guardan directamente en Maclock.",
     connected: "Conectado localmente",
+    launcherTitle: "Paneles de control",
+    launcherMouseHint:
+      "Haz clic una vez para seleccionar. Haz doble clic en un icono para abrirlo.",
+    launcherTouchHint: "Toca un icono para abrirlo.",
+    openApp: "Abrir {title}",
+    closeWindow: "Cerrar {title}",
+    unsavedTitle: "Cambios sin guardar",
+    unsavedMessage:
+      "Los cambios de «{title}» no se han guardado.",
+    keepEditing: "Seguir editando",
+    discardChanges: "Descartar cambios",
     appearance: "Apariencia",
     location: "Ubicación",
     city: "Ciudad",
@@ -370,6 +403,17 @@ const translations = [
     welcome:
       "Stelle deine Uhr von jedem Computer oder Telefon im selben Netzwerk ein. Änderungen werden direkt in Maclock gespeichert.",
     connected: "Lokal verbunden",
+    launcherTitle: "Kontrollfelder",
+    launcherMouseHint:
+      "Einmal klicken zum Auswählen. Doppelklicken zum Öffnen.",
+    launcherTouchHint: "Zum Öffnen auf ein Symbol tippen.",
+    openApp: "{title} öffnen",
+    closeWindow: "{title} schließen",
+    unsavedTitle: "Ungespeicherte Änderungen",
+    unsavedMessage:
+      "Die Änderungen in „{title}“ wurden nicht gespeichert.",
+    keepEditing: "Weiter bearbeiten",
+    discardChanges: "Änderungen verwerfen",
     appearance: "Darstellung",
     location: "Standort",
     city: "Stadt",
@@ -486,6 +530,17 @@ const translations = [
     welcome:
       "Regola l’orologio da qualsiasi computer o telefono connesso alla stessa rete. Le modifiche vengono salvate direttamente in Maclock.",
     connected: "Connesso localmente",
+    launcherTitle: "Pannelli di controllo",
+    launcherMouseHint:
+      "Fai clic una volta per selezionare. Fai doppio clic su un’icona per aprirla.",
+    launcherTouchHint: "Tocca un’icona per aprirla.",
+    openApp: "Apri {title}",
+    closeWindow: "Chiudi {title}",
+    unsavedTitle: "Modifiche non salvate",
+    unsavedMessage:
+      "Le modifiche in «{title}» non sono state salvate.",
+    keepEditing: "Continua a modificare",
+    discardChanges: "Ignora modifiche",
     appearance: "Aspetto",
     location: "Località",
     city: "Città",

@@ -1,4 +1,6 @@
 <script setup>
+import { ref } from "vue";
+
 defineProps({
   type: { type: String, default: "button" },
   secondary: Boolean,
@@ -8,11 +10,18 @@ defineProps({
 });
 
 defineEmits(["click"]);
+
+const button = ref(null);
+
+defineExpose({
+  focus: () => button.value?.focus(),
+});
 </script>
 
 <template>
   <span :class="{ 'mac-button-default': defaultAction }">
     <button
+      ref="button"
       class="mac-button"
       :class="{ secondary, danger }"
       :type="type"

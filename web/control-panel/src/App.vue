@@ -1,7 +1,15 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from "vue";
 
 import { fetchState, fetchStatus, postForm } from "./api";
+import MacAppIcon from "./components/MacAppIcon.vue";
 import MacButton from "./components/MacButton.vue";
 import MacWindow from "./components/MacWindow.vue";
 import {
@@ -12,12 +20,30 @@ import {
 
 const volumeLevels = [10, 20, 40, 60, 80, 100];
 const volumeOptions = volumeLevels.map((volume) => `${volume}%`);
+const launcherApps = [
+  { id: "appearance", titleKey: "appearance", icon: "appearance" },
+  { id: "location", titleKey: "location", icon: "location" },
+  { id: "screensaver", titleKey: "screensaver", icon: "screensaver" },
+  { id: "timer", titleKey: "timer", icon: "timer" },
+  { id: "alarms", titleKey: "alarmClock", icon: "alarm" },
+  { id: "night", titleKey: "nightMode", icon: "night" },
+  { id: "chime", titleKey: "hourlyChime", icon: "chime" },
+  { id: "sounds", titleKey: "soundManager", icon: "sound" },
+];
 
 const panelState = ref(null);
 const loading = ref(true);
 const busy = ref("");
 const notice = ref(null);
 const timerRemaining = ref(0);
+const selectedApp = ref(null);
+const activeApp = ref(null);
+const activeAppBaseline = ref(null);
+const closeConfirmation = ref(false);
+const pendingTransition = ref(null);
+const launcherRef = ref(null);
+const activeWindowRef = ref(null);
+const keepEditingRef = ref(null);
 let statusPoll = 0;
 let noticeTimeout = 0;
 
@@ -27,6 +53,12 @@ const currentLanguage = computed(
 );
 const t = (key, replacements) =>
   translate(currentLanguage.value, key, replacements);
+const activeAppEntry = computed(
+  () => launcherApps.find((app) => app.id === activeApp.value) || null,
+);
+const activeAppTitle = computed(() =>
+  activeAppEntry.value ? t(activeAppEntry.value.titleKey) : "",
+);
 const faceOptions = computed(() =>
   ["macintosh", "compactDigital", "analog", "flipClock"].map((key) => t(key)),
 );
@@ -68,6 +100,225 @@ const timerText = computed(() => {
     .join(":");
 });
 
+function cloneValue(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function copyFields(source, fields) {
+  return fields.reduce((result, field) => {
+    result[field] = source[field];
+    return result;
+  }, {});
+}
+
+function editableSnapshot(appId) {
+  if (!panelState.value) return null;
+  switch (appId) {
+    case "appearance":
+      return copyFields(panelState.value.appearance, [
+        "language",
+        "face",
+        "theme",
+        "brightness",
+        "hourFormat",
+        "leadingZero",
+        "seconds",
+        "weekday",
+      ]);
+    case "location":
+      return copyFields(panelState.value.location, ["city", "country"]);
+    case "screensaver":
+      return copyFields(panelState.value.screensaver, ["mode", "delay"]);
+    case "timer":
+      return copyFields(panelState.value.timer, [
+        "minutes",
+        "sound",
+        "volume",
+      ]);
+    case "alarms":
+      return panelState.value.alarms.map((alarm) =>
+        copyFields(alarm, [
+          "enabled",
+          "hour",
+          "minute",
+          "weekdays",
+          "sound",
+          "volume",
+        ]),
+      );
+    case "night":
+      return copyFields(panelState.value.night, [
+        "enabled",
+        "start",
+        "end",
+        "screenOff",
+        "offHour",
+      ]);
+    case "chime":
+      return copyFields(panelState.value.chime, [
+        "mode",
+        "sound",
+        "volume",
+        "quiet",
+        "quietStart",
+        "quietEnd",
+      ]);
+    case "sounds":
+      return copyFields(panelState.value.systemSounds, [
+        "startup",
+        "startupVolume",
+        "floppy",
+        "floppyVolume",
+      ]);
+    default:
+      return null;
+  }
+}
+
+const activeAppDirty = computed(() => {
+  if (!activeApp.value || !activeAppBaseline.value) return false;
+  return (
+    JSON.stringify(editableSnapshot(activeApp.value)) !==
+    JSON.stringify(activeAppBaseline.value)
+  );
+});
+
+function captureActiveAppBaseline() {
+  activeAppBaseline.value = activeApp.value
+    ? cloneValue(editableSnapshot(activeApp.value))
+    : null;
+}
+
+function restoreActiveAppBaseline() {
+  if (!activeApp.value || !activeAppBaseline.value) return;
+  const restored = cloneValue(activeAppBaseline.value);
+  switch (activeApp.value) {
+    case "alarms":
+      panelState.value.alarms = restored;
+      break;
+    case "sounds":
+      Object.assign(panelState.value.systemSounds, restored);
+      break;
+    default:
+      Object.assign(panelState.value[activeApp.value], restored);
+      break;
+  }
+}
+
+async function focusActiveWindow() {
+  await nextTick();
+  activeWindowRef.value?.focusAndReveal();
+}
+
+async function focusLauncher() {
+  await nextTick();
+  launcherRef.value?.focus({ preventScroll: true });
+  launcherRef.value?.scrollIntoView({
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth",
+    block: "start",
+  });
+}
+
+function commitAppTransition({
+  target,
+  selection = target,
+  focusHome = false,
+}) {
+  activeApp.value = target;
+  selectedApp.value = selection;
+  pendingTransition.value = null;
+  closeConfirmation.value = false;
+  captureActiveAppBaseline();
+  if (target) {
+    focusActiveWindow();
+  } else if (focusHome) {
+    focusLauncher();
+  }
+}
+
+async function requestAppTransition(transition) {
+  if (busy.value) return;
+  if (transition.target === activeApp.value) {
+    selectedApp.value = transition.selection;
+    if (transition.target) {
+      focusActiveWindow();
+    } else if (transition.focusHome) {
+      focusLauncher();
+    }
+    return;
+  }
+  if (activeApp.value && activeAppDirty.value) {
+    pendingTransition.value = transition;
+    closeConfirmation.value = true;
+    await nextTick();
+    keepEditingRef.value?.focus();
+    return;
+  }
+  commitAppTransition(transition);
+}
+
+function selectApp(appId) {
+  selectedApp.value = appId;
+}
+
+function openApp(appId) {
+  requestAppTransition({
+    target: appId,
+    selection: appId,
+    focusHome: false,
+  });
+}
+
+function closeActiveApp(clearSelection = false) {
+  if (!activeApp.value) {
+    if (clearSelection) selectedApp.value = null;
+    focusLauncher();
+    return;
+  }
+  requestAppTransition({
+    target: null,
+    selection: clearSelection ? null : activeApp.value,
+    focusHome: true,
+  });
+}
+
+function keepEditing() {
+  closeConfirmation.value = false;
+  pendingTransition.value = null;
+  selectedApp.value = activeApp.value;
+  focusActiveWindow();
+}
+
+function discardChanges() {
+  restoreActiveAppBaseline();
+  const transition = pendingTransition.value || {
+    target: null,
+    selection: activeApp.value,
+    focusHome: true,
+  };
+  commitAppTransition(transition);
+}
+
+function handleGlobalKeydown(event) {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  if (closeConfirmation.value) {
+    keepEditing();
+  } else if (activeApp.value) {
+    closeActiveApp();
+  }
+}
+
+function handleGlobalPointerDown(event) {
+  if (!activeApp.value || closeConfirmation.value) return;
+  if (!(event.target instanceof Element)) return;
+  if (event.target.closest(".active-window-slot > .mac-window")) return;
+  if (event.target.closest(".menu-bar")) return;
+  closeActiveApp();
+}
+
 function showNotice(message, kind = "success") {
   notice.value = { message, kind };
   window.clearTimeout(noticeTimeout);
@@ -81,6 +332,7 @@ async function loadState({ quiet = false } = {}) {
   try {
     panelState.value = await fetchState();
     timerRemaining.value = panelState.value.timer.remaining || 0;
+    captureActiveAppBaseline();
   } catch (error) {
     showNotice(t("contactError"), "error");
   } finally {
@@ -269,6 +521,8 @@ async function pollStatus() {
 onMounted(async () => {
   await loadState();
   statusPoll = window.setInterval(pollStatus, 3000);
+  window.addEventListener("keydown", handleGlobalKeydown);
+  window.addEventListener("pointerdown", handleGlobalPointerDown, true);
 });
 
 watch(
@@ -282,23 +536,38 @@ watch(
 onBeforeUnmount(() => {
   window.clearInterval(statusPoll);
   window.clearTimeout(noticeTimeout);
+  window.removeEventListener("keydown", handleGlobalKeydown);
+  window.removeEventListener("pointerdown", handleGlobalPointerDown, true);
 });
 </script>
 
 <template>
   <div class="desktop">
     <nav class="menu-bar" :aria-label="t('menuSections')">
-      <a class="apple" href="#welcome" :aria-label="t('home')">
+      <button
+        class="apple"
+        type="button"
+        :aria-label="t('home')"
+        @click="closeActiveApp(true)"
+      >
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path
             d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35-.07 2.29.74 3.08.79 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.53 4.09M12.03 7.25C11.88 5.02 13.69 3.18 15.77 3c.29 2.58-2.34 4.5-3.74 4.25"
           />
         </svg>
-      </a>
-      <a href="#appearance">{{ t("file") }}</a>
-      <a href="#alarms">{{ t("edit") }}</a>
-      <a href="#screensaver">{{ t("view") }}</a>
-      <a href="#sounds">{{ t("special") }}</a>
+      </button>
+      <button type="button" @click="openApp('appearance')">
+        {{ t("file") }}
+      </button>
+      <button type="button" @click="openApp('alarms')">
+        {{ t("edit") }}
+      </button>
+      <button type="button" @click="openApp('screensaver')">
+        {{ t("view") }}
+      </button>
+      <button type="button" @click="openApp('sounds')">
+        {{ t("special") }}
+      </button>
       <span>{{ t("control") }}</span>
     </nav>
 
@@ -329,8 +598,42 @@ onBeforeUnmount(() => {
           </div>
         </MacWindow>
 
-        <div class="control-grid">
-          <MacWindow id="appearance" :title="t('appearance')">
+        <section
+          v-if="!activeApp"
+          ref="launcherRef"
+          class="app-launcher"
+          tabindex="-1"
+          :aria-label="t('launcherTitle')"
+        >
+          <div class="app-grid">
+            <MacAppIcon
+              v-for="app in launcherApps"
+              :key="app.id"
+              :app-id="app.id"
+              :icon="app.icon"
+              :title="t(app.titleKey)"
+              :open-label="
+                t('openApp', { title: t(app.titleKey) })
+              "
+              :selected="selectedApp === app.id"
+              @select="selectApp(app.id)"
+              @open="openApp(app.id)"
+            />
+          </div>
+        </section>
+
+        <div v-if="activeApp" class="active-window-slot">
+          <MacWindow
+            v-if="activeApp === 'appearance'"
+            id="appearance"
+            ref="activeWindowRef"
+            :title="activeAppTitle"
+            closable
+            :close-label="
+              t('closeWindow', { title: activeAppTitle })
+            "
+            @close="closeActiveApp()"
+          >
             <form class="panel-form" @submit.prevent="saveAppearance">
               <label class="field">
                 <span>{{ t("language") }}</span>
@@ -439,7 +742,17 @@ onBeforeUnmount(() => {
             </form>
           </MacWindow>
 
-          <MacWindow id="location" :title="t('location')">
+          <MacWindow
+            v-if="activeApp === 'location'"
+            id="location"
+            ref="activeWindowRef"
+            :title="activeAppTitle"
+            closable
+            :close-label="
+              t('closeWindow', { title: activeAppTitle })
+            "
+            @close="closeActiveApp()"
+          >
             <form class="panel-form" @submit.prevent="saveLocation">
               <div class="two-column location-fields">
                 <label class="field">
@@ -498,7 +811,17 @@ onBeforeUnmount(() => {
             </form>
           </MacWindow>
 
-          <MacWindow id="screensaver" :title="t('screensaver')">
+          <MacWindow
+            v-if="activeApp === 'screensaver'"
+            id="screensaver"
+            ref="activeWindowRef"
+            :title="activeAppTitle"
+            closable
+            :close-label="
+              t('closeWindow', { title: activeAppTitle })
+            "
+            @close="closeActiveApp()"
+          >
             <form
               class="panel-form"
               @submit.prevent="screensaverAction('save')"
@@ -568,7 +891,17 @@ onBeforeUnmount(() => {
             </form>
           </MacWindow>
 
-          <MacWindow id="timer" :title="t('timer')">
+          <MacWindow
+            v-if="activeApp === 'timer'"
+            id="timer"
+            ref="activeWindowRef"
+            :title="activeAppTitle"
+            closable
+            :close-label="
+              t('closeWindow', { title: activeAppTitle })
+            "
+            @close="closeActiveApp()"
+          >
             <form class="panel-form" @submit.prevent="timerAction('start')">
               <div
                 class="timer-display"
@@ -659,7 +992,18 @@ onBeforeUnmount(() => {
             </form>
           </MacWindow>
 
-          <MacWindow id="alarms" :title="t('alarmClock')" wide>
+          <MacWindow
+            v-if="activeApp === 'alarms'"
+            id="alarms"
+            ref="activeWindowRef"
+            :title="activeAppTitle"
+            closable
+            wide
+            :close-label="
+              t('closeWindow', { title: activeAppTitle })
+            "
+            @close="closeActiveApp()"
+          >
             <div class="alarm-grid">
               <form
                 v-for="(alarm, alarmIndex) in panelState.alarms"
@@ -764,7 +1108,17 @@ onBeforeUnmount(() => {
             </div>
           </MacWindow>
 
-          <MacWindow id="night" :title="t('nightMode')">
+          <MacWindow
+            v-if="activeApp === 'night'"
+            id="night"
+            ref="activeWindowRef"
+            :title="activeAppTitle"
+            closable
+            :close-label="
+              t('closeWindow', { title: activeAppTitle })
+            "
+            @close="closeActiveApp()"
+          >
             <form class="panel-form" @submit.prevent="saveNightMode">
               <label class="check-line">
                 <input v-model="panelState.night.enabled" type="checkbox" />
@@ -822,7 +1176,17 @@ onBeforeUnmount(() => {
             </form>
           </MacWindow>
 
-          <MacWindow id="chime" :title="t('hourlyChime')">
+          <MacWindow
+            v-if="activeApp === 'chime'"
+            id="chime"
+            ref="activeWindowRef"
+            :title="activeAppTitle"
+            closable
+            :close-label="
+              t('closeWindow', { title: activeAppTitle })
+            "
+            @close="closeActiveApp()"
+          >
             <form class="panel-form" @submit.prevent="saveChime">
               <label class="field">
                 <span>{{ t("schedule") }}</span>
@@ -915,7 +1279,18 @@ onBeforeUnmount(() => {
             </form>
           </MacWindow>
 
-          <MacWindow id="sounds" :title="t('soundManager')" wide>
+          <MacWindow
+            v-if="activeApp === 'sounds'"
+            id="sounds"
+            ref="activeWindowRef"
+            :title="activeAppTitle"
+            closable
+            wide
+            :close-label="
+              t('closeWindow', { title: activeAppTitle })
+            "
+            @close="closeActiveApp()"
+          >
             <form class="sound-manager" @submit.prevent="saveSystemSounds">
               <div class="speaker-icon" aria-hidden="true">
                 <span></span>
@@ -1036,22 +1411,59 @@ onBeforeUnmount(() => {
           </MacWindow>
         </div>
 
-        <footer>
-          <strong>{{ t("panelTitle") }}</strong>
-          <span aria-hidden="true">•</span>
-          {{ t("footer") }}
-          <span aria-hidden="true">•</span>
+        <footer class="corner-footer">
           <a
             class="github-link"
             href="https://github.com/fensoft/maclock"
             target="_blank"
             rel="noopener noreferrer"
+            aria-label="GitHub"
           >
-            {{ t("viewGithub") }}
+            github
           </a>
         </footer>
       </template>
     </main>
+
+    <Transition name="dialog">
+      <div
+        v-if="closeConfirmation"
+        class="dialog-shade"
+        @click.self="keepEditing"
+      >
+        <section
+          class="classic-confirm"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="unsaved-title"
+          aria-describedby="unsaved-message"
+        >
+          <div class="confirm-icon" aria-hidden="true">!</div>
+          <div>
+            <h2 id="unsaved-title">{{ t("unsavedTitle") }}</h2>
+            <p id="unsaved-message">
+              {{
+                t("unsavedMessage", {
+                  title: activeAppTitle,
+                })
+              }}
+            </p>
+          </div>
+          <div class="confirm-actions">
+            <MacButton danger @click="discardChanges">
+              {{ t("discardChanges") }}
+            </MacButton>
+            <MacButton
+              ref="keepEditingRef"
+              default-action
+              @click="keepEditing"
+            >
+              {{ t("keepEditing") }}
+            </MacButton>
+          </div>
+        </section>
+      </div>
+    </Transition>
 
     <Transition name="alert">
       <div
