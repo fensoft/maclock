@@ -71,8 +71,16 @@ enum class ScreensaverMode : uint8_t
 {
     Off,
     AfterDark,
+    Starfield,
+    BouncingMac,
+    MatrixRain,
+    Pipes,
+    FlyingClocks,
+    Random,
     Count
 };
+
+static constexpr uint8_t kScreensaverDelayCount = 4;
 
 enum class ChimeMode : uint8_t
 {

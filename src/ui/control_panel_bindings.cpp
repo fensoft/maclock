@@ -4,6 +4,8 @@ ControlPanelSnapshot MaclockApp::controlPanelSnapshot()
 {
     ControlPanelSnapshot snapshot;
     snapshot.settings = app_settings;
+    snapshot.screensaver_active =
+        clock_view.screensaver_active;
 
     int brightness = input_service.encoderPosition();
     if (brightness < 0)
@@ -112,6 +114,44 @@ bool MaclockApp::applyControlAppearance(
         clock_view.show(snapshot);
         clock_view.update(snapshot);
         lv_timer_handler();
+    }
+    return true;
+}
+
+bool MaclockApp::applyControlScreensaver(
+    ScreensaverMode mode, uint8_t delay_index,
+    bool launch_now)
+{
+    if (static_cast<uint8_t>(mode) >=
+            static_cast<uint8_t>(
+                ScreensaverMode::Count) ||
+        delay_index >= kScreensaverDelayCount ||
+        (launch_now && mode == ScreensaverMode::Off) ||
+        (launch_now &&
+         (current_state_ == UiState::AlarmRinging ||
+          current_state_ == UiState::TimerFinished ||
+          current_state_ == UiState::Emulator)))
+    {
+        return false;
+    }
+
+    app_settings.screensaver_mode = mode;
+    app_settings.screensaver_delay_index =
+        delay_index;
+    settings_store.saveScreensaverMode(mode);
+    settings_store.saveScreensaverDelay(delay_index);
+    set_checked_button(
+        boot_options_view.screensaver_options,
+        static_cast<uint8_t>(mode));
+    set_checked_button(
+        boot_options_view.screensaver_delay_options,
+        delay_index);
+
+    if (launch_now)
+    {
+        screensaver_launch_pending_ = true;
+        if (current_state_ != UiState::Normal)
+            requestState(UiState::Normal);
     }
     return true;
 }

@@ -37,6 +37,26 @@ const hourFormatOptions = computed(() =>
 const chimeOptions = computed(() =>
   ["off", "hourly", "quarterHour"].map((key) => t(key)),
 );
+const screensaverOptions = computed(() =>
+  [
+    "off",
+    "afterDark",
+    "starfield",
+    "bouncingMac",
+    "matrixRain",
+    "pipes",
+    "flyingClocks",
+    "randomRotation",
+  ].map((key) => t(key)),
+);
+const screensaverDelayOptions = computed(() =>
+  [
+    "after1Minute",
+    "after5Minutes",
+    "after10Minutes",
+    "after30Minutes",
+  ].map((key) => t(key)),
+);
 const weekdays = computed(() => t("weekdays"));
 const timerText = computed(() => {
   const seconds = Math.max(0, timerRemaining.value);
@@ -100,6 +120,22 @@ function saveAppearance() {
       weekday: appearance.weekday ? 1 : 0,
     },
     t("appearanceSaved"),
+  );
+}
+
+function screensaverAction(action) {
+  const screensaver = panelState.value.screensaver;
+  runAction(
+    `screensaver-${action}`,
+    "/api/screensaver",
+    {
+      action,
+      mode: screensaver.mode,
+      delay: screensaver.delay,
+    },
+    action === "launch"
+      ? t("screensaverLaunched")
+      : t("screensaverSaved"),
   );
 }
 
@@ -207,6 +243,8 @@ async function pollStatus() {
     panelState.value.timer.active = status.timer.active;
     panelState.value.timer.remaining = status.timer.remaining;
     timerRemaining.value = status.timer.remaining || 0;
+    panelState.value.screensaver.active =
+      status.screensaver.active;
   } catch {
     // Keep the last known timer state during a transient Wi-Fi interruption.
   }
@@ -243,7 +281,7 @@ onBeforeUnmount(() => {
       </a>
       <a href="#appearance">{{ t("file") }}</a>
       <a href="#alarms">{{ t("edit") }}</a>
-      <a href="#timer">{{ t("view") }}</a>
+      <a href="#screensaver">{{ t("view") }}</a>
       <a href="#sounds">{{ t("special") }}</a>
       <span>{{ t("control") }}</span>
     </nav>
@@ -380,6 +418,76 @@ onBeforeUnmount(() => {
                   :disabled="!!busy"
                 >
                   {{ t("apply") }}
+                </MacButton>
+              </div>
+            </form>
+          </MacWindow>
+
+          <MacWindow id="screensaver" :title="t('screensaver')">
+            <form
+              class="panel-form"
+              @submit.prevent="screensaverAction('save')"
+            >
+              <div
+                class="saver-status"
+                :class="{ active: panelState.screensaver.active }"
+                role="status"
+              >
+                <span aria-hidden="true"></span>
+                {{
+                  panelState.screensaver.active
+                    ? t("screensaverRunning")
+                    : t("screensaverReady")
+                }}
+              </div>
+
+              <fieldset class="radio-box screensaver-modes">
+                <legend>{{ t("screensaverMode") }}</legend>
+                <label
+                  v-for="(name, index) in screensaverOptions"
+                  :key="name"
+                  class="classic-radio"
+                >
+                  <input
+                    v-model.number="panelState.screensaver.mode"
+                    type="radio"
+                    :value="index"
+                  />
+                  <span>{{ name }}</span>
+                </label>
+              </fieldset>
+
+              <label class="field">
+                <span>{{ t("startAfter") }}</span>
+                <select v-model.number="panelState.screensaver.delay">
+                  <option
+                    v-for="(name, index) in screensaverDelayOptions"
+                    :key="name"
+                    :value="index"
+                  >
+                    {{ name }}
+                  </option>
+                </select>
+              </label>
+
+              <p class="help-text">{{ t("screensaverHelp") }}</p>
+
+              <div class="button-row button-row--split">
+                <MacButton
+                  secondary
+                  type="submit"
+                  :disabled="!!busy"
+                >
+                  {{ t("save") }}
+                </MacButton>
+                <MacButton
+                  default-action
+                  :disabled="
+                    !!busy || panelState.screensaver.mode === 0
+                  "
+                  @click="screensaverAction('launch')"
+                >
+                  {{ t("launchNow") }}
                 </MacButton>
               </div>
             </form>

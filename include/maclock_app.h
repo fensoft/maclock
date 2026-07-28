@@ -42,6 +42,9 @@ public:
         UiLanguage language,
         ClockFace face, ClockTheme theme, uint8_t brightness,
         const TimeFormatSettings &time_format) override;
+    bool applyControlScreensaver(
+        ScreensaverMode mode, uint8_t delay_index,
+        bool launch_now) override;
     bool applyControlAlarm(
         size_t index, const ControlPanelAlarm &alarm) override;
     bool applyControlTimer(
@@ -107,6 +110,7 @@ private:
     uint32_t control_preview_due_ms_ = 0;
     uint8_t control_preview_volume_ = 0;
     bool control_preview_pending_ = false;
+    bool screensaver_launch_pending_ = false;
 
     unsigned long last_alarm_check_ms_ = 0;
     unsigned long last_encoder_save_ms_ = 0;

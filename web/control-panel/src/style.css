@@ -606,6 +606,55 @@ input[type="radio"]:checked::after {
   box-shadow: inset 3px 3px 0 #444;
 }
 
+.saver-status {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 3px double #000;
+  background: #fff;
+  font-family: Monaco, "Courier New", monospace;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.saver-status span {
+  width: 11px;
+  height: 11px;
+  border: 2px solid #000;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.saver-status.active {
+  color: #fff;
+  background: #000;
+}
+
+.saver-status.active span {
+  border-color: #fff;
+  background: #fff;
+  box-shadow: 0 0 0 2px #000;
+}
+
+.screensaver-modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px 16px;
+}
+
+.screensaver-modes .classic-radio {
+  min-width: 0;
+  min-height: 28px;
+}
+
+.screensaver-modes .classic-radio span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .alarm-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1007,6 +1056,10 @@ footer {
   .timer-fields,
   .sound-settings,
   .alarm-card {
+    grid-template-columns: 1fr;
+  }
+
+  .screensaver-modes {
     grid-template-columns: 1fr;
   }
 

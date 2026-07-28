@@ -329,12 +329,16 @@ void BootOptionsView::init(lv_obj_t *screen)
     lv_buttonmatrix_set_one_checked(
         boot_options_view.screensaver_options, true);
     lv_obj_set_size(
-        boot_options_view.screensaver_options, 260, 38);
+        boot_options_view.screensaver_options, 260, 80);
     lv_obj_align(
         boot_options_view.screensaver_options,
         LV_ALIGN_TOP_MID, 0, 0);
     style_boot_options_matrix(
         boot_options_view.screensaver_options);
+    lv_obj_set_style_pad_row(
+        boot_options_view.screensaver_options, 4, 0);
+    lv_obj_set_style_pad_column(
+        boot_options_view.screensaver_options, 5, 0);
     lv_obj_add_event_cb(
         boot_options_view.screensaver_options,
         screensaver_event, LV_EVENT_VALUE_CHANGED, nullptr);
@@ -349,7 +353,7 @@ void BootOptionsView::init(lv_obj_t *screen)
         &lv_font_chicago_8, 0);
     lv_obj_align(
         boot_options_view.screensaver_delay_label,
-        LV_ALIGN_TOP_MID, 0, 44);
+        LV_ALIGN_TOP_MID, 0, 83);
 
     boot_options_view.screensaver_delay_options =
         lv_buttonmatrix_create(screensaver_page);
@@ -365,13 +369,13 @@ void BootOptionsView::init(lv_obj_t *screen)
     lv_buttonmatrix_set_one_checked(
         boot_options_view.screensaver_delay_options, true);
     lv_obj_set_size(
-        boot_options_view.screensaver_delay_options, 260, 64);
+        boot_options_view.screensaver_delay_options, 260, 32);
     lv_obj_align(
         boot_options_view.screensaver_delay_options,
         LV_ALIGN_BOTTOM_MID, 0, 0);
     style_boot_options_matrix(
         boot_options_view.screensaver_delay_options);
-    lv_obj_set_style_pad_row(
+    lv_obj_set_style_pad_column(
         boot_options_view.screensaver_delay_options, 5, 0);
     lv_obj_add_event_cb(
         boot_options_view.screensaver_delay_options,

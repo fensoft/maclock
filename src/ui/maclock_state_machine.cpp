@@ -399,6 +399,18 @@ void MaclockApp::tick()
             lv_timer_handler();
         }
 
+        if (screensaver_launch_pending_ &&
+            g_screensaver_mode != SCREENSAVER_OFF)
+        {
+            screensaver_launch_pending_ = false;
+            clock_view.last_activity_ms = now;
+            clock_view.showScreensaver();
+            clock_view.updateScreensaver(
+                make_clock_snapshot(now));
+            lv_timer_handler();
+            break;
+        }
+
         const bool clock_activity =
             inputs.clock || inputs.alarm || inputs.touch ||
             screen_touch_pressed || rotary_activity;
@@ -436,7 +448,7 @@ void MaclockApp::tick()
                 g_screensaver_delays_minutes[
                     g_screensaver_delay_index] *
             60000UL;
-        if (g_screensaver_mode == SCREENSAVER_AFTER_DARK &&
+        if (g_screensaver_mode != SCREENSAVER_OFF &&
             now - clock_view.last_activity_ms >=
                 screensaver_delay_ms)
         {

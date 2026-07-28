@@ -132,6 +132,16 @@ static void send_state()
     appearance["weekday"] =
         snapshot.settings.time_format.show_weekday;
 
+    JsonObject screensaver =
+        document["screensaver"].to<JsonObject>();
+    screensaver["mode"] =
+        static_cast<uint8_t>(
+            snapshot.settings.screensaver_mode);
+    screensaver["delay"] =
+        snapshot.settings.screensaver_delay_index;
+    screensaver["active"] =
+        snapshot.screensaver_active;
+
     JsonObject system_sounds =
         document["systemSounds"].to<JsonObject>();
     system_sounds["startup"] = snapshot.startup_sound;
@@ -209,6 +219,8 @@ static void send_status()
     document["timer"]["active"] = snapshot.timer.active;
     document["timer"]["remaining"] =
         snapshot.timer.remaining_seconds;
+    document["screensaver"]["active"] =
+        snapshot.screensaver_active;
     send_json(document);
 }
 
@@ -259,6 +271,44 @@ static void apply_appearance()
     send_result(
         applied,
         applied ? "Appearance updated" : "Appearance was not updated",
+        applied ? 200 : 500);
+}
+
+static void apply_screensaver()
+{
+    uint32_t mode = 0;
+    uint32_t delay = 0;
+    const String action = g_server.arg("action");
+    const bool launch_now = action == "launch";
+    if ((!launch_now && action != "save") ||
+        !read_uint(
+            "mode", 0,
+            static_cast<uint8_t>(
+                ScreensaverMode::Count) -
+                1,
+            mode) ||
+        !read_uint(
+            "delay", 0,
+            kScreensaverDelayCount - 1,
+            delay))
+    {
+        send_result(
+            false, "Invalid screensaver settings", 400);
+        return;
+    }
+
+    const bool applied = g_events &&
+        g_events->applyControlScreensaver(
+            static_cast<ScreensaverMode>(mode),
+            static_cast<uint8_t>(delay),
+            launch_now);
+    send_result(
+        applied,
+        applied
+            ? (launch_now
+                   ? "Screensaver launched"
+                   : "Screensaver settings saved")
+            : "Screensaver settings were not applied",
         applied ? 200 : 500);
 }
 
@@ -464,6 +514,10 @@ static void configure_routes()
     g_server.on("/api/state", HTTP_GET, send_state);
     g_server.on("/api/status", HTTP_GET, send_status);
     g_server.on("/api/appearance", HTTP_POST, apply_appearance);
+    g_server.on(
+        "/api/screensaver",
+        HTTP_POST,
+        apply_screensaver);
     g_server.on("/api/alarm", HTTP_POST, apply_alarm);
     g_server.on("/api/timer", HTTP_POST, apply_timer);
     g_server.on("/api/night", HTTP_POST, apply_night);

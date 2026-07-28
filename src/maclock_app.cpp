@@ -283,6 +283,9 @@ static constexpr uint8_t SCREENSAVER_MODE_COUNT =
     static_cast<uint8_t>(ScreensaverMode::Count);
 
 static constexpr size_t kScreensaverStarCount = 24;
+static constexpr size_t kScreensaverMatrixColumnCount = 12;
+static constexpr size_t kScreensaverPipeSegmentCount = 32;
+static constexpr size_t kScreensaverFlyingClockCount = 5;
 static constexpr size_t kFlipDigitCount = 6;
 
 struct FlipCardAnimation
@@ -328,9 +331,12 @@ public:
     void update(const ClockRenderSnapshot &snapshot);
     void applyTheme();
     void applyTimeFormatLayout();
+    void initScreensavers(lv_obj_t *screen);
     void showScreensaver();
     void updateScreensaver(
         const ClockRenderSnapshot &snapshot);
+    void activateScreensaverMode(
+        ScreensaverMode mode, bool reset);
     void updateMacintoshLabels(
         const ClockRenderSnapshot &snapshot);
 
@@ -362,6 +368,7 @@ public:
     lv_obj_t *flip_date;
     FlipCardAnimation flip_animations[kFlipDigitCount];
     lv_obj_t *screensaver;
+    lv_obj_t *screensaver_star_layer;
     lv_obj_t *screensaver_stars[kScreensaverStarCount];
     int16_t screensaver_star_x[kScreensaverStarCount];
     int16_t screensaver_star_y[kScreensaverStarCount];
@@ -372,6 +379,45 @@ public:
     int16_t screensaver_clock_y;
     int8_t screensaver_clock_dx;
     int8_t screensaver_clock_dy;
+    lv_obj_t *screensaver_logo_layer;
+    lv_obj_t *screensaver_logo;
+    int16_t screensaver_logo_x;
+    int16_t screensaver_logo_y;
+    int8_t screensaver_logo_dx;
+    int8_t screensaver_logo_dy;
+    lv_obj_t *screensaver_matrix_layer;
+    lv_obj_t *screensaver_matrix_columns[
+        kScreensaverMatrixColumnCount];
+    char screensaver_matrix_text[
+        kScreensaverMatrixColumnCount][24];
+    int16_t screensaver_matrix_y[
+        kScreensaverMatrixColumnCount];
+    uint8_t screensaver_matrix_speed[
+        kScreensaverMatrixColumnCount];
+    lv_obj_t *screensaver_pipe_layer;
+    lv_obj_t *screensaver_pipe_segments[
+        kScreensaverPipeSegmentCount];
+    uint8_t screensaver_pipe_index;
+    int16_t screensaver_pipe_x;
+    int16_t screensaver_pipe_y;
+    int8_t screensaver_pipe_direction;
+    uint8_t screensaver_pipe_color;
+    lv_obj_t *screensaver_flying_layer;
+    lv_obj_t *screensaver_flying_clocks[
+        kScreensaverFlyingClockCount];
+    lv_obj_t *screensaver_flying_times[
+        kScreensaverFlyingClockCount];
+    int16_t screensaver_flying_x[
+        kScreensaverFlyingClockCount];
+    int16_t screensaver_flying_y[
+        kScreensaverFlyingClockCount];
+    int8_t screensaver_flying_dx[
+        kScreensaverFlyingClockCount];
+    int8_t screensaver_flying_dy[
+        kScreensaverFlyingClockCount];
+    ScreensaverMode screensaver_active_mode =
+        ScreensaverMode::Off;
+    unsigned long screensaver_random_due_ms = 0;
     int last_second = -1;
     int16_t gauge_width = 0;
     int16_t gauge_box_width = 0;
@@ -525,7 +571,7 @@ static const char *g_remember_map[3] = {};
 static const char *g_date_format_map[4] = {
     "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", ""};
 static const char *g_clock_face_map[7] = {};
-static const char *g_screensaver_map[3] = {};
+static const char *g_screensaver_map[12] = {};
 static const uint8_t g_screensaver_delays_minutes[] = {
     1, 5, 10, 30};
 static const char *g_screensaver_delay_map[7] = {};
@@ -877,6 +923,7 @@ static void maybe_start_chime(const DateTime &current)
 #include "ui/ui_shell.cpp"
 #include "ui/clock_view_common.cpp"
 #include "ui/clock_view_faces.cpp"
+#include "ui/clock_view_screensavers.cpp"
 #include "ui/ui_assets.cpp"
 #include "ui/maclock_state_machine.cpp"
 #include "ui/control_panel_bindings.cpp"

@@ -11,6 +11,11 @@ const demoState = {
     seconds: true,
     weekday: false,
   },
+  screensaver: {
+    mode: 1,
+    delay: 1,
+    active: false,
+  },
   systemSounds: {
     startup: "/startup.mp3",
     startupVolume: 80,
@@ -115,6 +120,12 @@ function applyDemo(path, values) {
       seconds: number("seconds") !== 0,
       weekday: number("weekday") !== 0,
     });
+  } else if (path === "/api/screensaver") {
+    Object.assign(demoState.screensaver, {
+      mode: number("mode"),
+      delay: number("delay"),
+      active: values.action === "launch",
+    });
   } else if (path === "/api/alarm") {
     const alarm = demoState.alarms[number("index")];
     Object.assign(alarm, {
@@ -185,6 +196,9 @@ export async function fetchStatus() {
     timer: {
       active: demoState.timer.active,
       remaining: demoState.timer.remaining,
+    },
+    screensaver: {
+      active: demoState.screensaver.active,
     },
   };
 }

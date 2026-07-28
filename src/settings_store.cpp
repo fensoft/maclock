@@ -107,7 +107,8 @@ AppSettings SettingsStore::load()
         ScreensaverMode::Off, ScreensaverMode::Count);
     settings.screensaver_delay_index =
         preferences_.getUChar("screen_delay", 1);
-    if (settings.screensaver_delay_index >= 4)
+    if (settings.screensaver_delay_index >=
+        kScreensaverDelayCount)
         settings.screensaver_delay_index = 1;
     settings.boot_brightness = load_enum(
         preferences_, "boot_brightness",

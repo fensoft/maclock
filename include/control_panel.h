@@ -31,6 +31,7 @@ struct ControlPanelTimer
 struct ControlPanelSnapshot
 {
     AppSettings settings;
+    bool screensaver_active = false;
     uint8_t brightness = 6;
     char startup_sound[SOUND_SELECTOR_PATH_MAX] = "/startup.mp3";
     uint8_t startup_volume = 80;
@@ -51,6 +52,9 @@ public:
         UiLanguage language,
         ClockFace face, ClockTheme theme, uint8_t brightness,
         const TimeFormatSettings &time_format) = 0;
+    virtual bool applyControlScreensaver(
+        ScreensaverMode mode, uint8_t delay_index,
+        bool launch_now) = 0;
     virtual bool applyControlAlarm(
         size_t index, const ControlPanelAlarm &alarm) = 0;
     virtual bool applyControlTimer(
