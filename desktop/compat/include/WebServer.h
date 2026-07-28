@@ -12,6 +12,25 @@ enum HTTPMethod
     HTTP_POST
 };
 
+enum HTTPUploadStatus
+{
+    UPLOAD_FILE_START,
+    UPLOAD_FILE_WRITE,
+    UPLOAD_FILE_END,
+    UPLOAD_FILE_ABORTED
+};
+
+struct HTTPUpload
+{
+    HTTPUploadStatus status = UPLOAD_FILE_ABORTED;
+    String filename;
+    String name;
+    String type;
+    size_t totalSize = 0;
+    size_t currentSize = 0;
+    uint8_t *buf = nullptr;
+};
+
 class WebServer
 {
 public:
@@ -21,6 +40,10 @@ public:
     void on(
         const char *uri, HTTPMethod method,
         std::function<void()> handler);
+    void on(
+        const char *uri, HTTPMethod method,
+        std::function<void()> handler,
+        std::function<void()> upload_handler);
     void onNotFound(std::function<void()> handler);
     void begin();
     void stop();
@@ -28,6 +51,7 @@ public:
 
     bool hasArg(const char *name) const;
     String arg(const char *name) const;
+    HTTPUpload &upload();
     void sendHeader(
         const String &name, const String &value,
         bool first = false);

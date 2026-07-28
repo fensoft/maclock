@@ -1,0 +1,686 @@
+#include "control_panel_sound_library.h"
+
+#include <HTTPClient.h>
+#include <LittleFS.h>
+#include <NetworkClient.h>
+
+#ifndef MACLOCK_LOCAL
+#include <NetworkClientSecure.h>
+#endif
+
+#include "sound_selector.h"
+
+namespace
+{
+static constexpr size_t kMaxSoundFileBytes =
+    6U * 1024U * 1024U;
+static constexpr const char *kSoundUploadTemporaryPath =
+    "/.maclock-sound-upload.tmp";
+
+void send_json(
+    WebServer &server, JsonDocument &document,
+    int status = 200)
+{
+    String response;
+    serializeJson(document, response);
+    server.sendHeader("Cache-Control", "no-store");
+    server.send(status, "application/json", response);
+}
+
+void send_result(
+    WebServer &server, bool ok, const char *message,
+    int status = 200)
+{
+    JsonDocument document;
+    document["ok"] = ok;
+    document["message"] = message;
+    send_json(server, document, status);
+}
+
+bool equals_ignore_case(
+    const char *left, const char *right)
+{
+    if (!left || !right)
+        return left == right;
+    while (*left && *right)
+    {
+        if (tolower(
+                static_cast<unsigned char>(*left)) !=
+            tolower(static_cast<unsigned char>(*right)))
+        {
+            return false;
+        }
+        ++left;
+        ++right;
+    }
+    return *left == *right;
+}
+
+bool ends_with_ignore_case(
+    const char *text, const char *suffix)
+{
+    if (!text || !suffix)
+        return false;
+    const size_t text_length = strlen(text);
+    const size_t suffix_length = strlen(suffix);
+    return text_length >= suffix_length &&
+           equals_ignore_case(
+               text + text_length - suffix_length, suffix);
+}
+
+bool is_builtin_sound(const char *path)
+{
+    return equals_ignore_case(path, "/startup.mp3") ||
+           equals_ignore_case(path, "/floppy.mp3") ||
+           equals_ignore_case(path, "/quack.mp3");
+}
+
+bool sound_is_in_use(
+    const char *path, const ControlPanelSnapshot &snapshot)
+{
+    if (!path)
+        return false;
+    if (equals_ignore_case(path, snapshot.startup_sound) ||
+        equals_ignore_case(path, snapshot.floppy_sound) ||
+        equals_ignore_case(path, snapshot.chime_sound) ||
+        equals_ignore_case(path, snapshot.timer.sound))
+    {
+        return true;
+    }
+    for (const ControlPanelAlarm &alarm : snapshot.alarms)
+    {
+        if (equals_ignore_case(path, alarm.sound))
+            return true;
+    }
+    return false;
+}
+
+bool read_sound(WebServer &server, String &sound)
+{
+    if (!server.hasArg("sound"))
+        return false;
+    sound = server.arg("sound");
+    for (size_t i = 0; i < SoundSelector::count(); ++i)
+    {
+        const char *path = SoundSelector::pathAt(i);
+        if (path && sound.equalsIgnoreCase(path))
+        {
+            sound = path;
+            return true;
+        }
+    }
+    return false;
+}
+
+String sanitize_sound_filename(const char *source)
+{
+    if (!source)
+        return {};
+    const char *filename = source;
+    for (const char *cursor = source; *cursor; ++cursor)
+    {
+        if (*cursor == '/' || *cursor == '\\')
+            filename = cursor + 1;
+    }
+
+    const char *end = filename + strlen(filename);
+    for (const char *cursor = filename; cursor < end; ++cursor)
+    {
+        if (*cursor == '?' || *cursor == '#')
+        {
+            end = cursor;
+            break;
+        }
+    }
+    if (end - filename >= 4 &&
+        equals_ignore_case(end - 4, ".mp3"))
+    {
+        end -= 4;
+    }
+
+    char result[72] = {};
+    size_t length = 0;
+    for (const char *cursor = filename;
+         cursor < end && length < sizeof(result) - 5;
+         ++cursor)
+    {
+        const unsigned char value =
+            static_cast<unsigned char>(*cursor);
+        if (isalnum(value) || value == '-' || value == '_' ||
+            value == ' ')
+        {
+            result[length++] = static_cast<char>(value);
+        }
+        else if (value == '.')
+        {
+            result[length++] = '_';
+        }
+    }
+    while (length &&
+           (result[length - 1] == ' ' ||
+            result[length - 1] == '.'))
+    {
+        --length;
+    }
+    if (!length)
+        memcpy(result, "sound", 5), length = 5;
+    memcpy(result + length, ".mp3", 5);
+    return String(result);
+}
+
+String unique_sound_path(const String &filename)
+{
+    char stem[72] = {};
+    const size_t length = filename.length();
+    const size_t stem_length =
+        length > 4 ? min(length - 4, sizeof(stem) - 1) : 0;
+    memcpy(stem, filename.c_str(), stem_length);
+    stem[stem_length] = '\0';
+
+    String path = String("/") + filename;
+    for (uint8_t suffix = 2;
+         LittleFS.exists(path.c_str()) && suffix < 100;
+         ++suffix)
+    {
+        path = String("/") + stem + "-" + String(suffix) + ".mp3";
+    }
+    return LittleFS.exists(path.c_str()) ? String() : path;
+}
+
+bool has_mp3_signature(const char *path)
+{
+    fs::File file = LittleFS.open(path, "r");
+    if (!file)
+        return false;
+    uint8_t signature[3] = {};
+    const size_t read = file.read(signature, sizeof(signature));
+    file.close();
+    return read == sizeof(signature) &&
+           ((signature[0] == 'I' && signature[1] == 'D' &&
+             signature[2] == '3') ||
+            (signature[0] == 0xFF &&
+             (signature[1] & 0xE0) == 0xE0));
+}
+
+bool url_has_prefix(
+    const String &url, const char *prefix)
+{
+    const size_t length = strlen(prefix);
+    return url.length() >= length &&
+           strncmp(url.c_str(), prefix, length) == 0;
+}
+
+bool extract_url_host(
+    const String &url, char *host, size_t host_size)
+{
+    const char *start = nullptr;
+    if (url_has_prefix(url, "https://"))
+        start = url.c_str() + 8;
+    else if (url_has_prefix(url, "http://"))
+        start = url.c_str() + 7;
+    else
+        return false;
+
+    const char *end = start;
+    while (*end && *end != '/' && *end != ':' &&
+           *end != '?' && *end != '#')
+    {
+        ++end;
+    }
+    const size_t length = static_cast<size_t>(end - start);
+    if (!length || length >= host_size)
+        return false;
+    memcpy(host, start, length);
+    host[length] = '\0';
+    for (size_t i = 0; i < length; ++i)
+    {
+        host[i] = static_cast<char>(
+            tolower(static_cast<unsigned char>(host[i])));
+    }
+    return true;
+}
+
+bool public_import_url(const String &url)
+{
+    char host[96] = {};
+    if (!extract_url_host(url, host, sizeof(host)))
+        return false;
+    const size_t length = strlen(host);
+    if (equals_ignore_case(host, "localhost") ||
+        (length >= 6 &&
+         equals_ignore_case(host + length - 6, ".local")))
+    {
+        return false;
+    }
+    bool numeric = true;
+    for (const char *cursor = host; *cursor; ++cursor)
+    {
+        if (!isdigit(static_cast<unsigned char>(*cursor)) &&
+            *cursor != '.')
+        {
+            numeric = false;
+            break;
+        }
+    }
+    return !numeric;
+}
+
+bool begin_import_http(
+    HTTPClient &http, NetworkClient &plain_client,
+#ifndef MACLOCK_LOCAL
+    NetworkClientSecure &secure_client,
+#endif
+    const String &url)
+{
+    NetworkClient *client = &plain_client;
+#ifndef MACLOCK_LOCAL
+    if (url_has_prefix(url, "https://"))
+    {
+        secure_client.setInsecure();
+        client = &secure_client;
+    }
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+#endif
+    http.useHTTP10(true);
+    http.setConnectTimeout(10000);
+    http.setTimeout(20000);
+    return http.begin(*client, url);
+}
+
+bool fetch_import_page(
+    const String &url, String &payload, String &error)
+{
+    NetworkClient client;
+#ifndef MACLOCK_LOCAL
+    NetworkClientSecure secure_client;
+#endif
+    HTTPClient http;
+    if (!begin_import_http(
+            http, client,
+#ifndef MACLOCK_LOCAL
+            secure_client,
+#endif
+            url))
+    {
+        error = "Could not open the sound page";
+        return false;
+    }
+    const int response = http.GET();
+    if (response != HTTP_CODE_OK)
+    {
+        error = "The sound page could not be downloaded";
+        http.end();
+        return false;
+    }
+    payload = http.getString();
+    http.end();
+    if (!payload.length() || payload.length() > 512U * 1024U)
+    {
+        error = "The sound page is empty or too large";
+        return false;
+    }
+    return true;
+}
+
+bool resolve_import_url(
+    const String &requested_url, String &mp3_url,
+    String &error)
+{
+    if (!public_import_url(requested_url))
+    {
+        error = "Enter a public HTTP or HTTPS URL";
+        return false;
+    }
+    const char *query = strchr(requested_url.c_str(), '?');
+    const size_t path_length = query
+                                   ? static_cast<size_t>(
+                                         query -
+                                         requested_url.c_str())
+                                   : requested_url.length();
+    if (path_length >= 4 &&
+        equals_ignore_case(
+            requested_url.c_str() + path_length - 4, ".mp3"))
+    {
+        mp3_url = requested_url;
+        return true;
+    }
+
+    char host[96] = {};
+    extract_url_host(requested_url, host, sizeof(host));
+    if (!equals_ignore_case(host, "myinstants.com") &&
+        !equals_ignore_case(host, "www.myinstants.com"))
+    {
+        error =
+            "Use a direct MP3 URL or a MyInstants sound page";
+        return false;
+    }
+
+    String page;
+    if (!fetch_import_page(requested_url, page, error))
+        return false;
+    const char *start =
+        strstr(page.c_str(), "/media/sounds/");
+    if (!start)
+    {
+        error = "No downloadable MP3 was found on that page";
+        return false;
+    }
+    const char *end = strstr(start, ".mp3");
+    if (!end)
+    {
+        error = "No downloadable MP3 was found on that page";
+        return false;
+    }
+    end += 4;
+    if (static_cast<size_t>(end - start) > 240)
+    {
+        error = "The MP3 link on that page is invalid";
+        return false;
+    }
+    mp3_url = "https://www.myinstants.com";
+    for (const char *cursor = start; cursor < end; ++cursor)
+        mp3_url += *cursor;
+    return true;
+}
+
+String filename_from_url(const String &url)
+{
+    const char *start = strrchr(url.c_str(), '/');
+    start = start ? start + 1 : url.c_str();
+    return sanitize_sound_filename(start);
+}
+
+bool download_import(
+    const String &url, String &saved_path, String &error)
+{
+    NetworkClient client;
+#ifndef MACLOCK_LOCAL
+    NetworkClientSecure secure_client;
+#endif
+    HTTPClient http;
+    if (!begin_import_http(
+            http, client,
+#ifndef MACLOCK_LOCAL
+            secure_client,
+#endif
+            url))
+    {
+        error = "Could not connect to the MP3 server";
+        return false;
+    }
+    const int response = http.GET();
+    if (response != HTTP_CODE_OK)
+    {
+        error = "The MP3 could not be downloaded";
+        http.end();
+        return false;
+    }
+
+    LittleFS.remove(kSoundUploadTemporaryPath);
+    fs::File file =
+        LittleFS.open(kSoundUploadTemporaryPath, "w");
+    if (!file)
+    {
+        error = "Could not create the sound file";
+        http.end();
+        return false;
+    }
+
+    size_t written = 0;
+#ifdef MACLOCK_LOCAL
+    const String content = http.getString();
+    if (content.length() <= kMaxSoundFileBytes)
+    {
+        written = file.write(
+            reinterpret_cast<const uint8_t *>(content.c_str()),
+            content.length());
+    }
+#else
+    const int content_length = http.getSize();
+    if (content_length > 0 &&
+        static_cast<size_t>(content_length) <=
+            kMaxSoundFileBytes)
+    {
+        const int result = http.writeToStream(&file);
+        if (result > 0)
+            written = static_cast<size_t>(result);
+    }
+#endif
+    file.close();
+    http.end();
+    if (!written || written > kMaxSoundFileBytes)
+    {
+        LittleFS.remove(kSoundUploadTemporaryPath);
+        error =
+            "The MP3 is empty, too large, or has no file size";
+        return false;
+    }
+    if (!has_mp3_signature(kSoundUploadTemporaryPath))
+    {
+        LittleFS.remove(kSoundUploadTemporaryPath);
+        error = "The URL did not return a valid MP3 file";
+        return false;
+    }
+
+    saved_path = unique_sound_path(filename_from_url(url));
+    if (!saved_path.length() ||
+        !LittleFS.rename(
+            kSoundUploadTemporaryPath, saved_path.c_str()))
+    {
+        LittleFS.remove(kSoundUploadTemporaryPath);
+        error = "Could not save the downloaded MP3";
+        return false;
+    }
+    SoundSelector::scan();
+    return true;
+}
+} // namespace
+
+void ControlPanelSoundLibrary::appendSnapshot(
+    JsonArray sounds,
+    const ControlPanelSnapshot &snapshot) const
+{
+    for (size_t i = 0; i < SoundSelector::count(); ++i)
+    {
+        const char *path = SoundSelector::pathAt(i);
+        if (!path)
+            continue;
+        JsonObject sound = sounds.add<JsonObject>();
+        sound["path"] = path;
+        sound["name"] =
+            String(SoundSelector::displayName(path));
+        fs::File file = LittleFS.open(path, "r");
+        sound["size"] = file ? file.size() : 0;
+        if (file)
+            file.close();
+        sound["builtIn"] = is_builtin_sound(path);
+        sound["inUse"] = sound_is_in_use(path, snapshot);
+    }
+}
+
+void ControlPanelSoundLibrary::resetUpload()
+{
+    if (upload_file_)
+        upload_file_.close();
+    LittleFS.remove(kSoundUploadTemporaryPath);
+    upload_path_.clear();
+    upload_error_.clear();
+    upload_size_ = 0;
+    upload_finished_ = false;
+}
+
+void ControlPanelSoundLibrary::receiveUpload(
+    WebServer &server)
+{
+    HTTPUpload &upload = server.upload();
+    if (upload.status == UPLOAD_FILE_START)
+    {
+        resetUpload();
+        const String filename =
+            sanitize_sound_filename(upload.filename.c_str());
+        if (!ends_with_ignore_case(
+                upload.filename.c_str(), ".mp3"))
+        {
+            upload_error_ = "Only MP3 files are accepted";
+            return;
+        }
+        upload_path_ = unique_sound_path(filename);
+        if (!upload_path_.length())
+        {
+            upload_error_ =
+                "Could not choose a unique sound filename";
+            return;
+        }
+        upload_file_ =
+            LittleFS.open(kSoundUploadTemporaryPath, "w");
+        if (!upload_file_)
+            upload_error_ = "Could not create the sound file";
+        return;
+    }
+
+    if (upload.status == UPLOAD_FILE_WRITE)
+    {
+        if (upload_error_.length() || !upload_file_)
+            return;
+        if (upload_size_ + upload.currentSize >
+            kMaxSoundFileBytes)
+        {
+            upload_error_ = "MP3 files are limited to 6 MB";
+            upload_file_.close();
+            LittleFS.remove(kSoundUploadTemporaryPath);
+            return;
+        }
+        const size_t written = upload_file_.write(
+            upload.buf, upload.currentSize);
+        upload_size_ += written;
+        if (written != upload.currentSize)
+        {
+            upload_error_ =
+                "LittleFS does not have enough free space";
+            upload_file_.close();
+            LittleFS.remove(kSoundUploadTemporaryPath);
+        }
+        return;
+    }
+
+    if (upload.status == UPLOAD_FILE_ABORTED)
+    {
+        upload_error_ = "Sound upload was cancelled";
+        if (upload_file_)
+            upload_file_.close();
+        LittleFS.remove(kSoundUploadTemporaryPath);
+        upload_finished_ = true;
+        return;
+    }
+
+    if (upload.status != UPLOAD_FILE_END)
+        return;
+    if (upload_file_)
+        upload_file_.close();
+    if (!upload_error_.length() &&
+        (!upload_size_ ||
+         !has_mp3_signature(kSoundUploadTemporaryPath)))
+    {
+        upload_error_ = "The uploaded file is not a valid MP3";
+    }
+    if (!upload_error_.length() &&
+        !LittleFS.rename(
+            kSoundUploadTemporaryPath, upload_path_.c_str()))
+    {
+        upload_error_ = "Could not finish the sound upload";
+    }
+    if (upload_error_.length())
+        LittleFS.remove(kSoundUploadTemporaryPath);
+    else
+        SoundSelector::scan();
+    upload_finished_ = true;
+}
+
+void ControlPanelSoundLibrary::finishUpload(
+    WebServer &server)
+{
+    if (!upload_finished_)
+    {
+        resetUpload();
+        send_result(
+            server, false, "No MP3 file was uploaded", 400);
+        return;
+    }
+    if (upload_error_.length())
+    {
+        send_result(
+            server, false, upload_error_.c_str(), 400);
+        return;
+    }
+    JsonDocument document;
+    document["ok"] = true;
+    document["message"] = "Sound uploaded";
+    document["path"] = upload_path_;
+    send_json(server, document, 201);
+}
+
+void ControlPanelSoundLibrary::importFromUrl(
+    WebServer &server)
+{
+    String requested_url = server.arg("url");
+    requested_url.trim();
+    String mp3_url;
+    String saved_path;
+    String error;
+    if (!requested_url.length() ||
+        requested_url.length() > 512 ||
+        !resolve_import_url(
+            requested_url, mp3_url, error) ||
+        !download_import(mp3_url, saved_path, error))
+    {
+        send_result(
+            server, false,
+            error.length() ? error.c_str()
+                           : "Invalid sound URL",
+            400);
+        return;
+    }
+    JsonDocument document;
+    document["ok"] = true;
+    document["message"] = "Sound imported";
+    document["path"] = saved_path;
+    send_json(server, document, 201);
+}
+
+void ControlPanelSoundLibrary::remove(
+    WebServer &server, ControlPanelEventSink &events)
+{
+    String path;
+    if (!read_sound(server, path))
+    {
+        send_result(
+            server, false, "Sound file was not found", 404);
+        return;
+    }
+    const ControlPanelSnapshot snapshot =
+        events.controlPanelSnapshot();
+    if (is_builtin_sound(path.c_str()))
+    {
+        send_result(
+            server, false,
+            "Built-in sounds cannot be removed", 409);
+        return;
+    }
+    if (sound_is_in_use(path.c_str(), snapshot))
+    {
+        send_result(
+            server, false,
+            "Choose another sound everywhere before removing this one",
+            409);
+        return;
+    }
+    if (!LittleFS.remove(path.c_str()))
+    {
+        send_result(
+            server, false,
+            "Sound file could not be removed", 500);
+        return;
+    }
+    SoundSelector::scan();
+    send_result(server, true, "Sound removed");
+}

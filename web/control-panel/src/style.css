@@ -59,6 +59,17 @@ a:focus-visible {
   outline-offset: 2px;
 }
 
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .desktop {
   min-height: 100vh;
   padding-bottom: 64px;
@@ -854,6 +865,215 @@ input[type="radio"]:checked::after {
   grid-column: 1 / -1;
 }
 
+.sound-library {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-top: 4px;
+  padding-top: 20px;
+  border-top: 2px solid #000;
+}
+
+.sound-library > h2 {
+  margin: -34px auto 0;
+  padding: 0 10px;
+  background: #fff;
+  font-size: 18px;
+}
+
+.sound-drop-zone {
+  display: grid;
+  min-height: 118px;
+  padding: 16px;
+  border: 2px dashed #000;
+  background:
+    linear-gradient(#fff, #fff) padding-box,
+    repeating-linear-gradient(
+        135deg,
+        #ddd 0 4px,
+        #fff 4px 8px
+      )
+      border-box;
+  place-items: center;
+  align-content: center;
+  gap: 2px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.sound-drop-zone:hover,
+.sound-drop-zone:focus,
+.sound-drop-zone.dragging {
+  color: #fff;
+  background: #000;
+  outline: 3px double #000;
+  outline-offset: 2px;
+}
+
+.sound-drop-zone small {
+  margin-top: 4px;
+  font-family: Geneva, "Helvetica Neue", Arial, sans-serif;
+  font-size: 11px;
+}
+
+.sound-drop-icon {
+  font-family: Georgia, serif;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.sound-source-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.sound-source-box {
+  display: grid;
+  min-width: 0;
+  padding: 13px;
+  border: 2px solid #000;
+  gap: 10px;
+}
+
+.sound-source-box h3,
+.sound-source-box p {
+  margin: 0;
+}
+
+.sound-source-box h3,
+.sound-browser h3 {
+  font-size: 15px;
+}
+
+.sound-source-box p {
+  min-height: 32px;
+  font-family: Geneva, "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+}
+
+.sound-import-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.sound-import-line input {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  border: 2px inset #aaa;
+  border-radius: 0;
+  background: #fff;
+}
+
+.sound-browser {
+  overflow: hidden;
+  border: 2px solid #000;
+}
+
+.sound-browser-heading {
+  display: flex;
+  min-height: 32px;
+  padding: 5px 9px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 2px solid #000;
+  background:
+    repeating-linear-gradient(
+      #fff 0 2px,
+      #000 2px 3px
+    );
+}
+
+.sound-browser-heading h3,
+.sound-browser-heading span {
+  margin: 0;
+  padding: 1px 6px;
+  background: #fff;
+}
+
+.sound-browser-heading span {
+  font-family: Geneva, "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+}
+
+.sound-file-list {
+  max-height: 286px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  background: #fff;
+}
+
+.sound-file-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  min-height: 58px;
+  padding: 7px 9px;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid #777;
+}
+
+.sound-file-row:last-child {
+  border-bottom: 0;
+}
+
+.sound-file-row:nth-child(even) {
+  background: #eee;
+}
+
+.sound-file-icon {
+  display: grid;
+  width: 30px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid #000;
+  background: #fff;
+  font-family: Georgia, serif;
+  font-size: 19px;
+  box-shadow: 2px 2px 0 #777;
+}
+
+.sound-file-details {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.sound-file-details strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sound-file-details span {
+  color: #333;
+  font-family: Geneva, "Helvetica Neue", Arial, sans-serif;
+  font-size: 11px;
+}
+
+.sound-file-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.sound-file-actions .mac-button {
+  min-height: 32px;
+}
+
+.empty-sound-list {
+  margin: 0;
+  padding: 22px;
+  text-align: center;
+}
+
 .speaker-icon {
   position: relative;
   width: 74px;
@@ -1193,6 +1413,10 @@ hr {
     grid-template-columns: 1fr 1fr;
   }
 
+  .sound-source-grid {
+    grid-template-columns: 1fr;
+  }
+
   .sound-manager > .button-row {
     grid-column: auto;
   }
@@ -1277,8 +1501,27 @@ hr {
   .two-column,
   .timer-fields,
   .sound-settings,
+  .sound-source-grid,
   .alarm-card {
     grid-template-columns: 1fr;
+  }
+
+  .sound-file-row {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .sound-file-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+
+  .sound-import-line {
+    grid-template-columns: 1fr;
+  }
+
+  .sound-import-line .mac-button,
+  .sound-import-line .mac-button-default {
+    width: 100%;
   }
 
   .screensaver-modes {

@@ -130,9 +130,18 @@ bool writePersistence()
         std::filesystem::path(
             maclock_hal().storage().dataDirectory()) /
         "__local_hal_smoke.bin";
+    const auto startup_source =
+        std::filesystem::path(
+            maclock_hal().storage().dataDirectory()) /
+        "startup.mp3";
     return require(
-        !std::filesystem::exists(source_path),
-        "LittleFS write modified the repository base");
+               !std::filesystem::exists(source_path),
+               "LittleFS write modified the repository base") &&
+           require(
+               LittleFS.remove("/startup.mp3") &&
+                   !LittleFS.exists("/startup.mp3") &&
+                   std::filesystem::exists(startup_source),
+               "LittleFS overlay deletion failed");
 }
 
 bool verifyPersistence()
@@ -171,6 +180,12 @@ bool verifyPersistence()
     }
     if (!require(LittleFS.begin(), "LittleFS remount failed"))
         return false;
+    if (!require(
+            !LittleFS.exists("/startup.mp3"),
+            "LittleFS overlay deletion did not persist"))
+    {
+        return false;
+    }
     fs::File file =
         LittleFS.open("/__local_hal_smoke.bin", "r");
     uint8_t overlay_bytes[sizeof(kBytes)]{};
@@ -248,6 +263,12 @@ bool testNetworkServer()
         {
             server.send(200, "text/plain", "Maclock");
         });
+    server.on(
+        "/hal-client-error", HTTP_GET,
+        [&server]()
+        {
+            server.send(409, "text/plain", "Protected");
+        });
     server.begin();
 
     std::atomic<bool> finished{false};
@@ -260,9 +281,13 @@ bool testNetworkServer()
             httplib::Client http("127.0.0.1", port);
             http.set_connection_timeout(2);
             const auto response = http.Get("/hal-self-test");
+            const auto client_error =
+                http.Get("/hal-client-error");
             response_ok =
                 response && response->status == 200 &&
-                response->body == "Maclock";
+                response->body == "Maclock" &&
+                client_error && client_error->status == 409 &&
+                client_error->body == "Protected";
             finished = true;
         });
     const uint32_t started = millis();

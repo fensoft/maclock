@@ -230,9 +230,23 @@ std::filesystem::path overlay_root()
     return state_path("littlefs");
 }
 
+std::filesystem::path deletion_marker(
+    const std::filesystem::path &relative)
+{
+    return overlay_root() / ".deleted" / relative;
+}
+
+bool is_deleted(const std::filesystem::path &relative)
+{
+    return std::filesystem::exists(
+        deletion_marker(relative));
+}
+
 std::filesystem::path resolve_read(
     const std::filesystem::path &relative)
 {
+    if (is_deleted(relative))
+        return {};
     const auto overlay = overlay_root() / relative;
     if (std::filesystem::exists(overlay))
         return overlay;
@@ -642,7 +656,7 @@ bool LittleFSFS::begin(bool)
 bool LittleFSFS::exists(const char *path) const
 {
     const auto relative = normalize_relative(path);
-    return !relative.empty() &&
+    return !relative.empty() && !is_deleted(relative) &&
            std::filesystem::exists(resolve_read(relative));
 }
 
@@ -657,6 +671,12 @@ fs::File LittleFSFS::open(
         mode_text.find('w') != std::string::npos ||
         mode_text.find('a') != std::string::npos ||
         mode_text.find('+') != std::string::npos;
+    if (writing)
+    {
+        std::error_code marker_error;
+        std::filesystem::remove(
+            deletion_marker(relative), marker_error);
+    }
 
     auto state = std::make_shared<fs::File::State>();
     state->virtual_name = virtual_path(relative);
@@ -680,7 +700,14 @@ fs::File LittleFSFS::open(
                  std::filesystem::directory_iterator(
                      directory, error))
             {
-                entries.insert(relative / entry.path().filename());
+                const auto child =
+                    relative / entry.path().filename();
+                if (child == ".deleted" ||
+                    is_deleted(child))
+                {
+                    continue;
+                }
+                entries.insert(child);
             }
         }
         state->entries.assign(entries.begin(), entries.end());
@@ -706,4 +733,49 @@ fs::File LittleFSFS::open(
     return state->stream.is_open()
                ? fs::File(state)
                : fs::File();
+}
+
+bool LittleFSFS::remove(const char *path)
+{
+    const auto relative = normalize_relative(path);
+    if (relative.empty())
+        return false;
+
+    std::error_code error;
+    const bool overlay_removed = std::filesystem::remove(
+        overlay_root() / relative, error);
+    const bool source_exists =
+        std::filesystem::exists(source_root() / relative);
+    if (!source_exists)
+        return overlay_removed;
+
+    const auto marker = deletion_marker(relative);
+    std::filesystem::create_directories(
+        marker.parent_path(), error);
+    error.clear();
+    std::ofstream output(
+        marker, std::ios::binary | std::ios::trunc);
+    output.close();
+    return static_cast<bool>(output);
+}
+
+bool LittleFSFS::rename(const char *from, const char *to)
+{
+    const auto source = normalize_relative(from);
+    const auto destination = normalize_relative(to);
+    if (source.empty() || destination.empty())
+        return false;
+
+    const auto source_path = overlay_root() / source;
+    const auto destination_path = overlay_root() / destination;
+    std::error_code error;
+    std::filesystem::remove(
+        deletion_marker(destination), error);
+    error.clear();
+    std::filesystem::create_directories(
+        destination_path.parent_path(), error);
+    error.clear();
+    std::filesystem::rename(
+        source_path, destination_path, error);
+    return !error;
 }

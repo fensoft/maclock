@@ -8,7 +8,14 @@ import {
   watch,
 } from "vue";
 
-import { fetchState, fetchStatus, postForm } from "./api";
+import {
+  deleteSound,
+  fetchState,
+  fetchStatus,
+  importSoundUrl,
+  postForm,
+  uploadSound,
+} from "./api";
 import MacAppIcon from "./components/MacAppIcon.vue";
 import MacButton from "./components/MacButton.vue";
 import MacWindow from "./components/MacWindow.vue";
@@ -44,6 +51,11 @@ const pendingTransition = ref(null);
 const launcherRef = ref(null);
 const activeWindowRef = ref(null);
 const keepEditingRef = ref(null);
+const soundFileInput = ref(null);
+const soundDragActive = ref(false);
+const soundImportUrl = ref("");
+const myInstantsQuery = ref("");
+const deleteSoundTarget = ref(null);
 let statusPoll = 0;
 let noticeTimeout = 0;
 
@@ -304,7 +316,9 @@ function discardChanges() {
 function handleGlobalKeydown(event) {
   if (event.key !== "Escape") return;
   event.preventDefault();
-  if (closeConfirmation.value) {
+  if (deleteSoundTarget.value) {
+    deleteSoundTarget.value = null;
+  } else if (closeConfirmation.value) {
     keepEditing();
   } else if (activeApp.value) {
     closeActiveApp();
@@ -312,7 +326,13 @@ function handleGlobalKeydown(event) {
 }
 
 function handleGlobalPointerDown(event) {
-  if (!activeApp.value || closeConfirmation.value) return;
+  if (
+    !activeApp.value ||
+    closeConfirmation.value ||
+    deleteSoundTarget.value
+  ) {
+    return;
+  }
   if (!(event.target instanceof Element)) return;
   if (event.target.closest(".active-window-slot > .mac-window")) return;
   if (event.target.closest(".menu-bar")) return;
@@ -502,6 +522,98 @@ function previewSound(sound, volume, levelScale = false) {
     t("playing"),
     { refresh: false },
   );
+}
+
+function formatSoundSize(bytes) {
+  const size = Number(bytes) || 0;
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function refreshSoundLibrary(successMessage, draft) {
+  await loadState({ quiet: true });
+  if (draft && panelState.value?.systemSounds) {
+    Object.assign(panelState.value.systemSounds, draft);
+  }
+  showNotice(successMessage);
+}
+
+async function addSoundFile(file) {
+  if (!file || busy.value) return;
+  if (!/\.mp3$/i.test(file.name || "")) {
+    showNotice(t("mp3Only"), "error");
+    return;
+  }
+  if (file.size > 6 * 1024 * 1024) {
+    showNotice(t("mp3TooLarge"), "error");
+    return;
+  }
+  const draft = cloneValue(panelState.value.systemSounds);
+  busy.value = "sound-upload";
+  try {
+    await uploadSound(file);
+    await refreshSoundLibrary(t("soundUploaded"), draft);
+  } catch {
+    showNotice(t("soundOperationError"), "error");
+  } finally {
+    busy.value = "";
+    soundDragActive.value = false;
+    if (soundFileInput.value) soundFileInput.value.value = "";
+  }
+}
+
+function chooseSoundFile(event) {
+  addSoundFile(event.target.files?.[0]);
+}
+
+function dropSoundFile(event) {
+  soundDragActive.value = false;
+  addSoundFile(event.dataTransfer?.files?.[0]);
+}
+
+async function importSound() {
+  const url = soundImportUrl.value.trim();
+  if (!url || busy.value) return;
+  const draft = cloneValue(panelState.value.systemSounds);
+  busy.value = "sound-import";
+  try {
+    await importSoundUrl(url);
+    soundImportUrl.value = "";
+    await refreshSoundLibrary(t("soundImported"), draft);
+  } catch {
+    showNotice(t("soundOperationError"), "error");
+  } finally {
+    busy.value = "";
+  }
+}
+
+function searchMyInstants() {
+  const query = myInstantsQuery.value.trim();
+  const url = new URL("https://www.myinstants.com/en/search/");
+  if (query) url.searchParams.set("name", query);
+  window.open(url.toString(), "_blank", "noopener,noreferrer");
+}
+
+function requestSoundDeletion(sound) {
+  if (sound.builtIn || sound.inUse || busy.value) return;
+  deleteSoundTarget.value = sound;
+}
+
+async function confirmSoundDeletion() {
+  const target = deleteSoundTarget.value;
+  if (!target || busy.value) return;
+  busy.value = "sound-delete";
+  try {
+    await deleteSound(target.path);
+    deleteSoundTarget.value = null;
+    await loadState({ quiet: true });
+    showNotice(t("soundDeleted"));
+  } catch {
+    showNotice(t("soundOperationError"), "error");
+  } finally {
+    busy.value = "";
+  }
 }
 
 async function pollStatus() {
@@ -1407,6 +1519,142 @@ onBeforeUnmount(() => {
                   {{ t("saveSounds") }}
                 </MacButton>
               </div>
+
+              <section class="sound-library" :aria-label="t('soundLibrary')">
+                <h2>{{ t("soundLibrary") }}</h2>
+
+                <section class="sound-browser">
+                  <div class="sound-browser-heading">
+                    <h3>{{ t("installedSounds") }}</h3>
+                    <span>{{ t("soundCount", { count: sounds.length }) }}</span>
+                  </div>
+                  <ul v-if="sounds.length" class="sound-file-list">
+                    <li
+                      v-for="sound in sounds"
+                      :key="sound.path"
+                      class="sound-file-row"
+                    >
+                      <div class="sound-file-icon" aria-hidden="true">♫</div>
+                      <div class="sound-file-details">
+                        <strong>{{ sound.name }}</strong>
+                        <span>
+                          {{ formatSoundSize(sound.size) }}
+                          <template v-if="sound.builtIn">
+                            · {{ t("builtIn") }}
+                          </template>
+                          <template v-else-if="sound.inUse">
+                            · {{ t("inUse") }}
+                          </template>
+                        </span>
+                      </div>
+                      <div class="sound-file-actions">
+                        <MacButton
+                          secondary
+                          :aria-label="
+                            t('previewNamedSound', { name: sound.name })
+                          "
+                          :disabled="!!busy"
+                          @click="previewSound(sound.path, 60)"
+                        >
+                          ▶
+                        </MacButton>
+                        <MacButton
+                          danger
+                          :aria-label="
+                            t('removeNamedSound', { name: sound.name })
+                          "
+                          :title="
+                            sound.builtIn
+                              ? t('builtInCannotRemove')
+                              : sound.inUse
+                                ? t('inUseCannotRemove')
+                                : t('removeSound')
+                          "
+                          :disabled="!!busy || sound.builtIn || sound.inUse"
+                          @click="requestSoundDeletion(sound)"
+                        >
+                          {{ t("remove") }}
+                        </MacButton>
+                      </div>
+                    </li>
+                  </ul>
+                  <p v-else class="empty-sound-list">
+                    {{ t("noSoundsInstalled") }}
+                  </p>
+                </section>
+
+                <div
+                  class="sound-drop-zone"
+                  :class="{ dragging: soundDragActive }"
+                  role="button"
+                  tabindex="0"
+                  @click="soundFileInput?.click()"
+                  @keydown.enter.prevent="soundFileInput?.click()"
+                  @keydown.space.prevent="soundFileInput?.click()"
+                  @dragenter.prevent="soundDragActive = true"
+                  @dragover.prevent="soundDragActive = true"
+                  @dragleave.prevent="soundDragActive = false"
+                  @drop.prevent="dropSoundFile"
+                >
+                  <span class="sound-drop-icon" aria-hidden="true">♫</span>
+                  <strong>{{ t("dropMp3") }}</strong>
+                  <span>{{ t("orChooseFile") }}</span>
+                  <small>{{ t("mp3Limit") }}</small>
+                </div>
+                <input
+                  ref="soundFileInput"
+                  class="visually-hidden"
+                  type="file"
+                  accept=".mp3,audio/mpeg"
+                  @change="chooseSoundFile"
+                />
+
+                <div class="sound-source-grid">
+                  <section class="sound-source-box">
+                    <h3>{{ t("importFromUrl") }}</h3>
+                    <p>{{ t("importUrlHelp") }}</p>
+                    <div class="sound-import-line">
+                      <input
+                        v-model="soundImportUrl"
+                        type="url"
+                        inputmode="url"
+                        :placeholder="t('mp3UrlPlaceholder')"
+                        :aria-label="t('mp3UrlPlaceholder')"
+                        @keydown.enter.prevent="importSound"
+                      />
+                      <MacButton
+                        default-action
+                        :disabled="!!busy || !soundImportUrl.trim()"
+                        @click="importSound"
+                      >
+                        {{ t("importSound") }}
+                      </MacButton>
+                    </div>
+                  </section>
+
+                  <section class="sound-source-box">
+                    <h3>{{ t("browseMyInstants") }}</h3>
+                    <p>{{ t("myInstantsHelp") }}</p>
+                    <div class="sound-import-line">
+                      <input
+                        v-model="myInstantsQuery"
+                        type="search"
+                        :placeholder="t('searchSounds')"
+                        :aria-label="t('searchSounds')"
+                        @keydown.enter.prevent="searchMyInstants"
+                      />
+                      <MacButton
+                        secondary
+                        :disabled="!!busy"
+                        @click="searchMyInstants"
+                      >
+                        {{ t("search") }}
+                      </MacButton>
+                    </div>
+                  </section>
+                </div>
+
+              </section>
             </form>
           </MacWindow>
         </div>
@@ -1459,6 +1707,51 @@ onBeforeUnmount(() => {
               @click="keepEditing"
             >
               {{ t("keepEditing") }}
+            </MacButton>
+          </div>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="dialog">
+      <div
+        v-if="deleteSoundTarget"
+        class="dialog-shade"
+        @click.self="deleteSoundTarget = null"
+      >
+        <section
+          class="classic-confirm"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="delete-sound-title"
+          aria-describedby="delete-sound-message"
+        >
+          <div class="confirm-icon" aria-hidden="true">?</div>
+          <div>
+            <h2 id="delete-sound-title">{{ t("removeSoundTitle") }}</h2>
+            <p id="delete-sound-message">
+              {{
+                t("removeSoundMessage", {
+                  name: deleteSoundTarget.name,
+                })
+              }}
+            </p>
+          </div>
+          <div class="confirm-actions">
+            <MacButton
+              secondary
+              :disabled="!!busy"
+              @click="deleteSoundTarget = null"
+            >
+              {{ t("cancel") }}
+            </MacButton>
+            <MacButton
+              danger
+              default-action
+              :disabled="!!busy"
+              @click="confirmSoundDeletion"
+            >
+              {{ t("remove") }}
             </MacButton>
           </div>
         </section>

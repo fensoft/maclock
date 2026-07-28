@@ -107,6 +107,7 @@ set(MACLOCK_APPLICATION_SOURCES
     src/alarm_ui.cpp
     src/audio_service.cpp
     src/control_panel.cpp
+    src/control_panel_sound_library.cpp
     src/datetime_ui.cpp
     src/fensoft_logo.cpp
     src/FT6336.cpp

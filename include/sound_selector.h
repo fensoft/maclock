@@ -5,7 +5,7 @@
 
 #include <lvgl.h>
 
-static constexpr size_t SOUND_SELECTOR_MAX_FILES = 32;
+static constexpr size_t SOUND_SELECTOR_MAX_FILES = 64;
 static constexpr size_t SOUND_SELECTOR_PATH_MAX = 96;
 
 using SoundSelectorChangedCallback =

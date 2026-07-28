@@ -7,6 +7,7 @@
 #include "audio_volume.h"
 #include "brightness.h"
 #include "control_panel_page.h"
+#include "control_panel_sound_library.h"
 
 struct ControlPanelService::State
 {
@@ -15,6 +16,7 @@ struct ControlPanelService::State
     bool routes_ready = false;
     bool server_running = false;
     bool mdns_running = false;
+    ControlPanelSoundLibrary sound_library;
 };
 
 namespace
@@ -27,6 +29,8 @@ ControlPanelService *active_control_panel = nullptr;
 #define g_server_running \
     (active_control_panel->state().server_running)
 #define g_mdns_running (active_control_panel->state().mdns_running)
+#define g_sound_library \
+    (active_control_panel->state().sound_library)
 
 static void send_json(JsonDocument &document, int status = 200)
 {
@@ -198,16 +202,7 @@ static void send_state()
     location["timezone"] = snapshot.location.timezone;
 
     JsonArray sounds = document["sounds"].to<JsonArray>();
-    for (size_t i = 0; i < SoundSelector::count(); ++i)
-    {
-        const char *path = SoundSelector::pathAt(i);
-        if (!path)
-            continue;
-        JsonObject sound = sounds.add<JsonObject>();
-        sound["path"] = path;
-        sound["name"] =
-            String(SoundSelector::displayName(path));
-    }
+    g_sound_library.appendSnapshot(sounds, snapshot);
 
     send_json(document);
 }
@@ -561,6 +556,34 @@ static void configure_routes()
     g_server.on("/api/chime", HTTP_POST, apply_chime);
     g_server.on("/api/sounds", HTTP_POST, apply_system_sounds);
     g_server.on("/api/preview", HTTP_POST, preview_sound);
+    g_server.on(
+        "/api/sound/upload", HTTP_POST,
+        []()
+        {
+            g_sound_library.finishUpload(g_server);
+        },
+        []()
+        {
+            g_sound_library.receiveUpload(g_server);
+        });
+    g_server.on(
+        "/api/sound/import", HTTP_POST,
+        []()
+        {
+            g_sound_library.importFromUrl(g_server);
+        });
+    g_server.on(
+        "/api/sound/delete", HTTP_POST,
+        []()
+        {
+            if (!g_events)
+            {
+                send_result(
+                    false, "Control service is unavailable", 503);
+                return;
+            }
+            g_sound_library.remove(g_server, *g_events);
+        });
     g_server.onNotFound(
         []()
         {

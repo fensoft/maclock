@@ -226,10 +226,15 @@ struct WebServer::State
         std::string path;
         HTTPMethod method;
         std::function<void()> handler;
+        std::function<void()> upload_handler;
     };
     struct Request
     {
         std::map<std::string, std::string> arguments;
+        std::string upload_name;
+        std::string upload_filename;
+        std::string upload_type;
+        std::string upload_content;
         std::mutex mutex;
         std::condition_variable condition;
         bool completed = false;
@@ -255,6 +260,7 @@ struct WebServer::State
         std::shared_ptr<Request>, std::function<void()>>>
         queue;
     std::shared_ptr<Request> active;
+    HTTPUpload active_upload;
     std::atomic<bool> stopping{false};
 
     void enqueue(
@@ -265,6 +271,14 @@ struct WebServer::State
         auto pending = std::make_shared<Request>();
         for (const auto &parameter : request.params)
             pending->arguments[parameter.first] = parameter.second;
+        if (!request.files.empty())
+        {
+            const auto &entry = *request.files.begin();
+            pending->upload_name = entry.first;
+            pending->upload_filename = entry.second.filename;
+            pending->upload_type = entry.second.content_type;
+            pending->upload_content = entry.second.content;
+        }
         {
             std::lock_guard<std::mutex> lock(queue_mutex);
             if (stopping)
@@ -303,7 +317,17 @@ void WebServer::on(
     std::function<void()> handler)
 {
     state_->routes.push_back(
-        {uri ? uri : "/", method, std::move(handler)});
+        {uri ? uri : "/", method, std::move(handler), {}});
+}
+
+void WebServer::on(
+    const char *uri, HTTPMethod method,
+    std::function<void()> handler,
+    std::function<void()> upload_handler)
+{
+    state_->routes.push_back(
+        {uri ? uri : "/", method, std::move(handler),
+         std::move(upload_handler)});
 }
 
 void WebServer::onNotFound(std::function<void()> handler)
@@ -323,11 +347,52 @@ void WebServer::begin()
     for (const auto &route : state_->routes)
     {
         auto callback =
-            [this, handler = route.handler](
+            [this, handler = route.handler,
+             upload_handler = route.upload_handler](
                 const httplib::Request &request,
                 httplib::Response &response)
         {
-            state_->enqueue(request, response, handler);
+            state_->enqueue(
+                request, response,
+                [this, handler, upload_handler]()
+                {
+                    const auto request = state_->active;
+                    if (upload_handler && request &&
+                        !request->upload_filename.empty())
+                    {
+                        constexpr size_t chunk_size = 4096;
+                        HTTPUpload &upload = state_->active_upload;
+                        upload.name = request->upload_name;
+                        upload.filename = request->upload_filename;
+                        upload.type = request->upload_type;
+                        upload.totalSize = 0;
+                        upload.currentSize = 0;
+                        upload.buf = nullptr;
+                        upload.status = UPLOAD_FILE_START;
+                        upload_handler();
+
+                        const size_t total =
+                            request->upload_content.size();
+                        for (size_t offset = 0; offset < total;
+                             offset += chunk_size)
+                        {
+                            upload.status = UPLOAD_FILE_WRITE;
+                            upload.currentSize =
+                                std::min(chunk_size, total - offset);
+                            upload.buf =
+                                reinterpret_cast<uint8_t *>(
+                                    request->upload_content.data() +
+                                    offset);
+                            upload_handler();
+                            upload.totalSize += upload.currentSize;
+                        }
+                        upload.status = UPLOAD_FILE_END;
+                        upload.currentSize = 0;
+                        upload.buf = nullptr;
+                        upload_handler();
+                    }
+                    handler();
+                });
         };
         if (route.method == HTTP_GET)
             state_->server->Get(route.path, callback);
@@ -344,10 +409,10 @@ void WebServer::begin()
             const httplib::Request &request,
             httplib::Response &response)
         {
-            if (state_->not_found)
+            if (response.status == 404 && state_->not_found)
                 state_->enqueue(
                     request, response, state_->not_found);
-            else
+            else if (response.status == 404)
                 response.status = 404;
         });
     state_->thread = std::thread(
@@ -434,6 +499,11 @@ String WebServer::arg(const char *name) const
     return found == state_->active->arguments.end()
                ? String()
                : String(found->second);
+}
+
+HTTPUpload &WebServer::upload()
+{
+    return state_->active_upload;
 }
 
 void WebServer::sendHeader(

@@ -77,11 +77,11 @@ const demoState = {
     volume: 4,
   },
   sounds: [
-    { path: "/alarm.mp3", name: "Alarm" },
-    { path: "/chime.mp3", name: "Chime" },
-    { path: "/floppy.mp3", name: "Floppy" },
-    { path: "/quack.mp3", name: "Quack" },
-    { path: "/startup.mp3", name: "Startup" },
+    { path: "/alarm.mp3", name: "Alarm", size: 32480 },
+    { path: "/chime.mp3", name: "Chime", size: 18432 },
+    { path: "/floppy.mp3", name: "Floppy", size: 12288, builtIn: true },
+    { path: "/quack.mp3", name: "Quack", size: 24576, builtIn: true },
+    { path: "/startup.mp3", name: "Startup", size: 48128, builtIn: true },
   ],
 };
 
@@ -93,6 +93,44 @@ function bodyFor(values) {
     body.set(key, String(value));
   });
   return body;
+}
+
+function refreshDemoSoundUsage() {
+  const used = new Set([
+    demoState.systemSounds.startup,
+    demoState.systemSounds.floppy,
+    demoState.chime.sound,
+    demoState.timer.sound,
+    ...demoState.alarms.map((alarm) => alarm.sound),
+  ]);
+  demoState.sounds.forEach((sound) => {
+    sound.inUse = used.has(sound.path);
+  });
+}
+
+function uniqueDemoSound(name, size = 0) {
+  const cleanName = String(name || "sound.mp3")
+    .replace(/^.*[\\/]/, "")
+    .replace(/\.mp3$/i, "")
+    .replace(/[^a-z0-9 _-]/gi, "_")
+    .trim() || "sound";
+  let suffix = "";
+  let number = 2;
+  let path = `/${cleanName}.mp3`;
+  while (demoState.sounds.some((sound) => sound.path === path)) {
+    suffix = `-${number++}`;
+    path = `/${cleanName}${suffix}.mp3`;
+  }
+  const entry = {
+    path,
+    name: `${cleanName}${suffix}`,
+    size,
+    builtIn: false,
+    inUse: false,
+  };
+  demoState.sounds.push(entry);
+  demoState.sounds.sort((a, b) => a.name.localeCompare(b.name));
+  return entry;
 }
 
 async function parseResponse(response) {
@@ -198,6 +236,7 @@ function applyDemo(path, values) {
 export async function fetchState() {
   if (!import.meta.env.DEV) return realFetch("/api/state");
   await new Promise((resolve) => setTimeout(resolve, 180));
+  refreshDemoSoundUsage();
   return clone(demoState);
 }
 
@@ -234,4 +273,55 @@ export async function postForm(path, values) {
     body: bodyFor(values),
   });
   return parseResponse(response);
+}
+
+export async function uploadSound(file) {
+  if (import.meta.env.DEV) {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    const entry = uniqueDemoSound(file?.name, file?.size || 0);
+    return { ok: true, message: "Sound uploaded", path: entry.path };
+  }
+
+  const body = new FormData();
+  body.append("file", file, file.name);
+  const response = await fetch("/api/sound/upload", {
+    method: "POST",
+    body,
+  });
+  return parseResponse(response);
+}
+
+export async function importSoundUrl(url) {
+  if (import.meta.env.DEV) {
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    let name = "imported-sound.mp3";
+    try {
+      const parsed = new URL(url);
+      name = decodeURIComponent(parsed.pathname.split("/").pop()) || name;
+      if (!/\.mp3$/i.test(name)) name = "myinstants-sound.mp3";
+    } catch {
+      // The firmware performs the authoritative URL validation.
+    }
+    const entry = uniqueDemoSound(name, 65536);
+    return { ok: true, message: "Sound imported", path: entry.path };
+  }
+  return postForm("/api/sound/import", { url });
+}
+
+export async function deleteSound(path) {
+  if (import.meta.env.DEV) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    refreshDemoSoundUsage();
+    const index = demoState.sounds.findIndex((sound) => sound.path === path);
+    if (index < 0) throw new Error("Sound file was not found");
+    if (demoState.sounds[index].builtIn) {
+      throw new Error("Built-in sounds cannot be removed");
+    }
+    if (demoState.sounds[index].inUse) {
+      throw new Error("This sound is currently in use");
+    }
+    demoState.sounds.splice(index, 1);
+    return { ok: true, message: "Sound removed" };
+  }
+  return postForm("/api/sound/delete", { sound: path });
 }
