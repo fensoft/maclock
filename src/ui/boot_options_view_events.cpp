@@ -1009,6 +1009,63 @@ static void boot_options_continue_visual_event(lv_event_t *event)
         0);
 }
 
+static void hard_pixel_button_draw_event(lv_event_t *event)
+{
+    lv_draw_task_t *task = lv_event_get_draw_task(event);
+    if (!task)
+        return;
+
+    lv_draw_dsc_base_t *base =
+        static_cast<lv_draw_dsc_base_t *>(
+            lv_draw_task_get_draw_dsc(task));
+    if (!base ||
+        (base->part != LV_PART_MAIN &&
+         base->part != LV_PART_ITEMS))
+    {
+        return;
+    }
+
+    if (lv_draw_fill_dsc_t *fill =
+            lv_draw_task_get_fill_dsc(task))
+    {
+        fill->radius = 0;
+    }
+
+    lv_draw_border_dsc_t *border =
+        lv_draw_task_get_border_dsc(task);
+    if (!border)
+        return;
+    border->radius = 0;
+
+    lv_area_t area;
+    lv_draw_task_get_area(task, &area);
+    const lv_point_t corners[] = {
+        {area.x1, area.y1},
+        {area.x2, area.y1},
+        {area.x1, area.y2},
+        {area.x2, area.y2},
+    };
+    lv_draw_fill_dsc_t corner;
+    lv_draw_fill_dsc_init(&corner);
+    corner.color = lv_color_white();
+    corner.opa = LV_OPA_COVER;
+    for (const lv_point_t &point : corners)
+    {
+        lv_area_t pixel = {
+            point.x, point.y, point.x, point.y};
+        lv_draw_fill(base->layer, &corner, &pixel);
+    }
+}
+
+static void enable_hard_pixel_button_drawing(lv_obj_t *object)
+{
+    lv_obj_add_flag(
+        object, LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
+    lv_obj_add_event_cb(
+        object, hard_pixel_button_draw_event,
+        LV_EVENT_DRAW_TASK_ADDED, nullptr);
+}
+
 static void style_boot_options_matrix(lv_obj_t *matrix)
 {
     const lv_style_selector_t checked_items =
@@ -1030,13 +1087,14 @@ static void style_boot_options_matrix(lv_obj_t *matrix)
     lv_obj_set_style_text_color(matrix, lv_color_black(), LV_PART_ITEMS);
     lv_obj_set_style_border_color(matrix, lv_color_black(), LV_PART_ITEMS);
     lv_obj_set_style_border_width(matrix, 1, LV_PART_ITEMS);
-    lv_obj_set_style_radius(matrix, 4, LV_PART_ITEMS);
+    lv_obj_set_style_radius(matrix, 1, LV_PART_ITEMS);
     lv_obj_set_style_shadow_width(matrix, 0, LV_PART_ITEMS);
     lv_obj_set_style_outline_width(matrix, 0, LV_PART_ITEMS);
     lv_obj_set_style_bg_color(matrix, lv_color_black(), checked_items);
     lv_obj_set_style_text_color(matrix, lv_color_white(), checked_items);
     lv_obj_set_style_bg_color(matrix, lv_color_black(), pressed_items);
     lv_obj_set_style_text_color(matrix, lv_color_white(), pressed_items);
+    enable_hard_pixel_button_drawing(matrix);
 }
 
 static lv_obj_t *create_boot_checkbox(
@@ -1058,7 +1116,7 @@ static lv_obj_t *create_boot_checkbox(
     lv_obj_set_style_border_width(
         checkbox, 1, LV_PART_MAIN);
     lv_obj_set_style_radius(
-        checkbox, 4, LV_PART_MAIN);
+        checkbox, 1, LV_PART_MAIN);
     lv_obj_set_style_outline_width(
         checkbox, 0, LV_PART_MAIN);
     lv_obj_set_style_shadow_width(
@@ -1112,6 +1170,7 @@ static lv_obj_t *create_boot_checkbox(
         checkbox, lv_color_white(), pressed_main);
 
     lv_obj_set_ext_click_area(checkbox, 0);
+    enable_hard_pixel_button_drawing(checkbox);
     lv_obj_add_event_cb(
         checkbox, callback, LV_EVENT_VALUE_CHANGED, nullptr);
     return checkbox;
@@ -1126,10 +1185,11 @@ static lv_obj_t *create_action_button(lv_obj_t *parent,
     lv_obj_set_style_bg_opa(button, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(button, lv_color_black(), 0);
     lv_obj_set_style_border_width(button, 1, 0);
-    lv_obj_set_style_radius(button, 4, 0);
+    lv_obj_set_style_radius(button, 1, 0);
     lv_obj_set_style_shadow_width(button, 0, 0);
     lv_obj_set_style_outline_width(button, 0, 0);
     lv_obj_set_style_bg_color(button, lv_color_black(), LV_STATE_PRESSED);
+    enable_hard_pixel_button_drawing(button);
 
     lv_obj_t *label = lv_label_create(button);
     lv_label_set_text(label, text);

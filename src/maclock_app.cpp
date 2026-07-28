@@ -191,7 +191,10 @@ public:
     bool clock_armed = false;
 
     lv_obj_t *panel;
+    lv_obj_t *title_bar;
     lv_obj_t *title;
+    lv_obj_t *title_close;
+    lv_obj_t *title_zoom;
     lv_obj_t *pages[BOOT_OPTIONS_PAGE_COUNT];
     lv_obj_t *section_labels[BOOT_OPTIONS_SECTION_COUNT];
     lv_obj_t *brightness_options;

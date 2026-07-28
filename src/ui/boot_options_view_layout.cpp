@@ -15,13 +15,164 @@ void BootOptionsView::init(lv_obj_t *screen)
     lv_obj_set_style_radius(boot_options_view.panel, 0, 0);
     lv_obj_set_style_pad_all(boot_options_view.panel, 6, 0);
 
+    boot_options_view.title_bar =
+        lv_obj_create(boot_options_view.panel);
+    lv_obj_remove_style_all(
+        boot_options_view.title_bar);
+    lv_obj_remove_flag(
+        boot_options_view.title_bar,
+        LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(
+        boot_options_view.title_bar, 276, 15);
+    lv_obj_align(
+        boot_options_view.title_bar,
+        LV_ALIGN_TOP_MID, 0, -3);
+
+    for (uint8_t y = 1; y <= 11; y += 2)
+    {
+        lv_obj_t *stripe =
+            lv_obj_create(boot_options_view.title_bar);
+        lv_obj_remove_style_all(stripe);
+        lv_obj_remove_flag(
+            stripe, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_size(stripe, lv_pct(100), 1);
+        lv_obj_set_pos(stripe, 0, y);
+        lv_obj_set_style_bg_color(
+            stripe, lv_color_black(), 0);
+        lv_obj_set_style_bg_opa(
+            stripe, LV_OPA_COVER, 0);
+    }
+
+    boot_options_view.title_close =
+        lv_obj_create(boot_options_view.title_bar);
+    lv_obj_remove_style_all(
+        boot_options_view.title_close);
+    lv_obj_remove_flag(
+        boot_options_view.title_close,
+        LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(
+        boot_options_view.title_close, 13, 11);
+    lv_obj_set_pos(
+        boot_options_view.title_close, 6, 1);
+    lv_obj_set_style_bg_color(
+        boot_options_view.title_close,
+        lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(
+        boot_options_view.title_close,
+        LV_OPA_COVER, 0);
+
+    lv_obj_t *close_box =
+        lv_obj_create(boot_options_view.title_close);
+    lv_obj_remove_flag(
+        close_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(close_box, 11, 11);
+    lv_obj_set_pos(close_box, 1, 0);
+    lv_obj_set_style_bg_color(
+        close_box, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(
+        close_box, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(
+        close_box,
+        lv_color_black(), 0);
+    lv_obj_set_style_border_width(
+        close_box, 1, 0);
+    lv_obj_set_style_radius(
+        close_box, 0, 0);
+    lv_obj_set_style_pad_all(
+        close_box, 0, 0);
+
+    boot_options_view.title_zoom =
+        lv_obj_create(boot_options_view.title_bar);
+    lv_obj_remove_style_all(
+        boot_options_view.title_zoom);
+    lv_obj_remove_flag(
+        boot_options_view.title_zoom,
+        LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(
+        boot_options_view.title_zoom, 13, 11);
+    lv_obj_align(
+        boot_options_view.title_zoom,
+        LV_ALIGN_TOP_RIGHT, -6, 1);
+    lv_obj_set_style_bg_color(
+        boot_options_view.title_zoom,
+        lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(
+        boot_options_view.title_zoom,
+        LV_OPA_COVER, 0);
+
+    lv_obj_t *zoom_box =
+        lv_obj_create(boot_options_view.title_zoom);
+    lv_obj_remove_flag(
+        zoom_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(zoom_box, 11, 11);
+    lv_obj_set_pos(zoom_box, 1, 0);
+    lv_obj_set_style_bg_color(
+        zoom_box, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(
+        zoom_box, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(
+        zoom_box,
+        lv_color_black(), 0);
+    lv_obj_set_style_border_width(
+        zoom_box, 1, 0);
+    lv_obj_set_style_radius(
+        zoom_box, 0, 0);
+    lv_obj_set_style_pad_all(
+        zoom_box, 0, 0);
+
+    lv_obj_t *zoom_inset =
+        lv_obj_create(boot_options_view.title_zoom);
+    lv_obj_remove_style_all(zoom_inset);
+    lv_obj_remove_flag(
+        zoom_inset, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(zoom_inset, 7, 7);
+    lv_obj_set_pos(zoom_inset, 1, 0);
+    lv_obj_set_style_border_color(
+        zoom_inset, lv_color_black(), 0);
+    lv_obj_set_style_border_width(
+        zoom_inset, 1, 0);
+    lv_obj_set_style_bg_opa(
+        zoom_inset, LV_OPA_TRANSP, 0);
+
+    lv_obj_t *title_separator =
+        lv_obj_create(boot_options_view.panel);
+    lv_obj_remove_style_all(title_separator);
+    lv_obj_remove_flag(
+        title_separator, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(title_separator, 292, 1);
+    lv_obj_align(
+        title_separator, LV_ALIGN_TOP_MID, 0, 13);
+    lv_obj_set_style_bg_color(
+        title_separator, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(
+        title_separator, LV_OPA_COVER, 0);
+
     boot_options_view.title =
-        lv_label_create(boot_options_view.panel);
+        lv_label_create(boot_options_view.title_bar);
     lv_label_set_text(boot_options_view.title, tr("Configuration"));
     lv_obj_set_style_text_font(
         boot_options_view.title, &lv_font_chicago_8, 0);
+    lv_obj_set_style_bg_color(
+        boot_options_view.title, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(
+        boot_options_view.title, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_left(
+        boot_options_view.title, 5, 0);
+    lv_obj_set_style_pad_right(
+        boot_options_view.title, 5, 0);
+    lv_obj_set_style_pad_top(
+        boot_options_view.title, 1, 0);
+    lv_obj_set_style_pad_bottom(
+        boot_options_view.title, 1, 0);
     lv_obj_align(
-        boot_options_view.title, LV_ALIGN_TOP_MID, 0, 0);
+        boot_options_view.title,
+        LV_ALIGN_TOP_MID, 0, -2);
+    lv_obj_move_foreground(
+        boot_options_view.title_close);
+    lv_obj_move_foreground(
+        boot_options_view.title_zoom);
+    lv_obj_move_foreground(
+        boot_options_view.title);
 
     for (size_t i = 0; i < BOOT_OPTIONS_PAGE_COUNT; ++i)
     {
