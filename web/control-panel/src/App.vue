@@ -16,6 +16,7 @@ import {
   postForm,
   searchMyInstants as searchMyInstantsApi,
   uploadSound,
+  uploadFirmware,
 } from "./api";
 import MacAppIcon from "./components/MacAppIcon.vue";
 import MacButton from "./components/MacButton.vue";
@@ -37,6 +38,7 @@ const launcherApps = [
   { id: "night", titleKey: "nightMode", icon: "night" },
   { id: "chime", titleKey: "hourlyChime", icon: "chime" },
   { id: "sounds", titleKey: "soundManager", icon: "sound" },
+  { id: "update", titleKey: "softwareUpdate", icon: "update" },
 ];
 
 const panelState = ref(null);
@@ -53,6 +55,7 @@ const launcherRef = ref(null);
 const activeWindowRef = ref(null);
 const keepEditingRef = ref(null);
 const soundFileInput = ref(null);
+const firmwareFileInput = ref(null);
 const soundDragActive = ref(false);
 const soundImportUrl = ref("");
 const myInstantsQuery = ref("");
@@ -64,6 +67,9 @@ let noticeTimeout = 0;
 let myInstantsAudio = null;
 
 const sounds = computed(() => panelState.value?.sounds || []);
+const downloadedSounds = computed(() =>
+  sounds.value.filter((sound) => sound.downloaded),
+);
 const currentLanguage = computed(
   () => Number(panelState.value?.appearance?.language) || 0,
 );
@@ -212,6 +218,8 @@ function editableSnapshot(appId) {
         "floppy",
         "floppyVolume",
       ]);
+    case "update":
+      return null;
     default:
       return null;
   }
@@ -679,7 +687,7 @@ async function importMyInstantsResult(result) {
 }
 
 function requestSoundDeletion(sound) {
-  if (sound.builtIn || sound.inUse || busy.value) return;
+  if (!sound.downloaded || sound.inUse || busy.value) return;
   deleteSoundTarget.value = sound;
 }
 
@@ -711,9 +719,74 @@ async function pollStatus() {
     if (status.upcomingAlarm) {
       panelState.value.upcomingAlarm = status.upcomingAlarm;
     }
+    if (status.update) {
+      panelState.value.update = status.update;
+    }
   } catch {
     // Keep the last known timer state during a transient Wi-Fi interruption.
   }
+}
+
+async function checkForUpdates() {
+  await runAction(
+    "update-check",
+    "/api/update/check",
+    {},
+    t("updateCheckStarted"),
+    { refresh: false },
+  );
+  window.setTimeout(() => loadState({ quiet: true }), 1200);
+}
+
+async function installUpdate() {
+  await runAction(
+    "update-install",
+    "/api/update/install",
+    {},
+    t("updateInstallStarted"),
+    { refresh: false },
+  );
+}
+
+async function dismissUpdate(action) {
+  await runAction(
+    `update-${action}`,
+    "/api/update/dismiss",
+    { action },
+    t(action === "ignore" ? "updateIgnored" : "updateLater"),
+  );
+}
+
+async function chooseFirmware(event) {
+  const file = event.target.files?.[0];
+  if (!file || busy.value) return;
+  if (!/\.bin$/i.test(file.name || "")) {
+    showNotice(t("firmwareBinOnly"), "error");
+    return;
+  }
+  busy.value = "firmware-upload";
+  try {
+    await uploadFirmware(file);
+    await loadState({ quiet: true });
+    showNotice(t("firmwareUploaded"));
+  } catch {
+    showNotice(t("firmwareUploadError"), "error");
+  } finally {
+    busy.value = "";
+    if (firmwareFileInput.value) {
+      firmwareFileInput.value.value = "";
+    }
+  }
+}
+
+async function rebootForUpdate() {
+  await runAction(
+    "update-reboot",
+    "/api/update/reboot",
+    {},
+    t("rebooting"),
+    { refresh: false },
+  );
 }
 
 onMounted(async () => {
@@ -1520,6 +1593,140 @@ onBeforeUnmount(() => {
           </MacWindow>
 
           <MacWindow
+            v-if="activeApp === 'update'"
+            id="update"
+            ref="activeWindowRef"
+            :title="activeAppTitle"
+            closable
+            wide
+            :close-label="
+              t('closeWindow', { title: activeAppTitle })
+            "
+            @close="closeActiveApp()"
+          >
+            <section class="panel-form update-panel">
+              <div class="update-computer" aria-hidden="true">
+                <span>1.0</span>
+              </div>
+
+              <dl class="location-summary update-summary">
+                <div>
+                  <dt>{{ t("installedFirmware") }}</dt>
+                  <dd>{{ panelState.update.currentVersion }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t("installedAssets") }}</dt>
+                  <dd>{{ panelState.update.assetVersion }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t("latestRelease") }}</dt>
+                  <dd>
+                    {{ panelState.update.latestVersion || t("notChecked") }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{{ t("changedAssets") }}</dt>
+                  <dd>{{ panelState.update.changedAssets }}</dd>
+                </div>
+              </dl>
+
+              <div
+                class="update-status"
+                :class="{
+                  error: panelState.update.stage === 'error',
+                  ready: panelState.update.rebootRequired,
+                }"
+                role="status"
+                aria-live="polite"
+              >
+                <strong>{{ t(`updateStage_${panelState.update.stage}`) }}</strong>
+                <span>{{ panelState.update.message }}</span>
+              </div>
+
+              <div
+                v-if="panelState.update.busy"
+                class="update-progress"
+                role="progressbar"
+                :aria-valuenow="panelState.update.progress"
+                aria-valuemin="0"
+                aria-valuemax="100"
+              >
+                <span
+                  :style="{ width: `${panelState.update.progress}%` }"
+                ></span>
+              </div>
+
+              <p
+                v-if="panelState.update.releaseNotes"
+                class="update-release-notes"
+              >
+                {{ panelState.update.releaseNotes }}
+              </p>
+
+              <div class="button-row update-actions">
+                <MacButton
+                  secondary
+                  :disabled="!!busy || panelState.update.busy"
+                  @click="checkForUpdates"
+                >
+                  {{ t("checkNow") }}
+                </MacButton>
+                <MacButton
+                  v-if="panelState.update.available"
+                  default-action
+                  :disabled="!!busy || panelState.update.busy"
+                  @click="installUpdate"
+                >
+                  {{ t("installUpdate") }}
+                </MacButton>
+                <MacButton
+                  v-if="panelState.update.available"
+                  secondary
+                  :disabled="!!busy"
+                  @click="dismissUpdate('later')"
+                >
+                  {{ t("later") }}
+                </MacButton>
+                <MacButton
+                  v-if="panelState.update.available"
+                  secondary
+                  :disabled="!!busy"
+                  @click="dismissUpdate('ignore')"
+                >
+                  {{ t("ignoreVersion") }}
+                </MacButton>
+                <MacButton
+                  v-if="panelState.update.rebootRequired"
+                  default-action
+                  :disabled="!!busy"
+                  @click="rebootForUpdate"
+                >
+                  {{ t("rebootNow") }}
+                </MacButton>
+              </div>
+
+              <section class="firmware-upload">
+                <h2>{{ t("manualFirmware") }}</h2>
+                <p class="help-text">{{ t("manualFirmwareWarning") }}</p>
+                <MacButton
+                  secondary
+                  :disabled="!!busy || panelState.update.busy"
+                  @click="firmwareFileInput?.click()"
+                >
+                  {{ t("chooseFirmware") }}
+                </MacButton>
+                <input
+                  ref="firmwareFileInput"
+                  class="visually-hidden"
+                  type="file"
+                  accept=".bin,application/octet-stream"
+                  @change="chooseFirmware"
+                />
+              </section>
+            </section>
+          </MacWindow>
+
+          <MacWindow
             v-if="activeApp === 'sounds'"
             id="sounds"
             ref="activeWindowRef"
@@ -1654,11 +1861,13 @@ onBeforeUnmount(() => {
                 <section class="sound-browser">
                   <div class="sound-browser-heading">
                     <h3>{{ t("installedSounds") }}</h3>
-                    <span>{{ t("soundCount", { count: sounds.length }) }}</span>
+                    <span>{{
+                      t("soundCount", { count: downloadedSounds.length })
+                    }}</span>
                   </div>
-                  <ul v-if="sounds.length" class="sound-file-list">
+                  <ul v-if="downloadedSounds.length" class="sound-file-list">
                     <li
-                      v-for="sound in sounds"
+                      v-for="sound in downloadedSounds"
                       :key="sound.path"
                       class="sound-file-row"
                     >
@@ -1667,10 +1876,7 @@ onBeforeUnmount(() => {
                         <strong>{{ sound.name }}</strong>
                         <span>
                           {{ formatSoundSize(sound.size) }}
-                          <template v-if="sound.builtIn">
-                            · {{ t("builtIn") }}
-                          </template>
-                          <template v-else-if="sound.inUse">
+                          <template v-if="sound.inUse">
                             · {{ t("inUse") }}
                           </template>
                         </span>
@@ -1692,13 +1898,11 @@ onBeforeUnmount(() => {
                             t('removeNamedSound', { name: sound.name })
                           "
                           :title="
-                            sound.builtIn
-                              ? t('builtInCannotRemove')
-                              : sound.inUse
+                            sound.inUse
                                 ? t('inUseCannotRemove')
                                 : t('removeSound')
                           "
-                          :disabled="!!busy || sound.builtIn || sound.inUse"
+                          :disabled="!!busy || sound.inUse"
                           @click="requestSoundDeletion(sound)"
                         >
                           {{ t("remove") }}

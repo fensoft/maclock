@@ -18,6 +18,11 @@ static UiLanguage g_language = UI_LANGUAGE_ENGLISH;
 static const Translation g_translations[] = {
     {"Boot Options", "Options de démarrage", "Opciones de inicio", "Startoptionen", "Opzioni di avvio"},
     {"Configuration", "Configuration", "Configuración", "Konfiguration", "Configurazione"},
+    {"Software Update", "Mise à jour", "Actualización", "Softwareupdate", "Aggiornamento"},
+    {"Maclock %s is available.", "Maclock %s est disponible.", "Maclock %s está disponible.", "Maclock %s ist verfügbar.", "Maclock %s è disponibile."},
+    {"Update", "Mettre à jour", "Actualizar", "Aktualisieren", "Aggiorna"},
+    {"Later", "Plus tard", "Más tarde", "Später", "Più tardi"},
+    {"Ignore", "Ignorer", "Ignorar", "Ignorieren", "Ignora"},
     {"General", "Général", "General", "Allgemein", "Generale"},
     {"System", "Système", "Sistema", "System", "Sistema"},
     {"Sections", "Sections", "Secciones", "Bereiche", "Sezioni"},

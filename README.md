@@ -266,7 +266,10 @@ The responsive control panel can:
 - configure night-mode dimming and screen-off hours;
 - configure hourly/quarter-hour chimes and quiet hours;
 - choose persistent startup and floppy sounds and their volumes;
-- list and preview every `.mp3` file already present in LittleFS.
+- upload or import MP3 files into protected `/downloaded/` storage, preview
+  built-in and downloaded sounds, and remove downloaded sounds explicitly;
+- discover stable GitHub releases, reconcile release assets, install verified
+  HTTPS firmware updates, upload a Maclock ESP32-S3 `.bin`, and reboot.
 
 The panel is served directly by Maclock and uses no cloud service. It is
 available only while the clock is connected to the same local network and is
@@ -290,6 +293,38 @@ npm run dev
 The development server uses simulated Maclock state, so controls and timer
 updates can be tested without hardware. `npm run build` performs the same
 single-file build and header generation used by PlatformIO.
+
+### Software Updates And Downloaded Sounds
+
+The ninth web application, **Software Update**, checks the latest stable
+release at `github.com/fensoft/maclock`. Maclock also checks after Wi-Fi
+connects and every 24 hours. A new release can be installed from the device
+prompt or web panel, deferred until later, or ignored by version. Prompts wait
+until alarms, chimes, audio playback, calibration, and Mini vMac are inactive.
+
+Official updates download the release manifest, reconcile its tracked
+LittleFS files one at a time, then write verified firmware to the inactive OTA
+slot. Each changed file is streamed through a 32 KiB DEFLATE dictionary,
+hashed, and atomically renamed; the complete ZIP and firmware SHA-256 values
+must also match. Interrupted asset updates resume after Wi-Fi reconnects.
+
+Sounds uploaded with drag-and-drop or a file picker, imported by URL, or
+downloaded from MyInstants are stored below `/downloaded/`. This directory is
+never created, overwritten, renamed, reclaimed, or deleted by OTA. The Sound
+Manager file browser therefore shows only downloaded MP3s, while every sound
+selector continues to show built-in and downloaded sounds. If those files
+leave too little working space, the update stops and asks you to delete sounds
+deliberately through Sound Manager.
+
+The raw firmware upload control updates firmware only. It accepts a structural
+Maclock ESP32-S3 application image but cannot update LittleFS assets.
+
+Version 1.0.0 changes the flash partition table and therefore requires one
+final USB installation of the bootloader, partition table, firmware, and
+LittleFS image. This first repartition is destructive: existing MP3s, ROMs,
+disk images, and every other LittleFS file are erased. NVS preferences remain
+unless a separate factory reset is performed. Afterward, files placed in
+`/downloaded/` survive normal OTA updates.
 
 ### Calibrating The Touchscreen
 
@@ -462,8 +497,8 @@ mono sound plays through the ES8311 speaker output.
 
 Disk images are opened read/write when possible, so changes made inside the
 emulated Macintosh persist in LittleFS. Keep backup copies of important disk
-images. Uploading a new LittleFS image can replace the on-device disks and
-their changes.
+images. Uploading a new LittleFS image replaces them; release reconciliation
+also removes files not owned by the release except for `/downloaded/`.
 
 ### Adding Macintosh Software
 

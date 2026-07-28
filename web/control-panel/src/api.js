@@ -99,12 +99,28 @@ const demoState = {
     sound: "/quack.mp3",
     volume: 4,
   },
+  update: {
+    stage: "upToDate",
+    supported: true,
+    busy: false,
+    available: false,
+    prompt: false,
+    rebootRequired: false,
+    progress: 0,
+    changedAssets: 0,
+    currentVersion: "1.0.0",
+    assetVersion: "1.0.0",
+    latestVersion: "1.0.0",
+    releaseUrl: "https://github.com/fensoft/maclock/releases/tag/v1.0.0",
+    releaseNotes: "First stable Maclock release.",
+    message: "Maclock is up to date",
+  },
   sounds: [
-    { path: "/alarm.mp3", name: "Alarm", size: 32480 },
-    { path: "/chime.mp3", name: "Chime", size: 18432 },
-    { path: "/floppy.mp3", name: "Floppy", size: 12288, builtIn: true },
-    { path: "/quack.mp3", name: "Quack", size: 24576, builtIn: true },
-    { path: "/startup.mp3", name: "Startup", size: 48128, builtIn: true },
+    { path: "/alarm.mp3", name: "Alarm", size: 32480, downloaded: false },
+    { path: "/chime.mp3", name: "Chime", size: 18432, downloaded: false },
+    { path: "/floppy.mp3", name: "Floppy", size: 12288, builtIn: true, downloaded: false },
+    { path: "/quack.mp3", name: "Quack", size: 24576, builtIn: true, downloaded: false },
+    { path: "/startup.mp3", name: "Startup", size: 48128, builtIn: true, downloaded: false },
   ],
 };
 
@@ -177,16 +193,17 @@ function uniqueDemoSound(name, size = 0) {
     .trim() || "sound";
   let suffix = "";
   let number = 2;
-  let path = `/${cleanName}.mp3`;
+  let path = `/downloaded/${cleanName}.mp3`;
   while (demoState.sounds.some((sound) => sound.path === path)) {
     suffix = `-${number++}`;
-    path = `/${cleanName}${suffix}.mp3`;
+    path = `/downloaded/${cleanName}${suffix}.mp3`;
   }
   const entry = {
     path,
     name: `${cleanName}${suffix}`,
     size,
     builtIn: false,
+    downloaded: true,
     inUse: false,
   };
   demoState.sounds.push(entry);
@@ -296,6 +313,20 @@ function applyDemo(path, values) {
       floppy: values.floppy,
       floppyVolume: number("floppyVolume"),
     });
+  } else if (path === "/api/update/check") {
+    demoState.update.stage = "available";
+    demoState.update.available = true;
+    demoState.update.latestVersion = "1.1.0";
+    demoState.update.message = "A new Maclock release is available";
+  } else if (path === "/api/update/install") {
+    demoState.update.stage = "readyToReboot";
+    demoState.update.available = false;
+    demoState.update.rebootRequired = true;
+    demoState.update.progress = 100;
+    demoState.update.changedAssets = 4;
+    demoState.update.message = "Update installed; reboot to finish";
+  } else if (path === "/api/update/dismiss") {
+    demoState.update.prompt = false;
   }
 }
 
@@ -325,6 +356,7 @@ export async function fetchStatus() {
       active: demoState.screensaver.active,
     },
     upcomingAlarm: clone(demoState.upcomingAlarm),
+    update: clone(demoState.update),
   };
 }
 
@@ -423,8 +455,8 @@ export async function deleteSound(path) {
     refreshDemoSoundUsage();
     const index = demoState.sounds.findIndex((sound) => sound.path === path);
     if (index < 0) throw new Error("Sound file was not found");
-    if (demoState.sounds[index].builtIn) {
-      throw new Error("Built-in sounds cannot be removed");
+    if (!demoState.sounds[index].downloaded) {
+      throw new Error("Only downloaded sounds can be removed");
     }
     if (demoState.sounds[index].inUse) {
       throw new Error("This sound is currently in use");
@@ -433,4 +465,22 @@ export async function deleteSound(path) {
     return { ok: true, message: "Sound removed" };
   }
   return postForm("/api/sound/delete", { sound: path });
+}
+
+export async function uploadFirmware(file) {
+  if (import.meta.env.DEV) {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    demoState.update.stage = "readyToReboot";
+    demoState.update.rebootRequired = true;
+    demoState.update.progress = 100;
+    demoState.update.message = "Firmware uploaded; reboot to finish";
+    return { ok: true, message: demoState.update.message };
+  }
+  const body = new FormData();
+  body.append("file", file, file.name);
+  const response = await fetch("/api/update/firmware", {
+    method: "POST",
+    body,
+  });
+  return parseResponse(response);
 }

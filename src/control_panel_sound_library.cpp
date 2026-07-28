@@ -14,8 +14,10 @@ namespace
 {
 static constexpr size_t kMaxSoundFileBytes =
     6U * 1024U * 1024U;
+static constexpr const char *kDownloadedSoundDirectory =
+    "/downloaded";
 static constexpr const char *kSoundUploadTemporaryPath =
-    "/.maclock-sound-upload.tmp";
+    "/downloaded/.maclock-sound-upload.tmp";
 static constexpr size_t kMaxMyInstantsResults = 20;
 
 void send_json(
@@ -74,6 +76,24 @@ bool is_builtin_sound(const char *path)
     return equals_ignore_case(path, "/startup.mp3") ||
            equals_ignore_case(path, "/floppy.mp3") ||
            equals_ignore_case(path, "/quack.mp3");
+}
+
+bool is_downloaded_sound(const char *path)
+{
+    if (!path)
+        return false;
+    static constexpr char kPrefix[] = "/downloaded/";
+    return strncmp(path, kPrefix, sizeof(kPrefix) - 1) == 0 &&
+           path[sizeof(kPrefix) - 1] != '\0' &&
+           strchr(path + sizeof(kPrefix) - 1, '/') == nullptr &&
+           ends_with_ignore_case(path, ".mp3");
+}
+
+bool ensure_downloaded_sound_directory()
+{
+    if (LittleFS.exists(kDownloadedSoundDirectory))
+        return true;
+    return LittleFS.mkdir(kDownloadedSoundDirectory);
 }
 
 bool sound_is_in_use(
@@ -178,12 +198,16 @@ String unique_sound_path(const String &filename)
     memcpy(stem, filename.c_str(), stem_length);
     stem[stem_length] = '\0';
 
-    String path = String("/") + filename;
+    if (!ensure_downloaded_sound_directory())
+        return {};
+    String path =
+        String(kDownloadedSoundDirectory) + "/" + filename;
     for (uint8_t suffix = 2;
          LittleFS.exists(path.c_str()) && suffix < 100;
          ++suffix)
     {
-        path = String("/") + stem + "-" + String(suffix) + ".mp3";
+        path = String(kDownloadedSoundDirectory) + "/" +
+               stem + "-" + String(suffix) + ".mp3";
     }
     return LittleFS.exists(path.c_str()) ? String() : path;
 }
@@ -754,6 +778,7 @@ void ControlPanelSoundLibrary::appendSnapshot(
         if (file)
             file.close();
         sound["builtIn"] = is_builtin_sound(path);
+        sound["downloaded"] = is_downloaded_sound(path);
         sound["inUse"] = sound_is_in_use(path, snapshot);
     }
 }
@@ -776,6 +801,12 @@ void ControlPanelSoundLibrary::receiveUpload(
     if (upload.status == UPLOAD_FILE_START)
     {
         resetUpload();
+        if (!ensure_downloaded_sound_directory())
+        {
+            upload_error_ =
+                "Could not create the downloaded sounds folder";
+            return;
+        }
         const String filename =
             sanitize_sound_filename(upload.filename.c_str());
         if (!ends_with_ignore_case(
@@ -971,11 +1002,11 @@ void ControlPanelSoundLibrary::remove(
     }
     const ControlPanelSnapshot snapshot =
         events.controlPanelSnapshot();
-    if (is_builtin_sound(path.c_str()))
+    if (!is_downloaded_sound(path.c_str()))
     {
         send_result(
             server, false,
-            "Built-in sounds cannot be removed", 409);
+            "Only downloaded sounds can be removed", 409);
         return;
     }
     if (sound_is_in_use(path.c_str(), snapshot))

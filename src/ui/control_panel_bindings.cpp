@@ -107,6 +107,7 @@ ControlPanelSnapshot MaclockApp::controlPanelSnapshot()
         snapshot.location.timezone,
         wifi.timezone,
         sizeof(snapshot.location.timezone));
+    snapshot.update = update_service.snapshot();
     return snapshot;
 }
 
@@ -369,6 +370,52 @@ void MaclockApp::endControlPanelNetworkTransfer()
         return;
     display_service.startAudioOutput();
     audio_service.resumeTask();
+}
+
+bool MaclockApp::requestControlUpdateCheck()
+{
+    return update_service.requestCheck();
+}
+
+bool MaclockApp::requestControlUpdateInstall()
+{
+    audio_service.stop();
+    control_preview_pending_ = false;
+    return update_service.requestInstall();
+}
+
+void MaclockApp::dismissControlUpdate(bool ignore_version)
+{
+    update_service.dismiss(ignore_version);
+}
+
+bool MaclockApp::beginControlFirmwareUpload(
+    const char *filename)
+{
+    audio_service.stop();
+    control_preview_pending_ = false;
+    return update_service.beginManualFirmware(filename);
+}
+
+bool MaclockApp::writeControlFirmwareUpload(
+    const uint8_t *data, size_t length)
+{
+    return update_service.writeManualFirmware(data, length);
+}
+
+bool MaclockApp::finishControlFirmwareUpload()
+{
+    return update_service.finishManualFirmware();
+}
+
+void MaclockApp::abortControlFirmwareUpload()
+{
+    update_service.abortManualFirmware();
+}
+
+bool MaclockApp::rebootAfterControlUpdate()
+{
+    return update_service.reboot();
 }
 
 #endif

@@ -25,6 +25,7 @@ void MaclockApp::begin()
     heap_caps_malloc_extmem_enable(0);
     LittleFS.begin();
     SoundSelector::scan();
+    update_service.begin(settings_store.preferences());
     const String saved_startup_path =
         settings_store.loadStartupSoundPath("/startup.mp3");
     strlcpy(
@@ -121,6 +122,14 @@ void MaclockApp::tick()
         control_panel_service.stop();
     else
         control_panel_service.tick(wifi_service.snapshot());
+
+    const bool update_prompt_allowed =
+        current_state_ == UiState::Normal &&
+        !audio_service.running() &&
+        !clock_view.screensaver_active;
+    update_service.tick(
+        wifi_service.snapshot(), update_prompt_allowed);
+    syncUpdatePrompt(update_prompt_allowed);
 
     if (control_preview_pending_ &&
         static_cast<int32_t>(

@@ -779,3 +779,29 @@ bool LittleFSFS::rename(const char *from, const char *to)
         source_path, destination_path, error);
     return !error;
 }
+
+bool LittleFSFS::mkdir(const char *path)
+{
+    const auto relative = normalize_relative(path);
+    if (relative.empty())
+        return false;
+    std::error_code error;
+    std::filesystem::remove(
+        deletion_marker(relative), error);
+    error.clear();
+    return std::filesystem::create_directories(
+               overlay_root() / relative, error) ||
+           (!error &&
+            std::filesystem::is_directory(
+                overlay_root() / relative));
+}
+
+bool LittleFSFS::rmdir(const char *path)
+{
+    const auto relative = normalize_relative(path);
+    if (relative.empty())
+        return false;
+    std::error_code error;
+    return std::filesystem::remove(
+        overlay_root() / relative, error);
+}

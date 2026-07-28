@@ -875,6 +875,112 @@ input[type="radio"]:checked::after {
   align-items: start;
 }
 
+.update-panel {
+  position: relative;
+}
+
+.update-computer {
+  width: 76px;
+  height: 66px;
+  margin: 0 auto 12px;
+  border: 3px solid #000;
+  border-radius: 5px;
+  background: #eee;
+  box-shadow: inset -4px -4px 0 #aaa;
+  display: grid;
+  place-items: center;
+}
+
+.update-computer::before {
+  content: "";
+  position: absolute;
+  width: 52px;
+  height: 34px;
+  border: 2px solid #000;
+  background: repeating-linear-gradient(
+    0deg,
+    #fff 0 2px,
+    #ddd 2px 4px
+  );
+}
+
+.update-computer span {
+  z-index: 1;
+  font-weight: 700;
+  background: #fff;
+  padding: 1px 3px;
+}
+
+.update-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.update-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border: 2px solid #000;
+  padding: 8px 10px;
+  background: #fff;
+}
+
+.update-status.ready {
+  box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 4px #000;
+  padding: 12px 14px;
+}
+
+.update-status.error {
+  color: #fff;
+  background: #000;
+}
+
+.update-progress {
+  height: 18px;
+  padding: 2px;
+  border: 2px solid #000;
+  background: #fff;
+}
+
+.update-progress span {
+  display: block;
+  height: 100%;
+  background: repeating-linear-gradient(
+    135deg,
+    #000 0 3px,
+    #fff 3px 6px
+  );
+}
+
+.update-release-notes {
+  max-height: 110px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  white-space: pre-line;
+  border: 1px solid #000;
+  background: #fff;
+}
+
+.firmware-upload {
+  border-top: 2px solid #000;
+  padding-top: 12px;
+}
+
+.firmware-upload h2 {
+  margin: 0 0 5px;
+  font-size: 1rem;
+}
+
+@media (max-width: 560px) {
+  .update-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .update-status {
+    flex-direction: column;
+  }
+}
+
 .sound-settings {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

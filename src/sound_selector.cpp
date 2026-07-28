@@ -114,7 +114,8 @@ static const char *relative_name(const char *path)
 {
     if (!path)
         return "";
-    return path[0] == '/' ? path + 1 : path;
+    const char *name = strrchr(path, '/');
+    return name ? name + 1 : path;
 }
 
 static void format_display_name(

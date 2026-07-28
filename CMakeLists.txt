@@ -130,6 +130,7 @@ set(MACLOCK_APPLICATION_SOURCES
     src/sound_selector.cpp
     src/timer_ui.cpp
     src/touch.cpp
+    src/update_service.cpp
     src/weather_service.cpp
     src/wifi_mode.cpp)
 

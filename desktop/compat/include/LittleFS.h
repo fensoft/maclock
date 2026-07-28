@@ -10,6 +10,8 @@ public:
     fs::File open(const char *path, const char *mode = "r");
     bool remove(const char *path);
     bool rename(const char *from, const char *to);
+    bool mkdir(const char *path);
+    bool rmdir(const char *path);
 };
 
 extern LittleFSFS LittleFS;

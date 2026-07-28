@@ -18,6 +18,7 @@
 #include "rtc_service.h"
 #include "settings_store.h"
 #include "timer_ui.h"
+#include "update_service.h"
 #include "weather_service.h"
 #include "wifi_mode.h"
 
@@ -64,6 +65,16 @@ public:
         const char *sound_path, uint8_t volume) override;
     void beginControlPanelNetworkTransfer() override;
     void endControlPanelNetworkTransfer() override;
+    bool requestControlUpdateCheck() override;
+    bool requestControlUpdateInstall() override;
+    void dismissControlUpdate(bool ignore_version) override;
+    bool beginControlFirmwareUpload(
+        const char *filename) override;
+    bool writeControlFirmwareUpload(
+        const uint8_t *data, size_t length) override;
+    bool finishControlFirmwareUpload() override;
+    void abortControlFirmwareUpload() override;
+    bool rebootAfterControlUpdate() override;
 
     // Internal accessors used only by LVGL and emulator compatibility thunks.
     SettingsStore &settingsStore() { return settings_store_; }
@@ -78,6 +89,7 @@ public:
     {
         return control_panel_service_;
     }
+    UpdateService &updates() { return update_service_; }
     AlarmService &alarms() { return alarm_service_; }
     AlarmView &alarmView() { return alarm_view_; }
     TimerService &timer() { return timer_service_; }
@@ -86,6 +98,10 @@ public:
     DisplayService &display() { return display_service_; }
 
 private:
+    void syncUpdatePrompt(bool allowed);
+    void closeUpdatePrompt();
+    static void updatePromptEvent(lv_event_t *event);
+
     MaclockHal &hal_;
     SettingsStore settings_store_;
     AppSettings settings_;
@@ -97,6 +113,7 @@ private:
     AudioService audio_service_;
     WifiService wifi_service_;
     ControlPanelService control_panel_service_;
+    UpdateService update_service_;
     AlarmService alarm_service_;
     AlarmView alarm_view_;
     TimerService timer_service_;
@@ -116,6 +133,7 @@ private:
     uint8_t control_preview_volume_ = 0;
     bool control_preview_pending_ = false;
     bool screensaver_launch_pending_ = false;
+    lv_obj_t *update_prompt_ = nullptr;
 
     unsigned long last_alarm_check_ms_ = 0;
     unsigned long last_encoder_save_ms_ = 0;

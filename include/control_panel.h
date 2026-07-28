@@ -6,6 +6,7 @@
 #include "alarm_ui.h"
 #include "app_types.h"
 #include "sound_selector.h"
+#include "update_service.h"
 #include "wifi_mode.h"
 
 static constexpr size_t kControlPanelAlarmCount = 3;
@@ -68,6 +69,7 @@ struct ControlPanelSnapshot
     ControlPanelUpcomingAlarm upcoming_alarm;
     ControlPanelTimer timer;
     ControlPanelLocation location;
+    UpdateSnapshot update;
 };
 
 class ControlPanelEventSink
@@ -100,6 +102,16 @@ public:
         const char *sound_path, uint8_t volume) = 0;
     virtual void beginControlPanelNetworkTransfer() = 0;
     virtual void endControlPanelNetworkTransfer() = 0;
+    virtual bool requestControlUpdateCheck() = 0;
+    virtual bool requestControlUpdateInstall() = 0;
+    virtual void dismissControlUpdate(bool ignore_version) = 0;
+    virtual bool beginControlFirmwareUpload(
+        const char *filename) = 0;
+    virtual bool writeControlFirmwareUpload(
+        const uint8_t *data, size_t length) = 0;
+    virtual bool finishControlFirmwareUpload() = 0;
+    virtual void abortControlFirmwareUpload() = 0;
+    virtual bool rebootAfterControlUpdate() = 0;
 };
 
 class ControlPanelService

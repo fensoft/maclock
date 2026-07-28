@@ -9,8 +9,11 @@
 #include <curl/curl.h>
 #include <httplib.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <condition_variable>
+#include <cstring>
 #include <deque>
 #include <map>
 #include <mutex>
@@ -160,10 +163,38 @@ void HTTPClient::useHTTP10(bool)
 {
 }
 
+void HTTPClient::collectHeaders(
+    const char *[], size_t)
+{
+}
+
+void HTTPClient::addHeader(
+    const String &name, const String &value)
+{
+    request_headers_.emplace_back(
+        name.stdString(), value.stdString());
+}
+
+String HTTPClient::header(const String &name) const
+{
+    std::string key = name.stdString();
+    std::transform(
+        key.begin(), key.end(), key.begin(),
+        [](unsigned char value)
+        {
+            return static_cast<char>(std::tolower(value));
+        });
+    const auto found = response_headers_.find(key);
+    return found == response_headers_.end()
+               ? String()
+               : String(found->second);
+}
+
 bool HTTPClient::begin(NetworkClient &, const String &url)
 {
     url_ = url;
     response_.clear();
+    response_headers_.clear();
     return url.length() > 0;
 }
 
@@ -175,6 +206,42 @@ size_t curl_write(
     auto *result = static_cast<std::string *>(context);
     result->append(data, size * count);
     return size * count;
+}
+
+size_t curl_header_callback(
+    char *data, size_t size, size_t count, void *context)
+{
+    const size_t length = size * count;
+    auto *headers = static_cast<
+        std::map<std::string, std::string> *>(context);
+    const char *colon = static_cast<const char *>(
+        std::memchr(data, ':', length));
+    if (!colon)
+        return length;
+    std::string name(
+        data, static_cast<size_t>(colon - data));
+    std::transform(
+        name.begin(), name.end(), name.begin(),
+        [](unsigned char value)
+        {
+            return static_cast<char>(std::tolower(value));
+        });
+    const char *value_start = colon + 1;
+    const char *end = data + length;
+    while (value_start < end &&
+           std::isspace(
+               static_cast<unsigned char>(*value_start)))
+    {
+        ++value_start;
+    }
+    while (end > value_start &&
+           std::isspace(
+               static_cast<unsigned char>(end[-1])))
+    {
+        --end;
+    }
+    (*headers)[name] = std::string(value_start, end);
+    return length;
 }
 }
 
@@ -195,11 +262,28 @@ int HTTPClient::GET()
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(
+        curl, CURLOPT_HEADERFUNCTION, curl_header_callback);
+    curl_easy_setopt(
+        curl, CURLOPT_HEADERDATA, &response_headers_);
+    curl_easy_setopt(
         curl, CURLOPT_USERAGENT, user_agent_.c_str());
+    curl_slist *request_headers = nullptr;
+    for (const auto &[name, value] : request_headers_)
+    {
+        request_headers = curl_slist_append(
+            request_headers,
+            (name + ": " + value).c_str());
+    }
+    if (request_headers)
+    {
+        curl_easy_setopt(
+            curl, CURLOPT_HTTPHEADER, request_headers);
+    }
     const CURLcode result = curl_easy_perform(curl);
     long status = 0;
     if (result == CURLE_OK)
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
+    curl_slist_free_all(request_headers);
     curl_easy_cleanup(curl);
     response_ = response;
     return result == CURLE_OK
@@ -215,6 +299,7 @@ String HTTPClient::getString() const
 void HTTPClient::end()
 {
     url_.clear();
+    request_headers_.clear();
 }
 
 String HTTPClient::errorToString(int error)

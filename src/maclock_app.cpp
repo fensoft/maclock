@@ -58,6 +58,7 @@ static MaclockApp *active_app = nullptr;
 #define audio_service (active_app->audio())
 #define wifi_service (active_app->wifi())
 #define control_panel_service (active_app->controlPanel())
+#define update_service (active_app->updates())
 #define alarm_service (active_app->alarms())
 #define alarm_view (active_app->alarmView())
 #define timer_service (active_app->timer())
@@ -613,6 +614,114 @@ MaclockApp::MaclockApp(MaclockHal &hal)
 void MaclockApp::requestState(UiState state)
 {
     requested_state_ = state;
+}
+
+void MaclockApp::closeUpdatePrompt()
+{
+    if (!update_prompt_)
+        return;
+    lv_obj_delete(update_prompt_);
+    update_prompt_ = nullptr;
+}
+
+void MaclockApp::updatePromptEvent(lv_event_t *event)
+{
+    if (!active_app ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    const uintptr_t action = reinterpret_cast<uintptr_t>(
+        lv_event_get_user_data(event));
+    active_app->closeUpdatePrompt();
+    if (action == 1)
+        active_app->updates().requestInstall();
+    else
+        active_app->updates().dismiss(action == 3);
+}
+
+void MaclockApp::syncUpdatePrompt(bool allowed)
+{
+    if (!allowed)
+    {
+        closeUpdatePrompt();
+        return;
+    }
+    if (update_prompt_ || !update_service_.consumePrompt())
+        return;
+
+    const UpdateSnapshot update = update_service_.snapshot();
+    update_prompt_ = lv_obj_create(lv_layer_top());
+    lv_obj_remove_flag(update_prompt_, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(update_prompt_, 286, 166);
+    lv_obj_center(update_prompt_);
+    lv_obj_set_style_bg_color(
+        update_prompt_, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(update_prompt_, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(
+        update_prompt_, lv_color_black(), 0);
+    lv_obj_set_style_border_width(update_prompt_, 2, 0);
+    lv_obj_set_style_radius(update_prompt_, 0, 0);
+    lv_obj_set_style_pad_all(update_prompt_, 8, 0);
+
+    lv_obj_t *title = lv_label_create(update_prompt_);
+    lv_label_set_text(title, tr("Software Update"));
+    lv_obj_set_style_text_font(title, &lv_font_chicago_24, 0);
+    lv_obj_set_style_text_color(title, lv_color_black(), 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+
+    lv_obj_t *separator = lv_obj_create(update_prompt_);
+    lv_obj_remove_flag(separator, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(separator, 270, 2);
+    lv_obj_set_style_bg_color(separator, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(separator, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(separator, 0, 0);
+    lv_obj_align(separator, LV_ALIGN_TOP_MID, 0, 30);
+
+    char message[160];
+    snprintf(
+        message, sizeof(message), tr("Maclock %s is available."),
+        update.latest_version);
+    lv_obj_t *text = lv_label_create(update_prompt_);
+    lv_label_set_text(text, message);
+    lv_obj_set_width(text, 260);
+    lv_obj_set_style_text_font(text, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_color(text, lv_color_black(), 0);
+    lv_obj_set_style_text_align(text, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(text, LV_ALIGN_TOP_MID, 0, 49);
+
+    static const char *labels[] = {
+        "", "Update", "Later", "Ignore"};
+    for (uintptr_t action = 1; action <= 3; ++action)
+    {
+        lv_obj_t *button = lv_button_create(update_prompt_);
+        lv_obj_remove_flag(button, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_size(button, 82, 38);
+        lv_obj_align(
+            button, LV_ALIGN_BOTTOM_LEFT,
+            static_cast<int32_t>((action - 1) * 90), 0);
+        lv_obj_set_style_bg_color(
+            button, lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(
+            button, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_color(
+            button, lv_color_black(), LV_PART_MAIN);
+        lv_obj_set_style_border_width(
+            button, 1, LV_PART_MAIN);
+        lv_obj_set_style_radius(button, 4, LV_PART_MAIN);
+        lv_obj_add_event_cb(
+            button, updatePromptEvent, LV_EVENT_CLICKED,
+            reinterpret_cast<void *>(action));
+
+        lv_obj_t *label = lv_label_create(button);
+        lv_label_set_text(label, tr(labels[action]));
+        lv_obj_set_style_text_font(
+            label, &lv_font_chicago_8, 0);
+        lv_obj_set_style_text_color(
+            label, lv_color_black(), 0);
+        lv_obj_center(label);
+    }
 }
 
 void MaclockApp::adjustRtc(const DateTime &date_time)

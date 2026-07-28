@@ -16,6 +16,9 @@ struct ControlPanelService::State
     bool routes_ready = false;
     bool server_running = false;
     bool mdns_running = false;
+    bool update_upload_started = false;
+    bool update_upload_finished = false;
+    String update_upload_error;
     ControlPanelSoundLibrary sound_library;
 };
 
@@ -31,6 +34,12 @@ ControlPanelService *active_control_panel = nullptr;
 #define g_mdns_running (active_control_panel->state().mdns_running)
 #define g_sound_library \
     (active_control_panel->state().sound_library)
+#define g_update_upload_started \
+    (active_control_panel->state().update_upload_started)
+#define g_update_upload_finished \
+    (active_control_panel->state().update_upload_finished)
+#define g_update_upload_error \
+    (active_control_panel->state().update_upload_error)
 
 static void send_json(JsonDocument &document, int status = 200)
 {
@@ -92,6 +101,55 @@ static bool read_sound_arg(const char *name, String &sound)
 static bool read_sound(String &sound)
 {
     return read_sound_arg("sound", sound);
+}
+
+static const char *update_stage_name(UpdateStage stage)
+{
+    switch (stage)
+    {
+    case UpdateStage::Idle:
+        return "idle";
+    case UpdateStage::Checking:
+        return "checking";
+    case UpdateStage::UpToDate:
+        return "upToDate";
+    case UpdateStage::Available:
+        return "available";
+    case UpdateStage::DownloadingAssets:
+        return "downloadingAssets";
+    case UpdateStage::InstallingAssets:
+        return "installingAssets";
+    case UpdateStage::DownloadingFirmware:
+        return "downloadingFirmware";
+    case UpdateStage::UploadingFirmware:
+        return "uploadingFirmware";
+    case UpdateStage::ReadyToReboot:
+        return "readyToReboot";
+    case UpdateStage::Error:
+        return "error";
+    case UpdateStage::Unsupported:
+        return "unsupported";
+    }
+    return "idle";
+}
+
+static void append_update_json(
+    JsonObject update, const UpdateSnapshot &snapshot)
+{
+    update["stage"] = update_stage_name(snapshot.stage);
+    update["supported"] = snapshot.supported;
+    update["busy"] = snapshot.busy;
+    update["available"] = snapshot.update_available;
+    update["prompt"] = snapshot.prompt_pending;
+    update["rebootRequired"] = snapshot.reboot_required;
+    update["progress"] = snapshot.progress;
+    update["changedAssets"] = snapshot.changed_assets;
+    update["currentVersion"] = snapshot.current_version;
+    update["assetVersion"] = snapshot.asset_version;
+    update["latestVersion"] = snapshot.latest_version;
+    update["releaseUrl"] = snapshot.release_url;
+    update["releaseNotes"] = snapshot.release_notes;
+    update["message"] = snapshot.message;
 }
 
 static void send_control_page()
@@ -222,6 +280,8 @@ static void send_state()
 
     JsonArray sounds = document["sounds"].to<JsonArray>();
     g_sound_library.appendSnapshot(sounds, snapshot);
+    append_update_json(
+        document["update"].to<JsonObject>(), snapshot.update);
 
     send_json(document);
 }
@@ -257,7 +317,141 @@ static void send_status()
     upcoming["hour"] = snapshot.upcoming_alarm.hour;
     upcoming["minute"] = snapshot.upcoming_alarm.minute;
     upcoming["label"] = snapshot.upcoming_alarm.label;
+    append_update_json(
+        document["update"].to<JsonObject>(), snapshot.update);
     send_json(document);
+}
+
+static void send_update_status()
+{
+    if (!g_events)
+    {
+        send_result(false, "Control service is unavailable", 503);
+        return;
+    }
+    const ControlPanelSnapshot snapshot =
+        g_events->controlPanelSnapshot();
+    JsonDocument document;
+    append_update_json(
+        document["update"].to<JsonObject>(), snapshot.update);
+    send_json(document);
+}
+
+static void request_update_check()
+{
+    const bool requested =
+        g_events && g_events->requestControlUpdateCheck();
+    send_result(
+        requested,
+        requested ? "Update check requested"
+                  : "Update check could not be started",
+        requested ? 202 : 409);
+}
+
+static void request_update_install()
+{
+    const bool requested =
+        g_events && g_events->requestControlUpdateInstall();
+    send_result(
+        requested,
+        requested ? "Update installation started"
+                  : "Update installation could not be started",
+        requested ? 202 : 409);
+}
+
+static void dismiss_update()
+{
+    const String action = g_server.arg("action");
+    if (!g_events ||
+        (action != "later" && action != "ignore"))
+    {
+        send_result(false, "Invalid update dismissal", 400);
+        return;
+    }
+    g_events->dismissControlUpdate(action == "ignore");
+    send_result(true, "Update notification dismissed");
+}
+
+static void receive_firmware_upload()
+{
+    if (!g_events)
+        return;
+    HTTPUpload &upload = g_server.upload();
+    if (upload.status == UPLOAD_FILE_START)
+    {
+        g_update_upload_started =
+            g_events->beginControlFirmwareUpload(
+                upload.filename.c_str());
+        g_update_upload_finished = false;
+        g_update_upload_error.clear();
+        if (!g_update_upload_started)
+            g_update_upload_error =
+                "Firmware upload could not be started";
+        return;
+    }
+    if (upload.status == UPLOAD_FILE_WRITE)
+    {
+        if (g_update_upload_started &&
+            !g_events->writeControlFirmwareUpload(
+                upload.buf, upload.currentSize))
+        {
+            g_update_upload_error =
+                "Firmware upload failed while writing";
+            g_events->abortControlFirmwareUpload();
+            g_update_upload_started = false;
+        }
+        return;
+    }
+    if (upload.status == UPLOAD_FILE_ABORTED)
+    {
+        if (g_update_upload_started)
+            g_events->abortControlFirmwareUpload();
+        g_update_upload_started = false;
+        g_update_upload_finished = true;
+        g_update_upload_error =
+            "Firmware upload was cancelled";
+        return;
+    }
+    if (upload.status == UPLOAD_FILE_END)
+    {
+        if (g_update_upload_started &&
+            !g_events->finishControlFirmwareUpload())
+        {
+            g_update_upload_error =
+                "Firmware validation failed";
+        }
+        g_update_upload_started = false;
+        g_update_upload_finished = true;
+    }
+}
+
+static void finish_firmware_upload()
+{
+    if (!g_update_upload_finished)
+    {
+        send_result(false, "No firmware was uploaded", 400);
+        return;
+    }
+    const bool success = !g_update_upload_error.length();
+    send_result(
+        success,
+        success ? "Firmware uploaded; reboot to finish"
+                : g_update_upload_error.c_str(),
+        success ? 201 : 400);
+}
+
+static void reboot_after_update()
+{
+    if (!g_events)
+    {
+        send_result(false, "Control service is unavailable", 503);
+        return;
+    }
+    g_server.send(
+        200, "application/json",
+        "{\"ok\":true,\"message\":\"Rebooting Maclock\"}");
+    delay(100);
+    g_events->rebootAfterControlUpdate();
 }
 
 static void apply_appearance()
@@ -593,6 +787,8 @@ static void configure_routes()
     g_server.on("/", HTTP_GET, send_control_page);
     g_server.on("/api/state", HTTP_GET, send_state);
     g_server.on("/api/status", HTTP_GET, send_status);
+    g_server.on(
+        "/api/update/status", HTTP_GET, send_update_status);
     g_server.on("/api/appearance", HTTP_POST, apply_appearance);
     g_server.on("/api/location", HTTP_POST, apply_location);
     g_server.on(
@@ -605,6 +801,17 @@ static void configure_routes()
     g_server.on("/api/chime", HTTP_POST, apply_chime);
     g_server.on("/api/sounds", HTTP_POST, apply_system_sounds);
     g_server.on("/api/preview", HTTP_POST, preview_sound);
+    g_server.on(
+        "/api/update/check", HTTP_POST, request_update_check);
+    g_server.on(
+        "/api/update/install", HTTP_POST, request_update_install);
+    g_server.on(
+        "/api/update/dismiss", HTTP_POST, dismiss_update);
+    g_server.on(
+        "/api/update/reboot", HTTP_POST, reboot_after_update);
+    g_server.on(
+        "/api/update/firmware", HTTP_POST,
+        finish_firmware_upload, receive_firmware_upload);
     g_server.on(
         "/api/sound/upload", HTTP_POST,
         []()

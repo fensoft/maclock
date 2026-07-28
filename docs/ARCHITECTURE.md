@@ -197,20 +197,59 @@ port 80 and preserving exclusive display/audio ownership.
 | --- | ---: | --- |
 | `nvs` | 20 KiB | Arduino Preferences and platform state |
 | `otadata` | 8 KiB | OTA metadata |
-| `app0` | 3 MiB | Firmware image |
-| `spiffs` | 12.94 MiB | LittleFS data partition |
+| `app0` | 3 MiB | Running or inactive firmware image |
+| `app1` | 3 MiB | Running or inactive firmware image |
+| `spiffs` | 9.94 MiB | LittleFS data partition |
 
 Despite the partition subtype name, `board_build.filesystem = littlefs` makes
 PlatformIO build and upload a LittleFS image from `data/`.
 
-The filesystem contains two kinds of content:
+The filesystem contains three kinds of content:
 
 - Tracked UI images, fonts, weather icons, plugin icons, and MP3 effects.
 - Ignored local emulator inputs such as `vMac.ROM` and `disk1.dsk`.
+- User MP3s in `/downloaded/`, the only subtree protected from release
+  reconciliation.
 
 Arduino callers use paths such as `/background.png`; LVGL reaches the same file
 through the registered `S:` drive as `S:/background.png`. Mini vMac's file
 adapter normalizes relative names to root-level LittleFS paths.
+
+## Update Architecture
+
+`UpdateService` owns release discovery, semantic-version comparison, ETag
+caching, update progress, error state, raw firmware uploads, and rollback
+validation. It checks GitHub only after station Wi-Fi connects. Its immutable
+snapshot is consumed by both `MaclockApp` and `ControlPanelService`; neither
+the update worker nor HTTP callbacks touch LVGL.
+
+Release assets are a deterministic ZIP32 archive generated only from tracked
+`data/` files. `scripts/package_release.py` rejects tracked
+`data/downloaded` files, symlinks, traversal paths, ZIP64, encryption, and data
+descriptors. Its manifest records the path, uncompressed and compressed size,
+method, and SHA-256 of every release-owned file.
+
+The firmware reader accepts stored and raw-DEFLATE entries and operates
+forward-only. A 32 KiB dictionary is the largest decompression allocation.
+Unchanged files are consumed without inflation. Changed files are written to a
+single temporary file, verified, and atomically renamed. Only after the whole
+archive verifies are obsolete release files deleted. `/downloaded/` is
+excluded from manifest validation, replacement, deletion, and free-space
+reclamation. An NVS work marker causes an interrupted reconciliation to restart
+the stream and skip files that already match.
+
+Firmware is accepted only when its ESP image metadata identifies an ESP32-S3
+Maclock application and it fits the inactive 3 MiB OTA partition. Official
+downloads additionally require manifest size and SHA-256 matches over
+validated HTTPS. The rollback-enabled bootloader leaves a new image pending
+until LittleFS, settings, LVGL initialization, and ten seconds of the main loop
+have succeeded; only then does the application mark it valid.
+
+The web panel exposes `/api/update/status`, `/api/update/check`,
+`/api/update/install`, `/api/update/firmware`, and `/api/update/dismiss`.
+These routes do not exist in the separate captive Wi-Fi setup portal. The
+desktop simulator performs discovery and comparison but reports firmware
+installation as unavailable.
 
 ## Display Architecture
 
@@ -475,9 +514,10 @@ Three storage mechanisms have different lifetimes:
 | EEPROM emulation | FT6336 calibration structure |
 | LittleFS | UI assets, audio, ROM, and mutable emulator disk images |
 
-LittleFS contains user-significant emulator disks. Automatic formatting,
-wholesale filesystem replacement, and filesystem upload are potentially
-destructive even when the firmware image itself is safe to replace.
+LittleFS contains user-significant emulator disks. The one-time 1.0.0 USB
+repartition and filesystem upload are deliberately destructive. Normal OTA
+reconciliation overwrites release-owned content and removes other root files,
+but never changes `/downloaded/`.
 
 ## Development And Verification
 
@@ -497,8 +537,13 @@ pio run -e lolin_s3 -t buildfs
 PlatformIO may be available as `~/.platformio/penv/bin/pio` when it is not on
 the shell `PATH`.
 
-There is no host-side unit or integration test suite. Hardware validation should
-cover the mode and subsystem changed:
+Run deterministic release-package tests with:
+
+```bash
+python3 -m unittest tests/test_release_package.py
+```
+
+Hardware validation should cover the mode and subsystem changed:
 
 - Cold boot into clock mode and emulator mode.
 - Boot-options entry by holding the clock button.

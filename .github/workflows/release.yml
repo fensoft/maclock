@@ -1,0 +1,84 @@
+name: Publish Maclock release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate stable semantic tag
+        id: version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must be vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/control-panel/package-lock.json
+
+      - name: Build web control panel
+        working-directory: web/control-panel
+        run: |
+          npm ci
+          npm run build
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install PlatformIO
+        run: python -m pip install platformio
+
+      - name: Prepare Mini vMac source
+        run: ./prepare.sh
+
+      - name: Build rollback-enabled firmware
+        env:
+          MACLOCK_BUILD_VERSION: ${{ steps.version.outputs.version }}
+        run: pio run -e lolin_s3
+
+      - name: Package and validate release assets
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python scripts/package_release.py \
+            --version "$RELEASE_VERSION" \
+            --output "dist/release/v$RELEASE_VERSION"
+          test ! -e data/downloaded
+          ! git ls-files data | grep -E '^data/downloaded(/|$)'
+
+      - name: Publish stable GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Maclock ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/release/v${{ steps.version.outputs.version }}/maclock-lolin-s3-firmware.bin
+            dist/release/v${{ steps.version.outputs.version }}/maclock-lolin-s3-update.json
+            dist/release/v${{ steps.version.outputs.version }}/maclock-lolin-s3-assets.zip
+            dist/release/v${{ steps.version.outputs.version }}/SHA256SUMS.txt
