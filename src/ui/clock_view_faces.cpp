@@ -144,6 +144,8 @@ void ClockView::init(lv_obj_t *screen)
 
     clock_view.analog_center = lv_obj_create(
         clock_view.analog_dial);
+    lv_obj_remove_flag(
+        clock_view.analog_center, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_style_all(clock_view.analog_center);
     lv_obj_set_size(clock_view.analog_center, 8, 8);
     lv_obj_set_style_bg_color(
@@ -215,6 +217,9 @@ void ClockView::init(lv_obj_t *screen)
 
         clock_view.flip_colon_tops[i] =
             lv_obj_create(clock_view.flip_colons[i]);
+        lv_obj_remove_flag(
+            clock_view.flip_colon_tops[i],
+            LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_remove_style_all(
             clock_view.flip_colon_tops[i]);
         lv_obj_set_size(
@@ -233,6 +238,9 @@ void ClockView::init(lv_obj_t *screen)
 
         clock_view.flip_colon_bottoms[i] =
             lv_obj_create(clock_view.flip_colons[i]);
+        lv_obj_remove_flag(
+            clock_view.flip_colon_bottoms[i],
+            LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_remove_style_all(
             clock_view.flip_colon_bottoms[i]);
         lv_obj_set_size(
@@ -280,6 +288,7 @@ void ClockView::init(lv_obj_t *screen)
     {
         lv_obj_t *star =
             lv_obj_create(clock_view.screensaver);
+        lv_obj_remove_flag(star, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_remove_style_all(star);
         const uint8_t size = (i % 5 == 0) ? 2 : 1;
         lv_obj_set_size(star, size, size);

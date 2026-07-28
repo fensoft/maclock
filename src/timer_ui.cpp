@@ -1,4 +1,5 @@
 #include "timer_ui.h"
+#include "audio_volume.h"
 #include "localization.h"
 
 #include <Arduino.h>
@@ -37,7 +38,7 @@ struct TimerService::State
     uint32_t last_ui_seconds = UINT32_MAX;
     uint16_t selected_minutes = 25;
     char sound_path[SOUND_SELECTOR_PATH_MAX] = "/quack.mp3";
-    uint8_t volume = 2;
+    uint8_t volume = kDefaultAudioVolumeIndex;
     TimerUi ui = {};
     TimerView *view = nullptr;
     AppEventSink *events = nullptr;
@@ -235,6 +236,8 @@ static void DismissEvent(lv_event_t *event)
 static void InitTimerPanel(lv_obj_t *screen)
 {
     g_timer_ui.panel = lv_obj_create(screen);
+    lv_obj_remove_flag(
+        g_timer_ui.panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(g_timer_ui.panel, 292, 208);
     lv_obj_center(g_timer_ui.panel);
     lv_obj_set_style_bg_color(g_timer_ui.panel, lv_color_white(), 0);
@@ -300,6 +303,8 @@ static void InitTimerPanel(lv_obj_t *screen)
 static void InitFinishedPanel(lv_obj_t *screen)
 {
     g_timer_ui.finished_panel = lv_obj_create(screen);
+    lv_obj_remove_flag(
+        g_timer_ui.finished_panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(g_timer_ui.finished_panel, 286, 200);
     lv_obj_center(g_timer_ui.finished_panel);
     lv_obj_set_style_bg_color(
@@ -358,8 +363,12 @@ void TimerService::begin(Preferences &preferences)
             ? saved_minutes
             : 25;
     const uint8_t saved_volume =
-        preferences.getUChar("timer_volume", 2);
-    g_timer_volume = saved_volume < 4 ? saved_volume : 2;
+        preferences.getUChar(
+            "timer_volume", kDefaultAudioVolumeIndex);
+    g_timer_volume =
+        saved_volume < kAudioVolumeLevelCount
+            ? saved_volume
+            : kDefaultAudioVolumeIndex;
     const String saved_sound =
         preferences.getString("timer_sound", "/quack.mp3");
     strlcpy(
@@ -431,7 +440,8 @@ bool TimerService::configure(
     uint16_t minutes, const char *sound_path, uint8_t volume)
 {
     if (minutes < 1 || minutes > 1440 ||
-        !sound_path || !sound_path[0] || volume >= 4)
+        !sound_path || !sound_path[0] ||
+        volume >= kAudioVolumeLevelCount)
     {
         return false;
     }
@@ -467,13 +477,14 @@ const char *TimerService::soundPath() const
 
 uint8_t TimerService::volume() const
 {
-    static const uint8_t volumes[] = {25, 50, 75, 100};
-    return volumes[g_timer_volume < 4 ? g_timer_volume : 2];
+    return audio_volume_from_index(g_timer_volume);
 }
 
 uint8_t TimerService::volumeIndex() const
 {
-    return g_timer_volume < 4 ? g_timer_volume : 2;
+    return g_timer_volume < kAudioVolumeLevelCount
+               ? g_timer_volume
+               : kDefaultAudioVolumeIndex;
 }
 
 void TimerView::begin(lv_obj_t *screen, AppEventSink &events)

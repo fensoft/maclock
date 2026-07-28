@@ -7,6 +7,7 @@
 #include <RTClib.h>
 #include <lvgl.h>
 
+#include "audio_volume.h"
 #include "app_event_sink.h"
 
 static constexpr size_t kAlarmCount = 3;
@@ -19,7 +20,7 @@ struct AlarmSettings
     uint8_t minute = 0;
     uint8_t weekdays = 0x7F;
     uint8_t sound = 0;
-    uint8_t volume = 2;
+    uint8_t volume = kDefaultAudioVolumeIndex;
 };
 
 class AlarmService

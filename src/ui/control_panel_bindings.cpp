@@ -108,7 +108,8 @@ bool MaclockApp::applyControlAppearance(
 bool MaclockApp::applyControlAlarm(
     size_t index, const ControlPanelAlarm &alarm)
 {
-    if (index >= kAlarmCount || alarm.volume >= 4)
+    if (index >= kAlarmCount ||
+        alarm.volume >= kAudioVolumeLevelCount)
         return false;
 
     AlarmSettings settings;
@@ -174,7 +175,7 @@ bool MaclockApp::applyControlChime(
 {
     if (static_cast<uint8_t>(chime.mode) >=
             static_cast<uint8_t>(ChimeMode::Count) ||
-        chime.volume >= 4 ||
+        chime.volume >= kAudioVolumeLevelCount ||
         chime.quiet_start_hour >= 24 ||
         chime.quiet_end_hour >= 24 ||
         !sound_path || !sound_path[0])
@@ -200,7 +201,8 @@ bool MaclockApp::applyControlSystemSounds(
 {
     if (!startup_path || !startup_path[0] ||
         !floppy_path || !floppy_path[0] ||
-        startup_volume > 100 || floppy_volume > 100)
+        !audio_volume_is_level(startup_volume) ||
+        !audio_volume_is_level(floppy_volume))
     {
         return false;
     }
@@ -225,7 +227,8 @@ bool MaclockApp::applyControlSystemSounds(
 bool MaclockApp::previewControlSound(
     const char *sound_path, uint8_t volume)
 {
-    if (!sound_path || !sound_path[0] || volume > 100)
+    if (!sound_path || !sound_path[0] ||
+        !audio_volume_is_level(volume))
         return false;
 
     strlcpy(

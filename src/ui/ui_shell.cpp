@@ -2,6 +2,8 @@
 void DiagnosticsView::init(lv_obj_t *screen)
 {
     diagnostics_view.panel = lv_obj_create(screen);
+    lv_obj_remove_flag(
+        diagnostics_view.panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(diagnostics_view.panel, 286, 230);
     lv_obj_center(diagnostics_view.panel);
     lv_obj_set_style_bg_color(diagnostics_view.panel, lv_color_white(), 0);
@@ -54,6 +56,8 @@ static void update_wifi_setup_status_label(
 void WifiSetupView::init(lv_obj_t *screen)
 {
     wifi_setup_view.panel = lv_obj_create(screen);
+    lv_obj_remove_flag(
+        wifi_setup_view.panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(wifi_setup_view.panel, 286, 208);
     lv_obj_center(wifi_setup_view.panel);
     lv_obj_set_style_bg_color(

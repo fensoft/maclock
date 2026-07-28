@@ -1,5 +1,6 @@
 #include "settings_store.h"
 
+#include "audio_volume.h"
 #include "brightness.h"
 
 namespace
@@ -23,7 +24,46 @@ Enum load_enum(Preferences &preferences,
 bool SettingsStore::begin()
 {
     g_settings_store = this;
-    return preferences_.begin("maclock", false);
+    if (!preferences_.begin("maclock", false))
+        return false;
+
+    static constexpr uint8_t kCurrentVolumeScale = 2;
+    const uint8_t saved_scale =
+        preferences_.getUChar("volume_scale", 1);
+    if (saved_scale < kCurrentVolumeScale)
+    {
+        if (preferences_.isKey("chime_volume"))
+        {
+            preferences_.putUChar(
+                "chime_volume",
+                audio_volume_legacy_index(
+                    preferences_.getUChar("chime_volume", 1)));
+        }
+        if (preferences_.isKey("timer_volume"))
+        {
+            preferences_.putUChar(
+                "timer_volume",
+                audio_volume_legacy_index(
+                    preferences_.getUChar("timer_volume", 2)));
+        }
+        if (preferences_.isKey("startup_volume"))
+        {
+            preferences_.putUChar(
+                "startup_volume",
+                audio_volume_nearest_level(
+                    preferences_.getUChar("startup_volume", 80)));
+        }
+        if (preferences_.isKey("floppy_volume"))
+        {
+            preferences_.putUChar(
+                "floppy_volume",
+                audio_volume_nearest_level(
+                    preferences_.getUChar("floppy_volume", 60)));
+        }
+        preferences_.putUChar(
+            "volume_scale", kCurrentVolumeScale);
+    }
+    return true;
 }
 
 AppSettings SettingsStore::load()
@@ -97,7 +137,7 @@ AppSettings SettingsStore::load()
         preferences_, "chime_mode",
         ChimeMode::Off, ChimeMode::Count);
     settings.chime.sound = preferences_.getUChar("chime_sound", 0);
-    settings.chime.volume = preferences_.getUChar("chime_volume", 1);
+    settings.chime.volume = preferences_.getUChar("chime_volume", 2);
     settings.chime.quiet_enabled =
         preferences_.getBool("chime_quiet", true);
     settings.chime.quiet_start_hour =
@@ -106,8 +146,8 @@ AppSettings SettingsStore::load()
         preferences_.getUChar("quiet_end", 7);
     if (settings.chime.sound >= 3)
         settings.chime.sound = 0;
-    if (settings.chime.volume >= 4)
-        settings.chime.volume = 1;
+    if (settings.chime.volume >= kAudioVolumeLevelCount)
+        settings.chime.volume = 2;
     if (settings.chime.quiet_start_hour >= 24)
         settings.chime.quiet_start_hour = 22;
     if (settings.chime.quiet_end_hour >= 24)
@@ -233,7 +273,8 @@ uint8_t SettingsStore::loadStartupSoundVolume(
     const uint8_t value =
         const_cast<Preferences &>(preferences_)
             .getUChar("startup_volume", fallback);
-    return value <= 100 ? value : fallback;
+    return audio_volume_nearest_level(
+        value <= 100 ? value : fallback);
 }
 
 String SettingsStore::loadFloppySoundPath(
@@ -249,7 +290,8 @@ uint8_t SettingsStore::loadFloppySoundVolume(
     const uint8_t value =
         const_cast<Preferences &>(preferences_)
             .getUChar("floppy_volume", fallback);
-    return value <= 100 ? value : fallback;
+    return audio_volume_nearest_level(
+        value <= 100 ? value : fallback);
 }
 
 void SettingsStore::saveSystemSounds(

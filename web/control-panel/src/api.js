@@ -4,9 +4,9 @@ const demoState = {
   appearance: { face: 0, theme: 0, brightness: 7 },
   systemSounds: {
     startup: "/startup.mp3",
-    startupVolume: 70,
+    startupVolume: 80,
     floppy: "/floppy.mp3",
-    floppyVolume: 65,
+    floppyVolume: 60,
   },
   night: {
     enabled: false,
@@ -30,7 +30,7 @@ const demoState = {
       minute: 30,
       weekdays: 31,
       sound: "/quack.mp3",
-      volume: 2,
+      volume: 4,
     },
     {
       enabled: false,
@@ -38,7 +38,7 @@ const demoState = {
       minute: 0,
       weekdays: 96,
       sound: "/alarm.mp3",
-      volume: 2,
+      volume: 4,
     },
     {
       enabled: false,
@@ -46,7 +46,7 @@ const demoState = {
       minute: 0,
       weekdays: 127,
       sound: "/chime.mp3",
-      volume: 1,
+      volume: 2,
     },
   ],
   timer: {
@@ -54,7 +54,7 @@ const demoState = {
     minutes: 25,
     remaining: 0,
     sound: "/quack.mp3",
-    volume: 2,
+    volume: 4,
   },
   sounds: [
     { path: "/alarm.mp3", name: "Alarm" },

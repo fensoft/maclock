@@ -10,7 +10,8 @@ const themeOptions = ["Light", "Dark"];
 const hourFormatOptions = ["24-hour", "12-hour"];
 const chimeOptions = ["Off", "Hourly", "Quarter-hour"];
 const weekdays = ["M", "T", "W", "T", "F", "S", "S"];
-const volumeOptions = ["Mute", "Low", "Medium", "High"];
+const volumeLevels = [10, 20, 40, 60, 80, 100];
+const volumeOptions = volumeLevels.map((volume) => `${volume}%`);
 
 const panelState = ref(null);
 const loading = ref(true);
@@ -172,8 +173,8 @@ function saveSystemSounds() {
 
 function previewSound(sound, volume, levelScale = false) {
   const previewVolume = levelScale
-    ? Math.min(100, Math.max(1, Number(volume) * 25 + 25))
-    : Math.min(100, Math.max(1, Number(volume)));
+    ? volumeLevels[Number(volume)] || 80
+    : Number(volume);
   runAction(
     `preview-${sound}`,
     "/api/preview",
@@ -736,12 +737,17 @@ onBeforeUnmount(() => {
                         {{ panelState.systemSounds.startupVolume }}%
                       </output>
                     </span>
-                    <input
+                    <select
                       v-model.number="panelState.systemSounds.startupVolume"
-                      type="range"
-                      min="0"
-                      max="100"
-                    />
+                    >
+                      <option
+                        v-for="volume in volumeLevels"
+                        :key="volume"
+                        :value="volume"
+                      >
+                        {{ volume }}%
+                      </option>
+                    </select>
                   </label>
                 </div>
 
@@ -781,12 +787,17 @@ onBeforeUnmount(() => {
                         {{ panelState.systemSounds.floppyVolume }}%
                       </output>
                     </span>
-                    <input
+                    <select
                       v-model.number="panelState.systemSounds.floppyVolume"
-                      type="range"
-                      min="0"
-                      max="100"
-                    />
+                    >
+                      <option
+                        v-for="volume in volumeLevels"
+                        :key="volume"
+                        :value="volume"
+                      >
+                        {{ volume }}%
+                      </option>
+                    </select>
                   </label>
                 </div>
               </div>

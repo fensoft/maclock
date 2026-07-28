@@ -4,6 +4,8 @@ void BootOptionsView::init(lv_obj_t *screen)
     update_boot_translation_maps();
 
     boot_options_view.panel = lv_obj_create(screen);
+    lv_obj_remove_flag(
+        boot_options_view.panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(boot_options_view.panel, 292, 208);
     lv_obj_center(boot_options_view.panel);
     lv_obj_set_style_bg_color(boot_options_view.panel, lv_color_white(), 0);
@@ -526,7 +528,7 @@ void BootOptionsView::init(lv_obj_t *screen)
     boot_options_view.chime_sound_selector.begin(
         chime_sound_page,
         g_chime_sound_path,
-        g_chime_volumes[g_chime.volume],
+        audio_volume_from_index(g_chime.volume),
         chime_sound_changed,
         nullptr);
 

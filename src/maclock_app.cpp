@@ -519,8 +519,7 @@ static char g_startup_sound_path[SOUND_SELECTOR_PATH_MAX] =
 static uint8_t g_startup_sound_volume = 80;
 static char g_floppy_sound_path[SOUND_SELECTOR_PATH_MAX] =
     "/floppy.mp3";
-static uint8_t g_floppy_sound_volume = 65;
-static const uint8_t g_chime_volumes[] = {25, 50, 75, 100};
+static uint8_t g_floppy_sound_volume = 60;
 static const char *g_brightness_map[4] = {};
 static const char *g_remember_map[3] = {};
 static const char *g_date_format_map[4] = {
@@ -534,7 +533,8 @@ static const char *g_night_enabled_map[3] = {};
 static const char *g_night_screen_map[3] = {};
 static const char *g_chime_mode_map[6] = {};
 static const char *g_chime_volume_map[] = {
-    "25%", "50%", "\n", "75%", "100%", ""};
+    "10%", "20%", "40%", "\n",
+    "60%", "80%", "100%", ""};
 static const char *g_chime_quiet_map[3] = {};
 static const char *g_wifi_enabled_map[3] = {};
 
@@ -864,14 +864,12 @@ static void maybe_start_chime(const DateTime &current)
     if (chime_quiet_now(current) || audio_service.running())
         return;
 
-    const size_t volume_count =
-        sizeof(g_chime_volumes) / sizeof(g_chime_volumes[0]);
-    if (g_chime.volume >= volume_count)
+    if (g_chime.volume >= kAudioVolumeLevelCount)
         return;
     audio_service.play(
         SoundSelector::resolvePath(
             g_chime_sound_path, "/quack.mp3"),
-        g_chime_volumes[g_chime.volume]);
+        audio_volume_from_index(g_chime.volume));
 }
 
 #include "ui/boot_options_view_events.cpp"

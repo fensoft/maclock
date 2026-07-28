@@ -250,7 +250,7 @@ static void update_chime_options_ui()
     boot_options_view.chime_sound_selector.setPath(
         g_chime_sound_path);
     boot_options_view.chime_sound_selector.setPreviewVolume(
-        g_chime_volumes[g_chime.volume]);
+        audio_volume_from_index(g_chime.volume));
     set_checked_button(
         boot_options_view.chime_volume_options, g_chime.volume);
     set_checked_button(
@@ -460,15 +460,14 @@ static void chime_volume_event(lv_event_t *event)
     lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
     const uint32_t selected =
         lv_buttonmatrix_get_selected_button(options);
-    if (selected >=
-        sizeof(g_chime_volumes) / sizeof(g_chime_volumes[0]))
+    if (selected >= kAudioVolumeLevelCount)
     {
         return;
     }
     g_chime.volume = (uint8_t)selected;
     settings_store.saveChime(g_chime, g_chime_sound_path);
     boot_options_view.chime_sound_selector.setPreviewVolume(
-        g_chime_volumes[g_chime.volume]);
+        audio_volume_from_index(g_chime.volume));
 }
 
 static void chime_quiet_event(lv_event_t *event)
@@ -1144,6 +1143,7 @@ static lv_obj_t *create_action_button(lv_obj_t *parent,
 static lv_obj_t *create_boot_options_page(lv_obj_t *parent)
 {
     lv_obj_t *page = lv_obj_create(parent);
+    lv_obj_remove_flag(page, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_style_all(page);
     lv_obj_set_size(page, 276, 130);
     lv_obj_align(page, LV_ALIGN_TOP_MID, 0, 18);

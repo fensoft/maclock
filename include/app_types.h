@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 
+#include "audio_volume.h"
 #include "localization.h"
 #include "regional_settings.h"
 
@@ -101,7 +102,7 @@ struct ChimeSettings
 {
     ChimeMode mode = ChimeMode::Off;
     uint8_t sound = 0;
-    uint8_t volume = 1;
+    uint8_t volume = 2;
     bool quiet_enabled = true;
     uint8_t quiet_start_hour = 22;
     uint8_t quiet_end_hour = 7;

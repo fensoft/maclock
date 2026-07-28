@@ -1,4 +1,5 @@
 #include "alarm_ui.h"
+#include "audio_volume.h"
 #include "localization.h"
 #include "sound_selector.h"
 
@@ -11,10 +12,10 @@ LV_FONT_DECLARE(lv_font_chicago_48);
 namespace
 {
 static constexpr uint32_t kAlarmStorageMagic = 0x414C524D; // 'ALRM'
-static constexpr uint8_t kAlarmStorageVersion = 1;
+static constexpr uint8_t kAlarmStorageVersion = 2;
+static constexpr uint8_t kLegacyAlarmStorageVersion = 1;
 static constexpr uint8_t kAllWeekdays = 0x7F;
 static constexpr size_t kLegacyAlarmSoundCount = 3;
-static constexpr size_t kAlarmVolumeCount = 4;
 
 enum AlarmEditorPage
 {
@@ -128,12 +129,12 @@ AlarmService *active_alarm_service = nullptr;
 #define g_page_names (active_alarm_service->state().page_names)
 
 static const char *g_volume_map[] = {
-    "25%", "50%", "\n", "75%", "100%", ""};
+    "10%", "20%", "40%", "\n",
+    "60%", "80%", "100%", ""};
 static const char *g_legacy_sound_paths[kLegacyAlarmSoundCount] = {
     "/quack.mp3",
     "/startup.mp3",
     "/floppy.mp3"};
-static const uint8_t g_volume_values[kAlarmVolumeCount] = {25, 50, 75, 100};
 
 static void UpdateLanguageMaps()
 {
@@ -175,7 +176,7 @@ static void SetAlarmDefaults()
         g_alarms[i].hour = (uint8_t)(7 + i);
         g_alarms[i].weekdays = kAllWeekdays;
         g_alarms[i].sound = 0;
-        g_alarms[i].volume = 2;
+        g_alarms[i].volume = kDefaultAudioVolumeIndex;
         strlcpy(
             g_alarm_sound_paths[i], "/quack.mp3",
             SOUND_SELECTOR_PATH_MAX);
@@ -190,7 +191,7 @@ static bool AlarmConfigIsValid(const AlarmConfig &alarm)
            alarm.minute < 60 &&
            (alarm.weekdays & ~kAllWeekdays) == 0 &&
            alarm.sound < kLegacyAlarmSoundCount &&
-           alarm.volume < kAlarmVolumeCount;
+           alarm.volume < kAudioVolumeLevelCount;
 }
 
 static void LoadAlarmSoundPaths(Preferences &preferences)
@@ -377,7 +378,7 @@ static void UpdateSummary()
              days,
              SoundSelector::displayName(
                  g_edit_alarm_sound_paths[g_selected_alarm]),
-             (unsigned)g_volume_values[alarm.volume]);
+             (unsigned)audio_volume_from_index(alarm.volume));
     lv_label_set_text(g_editor.summary, text);
 }
 
@@ -460,11 +461,11 @@ static void VolumeEvent(lv_event_t *event)
 
     const uint32_t selected =
         lv_buttonmatrix_get_selected_button(g_editor.volume_matrix);
-    if (selected < kAlarmVolumeCount)
+    if (selected < kAudioVolumeLevelCount)
     {
         g_edit_alarms[g_selected_alarm].volume = (uint8_t)selected;
         g_editor.sound_selector.setPreviewVolume(
-            g_volume_values[selected]);
+            audio_volume_from_index(selected));
     }
 }
 
@@ -499,9 +500,9 @@ static void LoadEditorAlarm(size_t alarm_index)
             resolved_sound, SOUND_SELECTOR_PATH_MAX);
     }
     g_editor.sound_selector.setPreviewVolume(
-        g_volume_values[alarm.volume]);
+        audio_volume_from_index(alarm.volume));
     SetMatrixChecked(
-        g_editor.volume_matrix, kAlarmVolumeCount, alarm.volume);
+        g_editor.volume_matrix, kAudioVolumeLevelCount, alarm.volume);
     UpdateTimeValue();
     UpdateSummary();
 }
@@ -620,6 +621,7 @@ static void DismissEvent(lv_event_t *event)
 static lv_obj_t *CreateEditorPage(lv_obj_t *parent)
 {
     lv_obj_t *page = lv_obj_create(parent);
+    lv_obj_remove_flag(page, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_style_all(page);
     lv_obj_set_size(page, 276, 130);
     lv_obj_align(page, LV_ALIGN_TOP_MID, 0, 18);
@@ -637,6 +639,8 @@ static void InitEditorUi(lv_obj_t *screen)
 {
     UpdateLanguageMaps();
     g_editor.panel = lv_obj_create(screen);
+    lv_obj_remove_flag(
+        g_editor.panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(g_editor.panel, 292, 208);
     lv_obj_center(g_editor.panel);
     lv_obj_set_style_bg_color(g_editor.panel, lv_color_white(), 0);
@@ -730,7 +734,7 @@ static void InitEditorUi(lv_obj_t *screen)
     g_editor.sound_selector.begin(
         sound_page,
         "/quack.mp3",
-        g_volume_values[2],
+        audio_volume_from_index(kDefaultAudioVolumeIndex),
         SoundChanged,
         nullptr);
 
@@ -792,6 +796,8 @@ static void InitEditorUi(lv_obj_t *screen)
 static void InitRingingUi(lv_obj_t *screen)
 {
     g_ringing.panel = lv_obj_create(screen);
+    lv_obj_remove_flag(
+        g_ringing.panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(g_ringing.panel, 286, 200);
     lv_obj_center(g_ringing.panel);
     lv_obj_set_style_bg_color(g_ringing.panel, lv_color_white(), 0);
@@ -858,14 +864,35 @@ void AlarmService::begin(Preferences &preferences)
                 "alarms_v1", &storage, sizeof(storage)) ==
                 sizeof(storage) &&
             storage.magic == kAlarmStorageMagic &&
-            storage.version == kAlarmStorageVersion;
+            (storage.version == kAlarmStorageVersion ||
+             storage.version == kLegacyAlarmStorageVersion);
     }
+    const bool legacy_storage =
+        storage_valid &&
+        storage.version == kLegacyAlarmStorageVersion;
     for (size_t i = 0; storage_valid && i < kAlarmCount; ++i)
-        storage_valid = AlarmConfigIsValid(storage.alarms[i]);
+    {
+        storage_valid =
+            AlarmConfigIsValid(storage.alarms[i]) &&
+            (!legacy_storage || storage.alarms[i].volume < 4);
+    }
     if (storage_valid)
+    {
         memcpy(g_alarms, storage.alarms, sizeof(g_alarms));
+        if (legacy_storage)
+        {
+            for (size_t i = 0; i < kAlarmCount; ++i)
+            {
+                g_alarms[i].volume =
+                    audio_volume_legacy_index(
+                        g_alarms[i].volume);
+            }
+        }
+    }
 
     LoadAlarmSoundPaths(preferences);
+    if (storage_valid && legacy_storage)
+        SaveAlarms();
 }
 
 int AlarmService::due(const DateTime &now)
@@ -940,8 +967,9 @@ const char *AlarmService::soundPath(size_t alarm_index) const
 uint8_t AlarmService::volume(size_t alarm_index) const
 {
     if (alarm_index >= kAlarmCount)
-        return g_volume_values[2];
-    return g_volume_values[g_alarms[alarm_index].volume];
+        return audio_volume_from_index(kDefaultAudioVolumeIndex);
+    return audio_volume_from_index(
+        g_alarms[alarm_index].volume);
 }
 
 AlarmSettings AlarmService::settings(size_t alarm_index) const

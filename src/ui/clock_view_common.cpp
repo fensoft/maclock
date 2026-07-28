@@ -311,6 +311,7 @@ static lv_obj_t *create_flip_card(
     lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *hinge = lv_obj_create(card);
+    lv_obj_remove_flag(hinge, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_style_all(hinge);
     lv_obj_set_size(hinge, lv_pct(100), 1);
     lv_obj_align(hinge, LV_ALIGN_CENTER, 0, 0);
@@ -339,6 +340,7 @@ static lv_obj_t *create_flip_flap(
     lv_obj_remove_flag(flap, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *hinge = lv_obj_create(flap);
+    lv_obj_remove_flag(hinge, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_style_all(hinge);
     lv_obj_set_size(hinge, lv_pct(100), 1);
     lv_obj_align(hinge, LV_ALIGN_CENTER, 0, 0);

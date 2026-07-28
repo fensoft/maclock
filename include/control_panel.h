@@ -15,7 +15,7 @@ struct ControlPanelAlarm
     uint8_t hour = 7;
     uint8_t minute = 0;
     uint8_t weekdays = 0x7F;
-    uint8_t volume = 2;
+    uint8_t volume = kDefaultAudioVolumeIndex;
     char sound[SOUND_SELECTOR_PATH_MAX] = "/quack.mp3";
 };
 
@@ -24,7 +24,7 @@ struct ControlPanelTimer
     bool active = false;
     uint16_t minutes = 25;
     uint32_t remaining_seconds = 0;
-    uint8_t volume = 2;
+    uint8_t volume = kDefaultAudioVolumeIndex;
     char sound[SOUND_SELECTOR_PATH_MAX] = "/quack.mp3";
 };
 
@@ -35,7 +35,7 @@ struct ControlPanelSnapshot
     char startup_sound[SOUND_SELECTOR_PATH_MAX] = "/startup.mp3";
     uint8_t startup_volume = 80;
     char floppy_sound[SOUND_SELECTOR_PATH_MAX] = "/floppy.mp3";
-    uint8_t floppy_volume = 65;
+    uint8_t floppy_volume = 60;
     char chime_sound[SOUND_SELECTOR_PATH_MAX] = "/quack.mp3";
     ControlPanelAlarm alarms[kControlPanelAlarmCount];
     ControlPanelTimer timer;

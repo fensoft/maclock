@@ -1,4 +1,5 @@
 #include "sound_selector.h"
+#include "audio_volume.h"
 #include "localization.h"
 #include "selector_list_style.h"
 
@@ -22,7 +23,6 @@ static constexpr lv_coord_t kListWidth = 184;
 static constexpr lv_coord_t kPlayWidth = 68;
 static constexpr lv_coord_t kControlHeight = 58;
 static constexpr lv_coord_t kHorizontalInset = 8;
-static const uint8_t kPreviewVolumes[] = {25, 50, 100};
 
 static bool is_mp3_path(const char *path)
 {
@@ -197,11 +197,7 @@ static void play_event(lv_event_t *event)
 
 static uint8_t normalize_preview_volume(uint8_t volume)
 {
-    if (volume <= kPreviewVolumes[0])
-        return kPreviewVolumes[0];
-    if (volume < kPreviewVolumes[2])
-        return kPreviewVolumes[1];
-    return kPreviewVolumes[2];
+    return audio_volume_nearest_level(volume);
 }
 
 static void update_preview_volume_label(
@@ -226,12 +222,16 @@ static void volume_event(lv_event_t *event)
     if (!selector)
         return;
 
-    if (selector->preview_volume == kPreviewVolumes[0])
-        selector->preview_volume = kPreviewVolumes[1];
-    else if (selector->preview_volume == kPreviewVolumes[1])
-        selector->preview_volume = kPreviewVolumes[2];
-    else
-        selector->preview_volume = kPreviewVolumes[0];
+    size_t next = 0;
+    for (size_t i = 0; i < kAudioVolumeLevelCount; ++i)
+    {
+        if (selector->preview_volume == kAudioVolumeLevels[i])
+        {
+            next = (i + 1) % kAudioVolumeLevelCount;
+            break;
+        }
+    }
+    selector->preview_volume = kAudioVolumeLevels[next];
     update_preview_volume_label(selector);
 }
 

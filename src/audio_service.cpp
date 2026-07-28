@@ -1,5 +1,6 @@
 #include "audio_service.h"
 
+#include "audio_volume.h"
 #include "display_service.h"
 #include "es8311.h"
 
@@ -107,7 +108,8 @@ bool AudioService::play(const char *path, uint8_t volume)
         // stream before the decoder task starts sending MP3 samples.
         vTaskDelay(pdMS_TO_TICKS(5));
         es8311_voice_mute(codec, false);
-        es8311_voice_volume_set(codec, volume, nullptr);
+        es8311_voice_volume_set(
+            codec, audio_volume_codec_level(volume), nullptr);
     }
 
     portENTER_CRITICAL(&finished_mux_);

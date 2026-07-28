@@ -201,6 +201,7 @@ static void datetime_cancel_event(lv_event_t *e)
 static lv_obj_t *create_spinbox_column(lv_obj_t *parent, int min_value, int max_value, int digits, int init_value)
 {
     lv_obj_t *col = lv_obj_create(parent);
+    lv_obj_remove_flag(col, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_style_all(col);
     lv_obj_set_size(col, 0, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
@@ -298,6 +299,8 @@ void DateTimeEditor::begin(
     lv_style_set_outline_width(&g_btn_style_pressed, 0);
 
     g_dt_ui.panel = lv_obj_create(scr);
+    lv_obj_remove_flag(
+        g_dt_ui.panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(g_dt_ui.panel, 280, 190);
     lv_obj_center(g_dt_ui.panel);
     lv_obj_set_style_bg_color(g_dt_ui.panel, lv_color_white(), 0);
@@ -315,6 +318,8 @@ void DateTimeEditor::begin(
     lv_obj_set_width(g_dt_ui.title, lv_pct(100));
 
     g_dt_ui.time_row = lv_obj_create(g_dt_ui.panel);
+    lv_obj_remove_flag(
+        g_dt_ui.time_row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_style_all(g_dt_ui.time_row);
     lv_obj_set_size(g_dt_ui.time_row, lv_pct(100), LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(g_dt_ui.time_row, LV_FLEX_FLOW_ROW);
@@ -348,6 +353,8 @@ void DateTimeEditor::begin(
     g_dt_spinbox_max[g_dt_spinbox_count - 1] = 59;
 
     g_dt_ui.date_row = lv_obj_create(g_dt_ui.panel);
+    lv_obj_remove_flag(
+        g_dt_ui.date_row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_style_all(g_dt_ui.date_row);
     lv_obj_set_size(g_dt_ui.date_row, lv_pct(100), LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(g_dt_ui.date_row, LV_FLEX_FLOW_ROW);
@@ -384,6 +391,7 @@ void DateTimeEditor::begin(
     update_date_order();
 
     lv_obj_t *step_row = lv_obj_create(g_dt_ui.panel);
+    lv_obj_remove_flag(step_row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_style_all(step_row);
     lv_obj_set_size(step_row, lv_pct(100), LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(step_row, LV_FLEX_FLOW_ROW);
@@ -414,6 +422,7 @@ void DateTimeEditor::begin(
     lv_obj_add_event_cb(g_dt_ui.plus_btn, plus_event, LV_EVENT_LONG_PRESSED_REPEAT, NULL);
 
     lv_obj_t *btn_row = lv_obj_create(g_dt_ui.panel);
+    lv_obj_remove_flag(btn_row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_style_all(btn_row);
     lv_obj_set_size(btn_row, lv_pct(100), LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(btn_row, LV_FLEX_FLOW_ROW);

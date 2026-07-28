@@ -4,6 +4,7 @@
 #include <ESPmDNS.h>
 #include <WebServer.h>
 
+#include "audio_volume.h"
 #include "brightness.h"
 #include "control_panel_page.h"
 
@@ -270,7 +271,8 @@ static void apply_alarm()
         !read_uint("hour", 0, 23, hour) ||
         !read_uint("minute", 0, 59, minute) ||
         !read_uint("weekdays", 0, 0x7F, weekdays) ||
-        !read_uint("volume", 0, 3, volume) ||
+        !read_uint(
+            "volume", 0, kAudioVolumeLevelCount - 1, volume) ||
         !read_sound(sound))
     {
         send_result(false, "Invalid alarm settings", 400);
@@ -302,7 +304,8 @@ static void apply_timer()
     const bool cancel = action == "cancel";
     if ((!start && !cancel && action != "save") ||
         !read_uint("minutes", 1, 1440, minutes) ||
-        !read_uint("volume", 0, 3, volume) ||
+        !read_uint(
+            "volume", 0, kAudioVolumeLevelCount - 1, volume) ||
         !read_sound(sound))
     {
         send_result(false, "Invalid timer settings", 400);
@@ -364,7 +367,8 @@ static void apply_chime()
     if (!read_uint(
             "mode", 0,
             static_cast<uint8_t>(ChimeMode::Count) - 1, mode) ||
-        !read_uint("volume", 0, 3, volume) ||
+        !read_uint(
+            "volume", 0, kAudioVolumeLevelCount - 1, volume) ||
         !read_uint("quiet", 0, 1, quiet) ||
         !read_uint("quietStart", 0, 23, quiet_start) ||
         !read_uint("quietEnd", 0, 23, quiet_end) ||
@@ -395,7 +399,8 @@ static void preview_sound()
 {
     uint32_t volume = 0;
     String sound;
-    if (!read_uint("volume", 1, 100, volume) ||
+    if (!read_uint("volume", 10, 100, volume) ||
+        !audio_volume_is_level(static_cast<uint8_t>(volume)) ||
         !read_sound(sound))
     {
         send_result(false, "Invalid sound preview", 400);
@@ -419,10 +424,14 @@ static void apply_system_sounds()
     String floppy;
     if (!read_sound_arg("startup", startup) ||
         !read_uint(
-            "startupVolume", 0, 100, startup_volume) ||
+            "startupVolume", 10, 100, startup_volume) ||
         !read_sound_arg("floppy", floppy) ||
         !read_uint(
-            "floppyVolume", 0, 100, floppy_volume))
+            "floppyVolume", 10, 100, floppy_volume) ||
+        !audio_volume_is_level(
+            static_cast<uint8_t>(startup_volume)) ||
+        !audio_volume_is_level(
+            static_cast<uint8_t>(floppy_volume)))
     {
         send_result(false, "Invalid system sound settings", 400);
         return;

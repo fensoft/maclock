@@ -38,7 +38,7 @@ void MaclockApp::begin()
         g_floppy_sound_path, saved_floppy_path.c_str(),
         sizeof(g_floppy_sound_path));
     g_floppy_sound_volume =
-        settings_store.loadFloppySoundVolume(65);
+        settings_store.loadFloppySoundVolume(60);
     timer_service.begin(settings_store.preferences());
     control_panel_service.begin(*this);
     EmulatorHardwareBridge::bind(display_service);

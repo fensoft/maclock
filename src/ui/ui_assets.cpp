@@ -2,6 +2,7 @@
 void UiShell::init()
 {
     lv_obj_t *scr = lv_screen_active();
+    lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
     ui_shell.background = lv_image_create(scr);
     ui_shell.background_buf = load_png_once("S:/background.png");
     ui_shell.corners_buf = load_png_once("S:/corners.png");
@@ -21,6 +22,8 @@ void UiShell::init()
     lv_obj_center(ui_shell.background);
 
     ui_shell.white_bar = lv_obj_create(scr);
+    lv_obj_remove_flag(
+        ui_shell.white_bar, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_style_all(ui_shell.white_bar);
     lv_obj_set_size(ui_shell.white_bar, lv_pct(100), 19);
     lv_obj_set_pos(ui_shell.white_bar, 0, 0);
@@ -28,6 +31,8 @@ void UiShell::init()
     lv_obj_set_style_bg_opa(ui_shell.white_bar, LV_OPA_COVER, 0);
 
     ui_shell.black_line = lv_obj_create(scr);
+    lv_obj_remove_flag(
+        ui_shell.black_line, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_style_all(ui_shell.black_line);
     lv_obj_set_size(ui_shell.black_line, lv_pct(100), 1);
     lv_obj_set_pos(ui_shell.black_line, 0, 19);
@@ -123,6 +128,8 @@ void UiShell::init()
     lv_obj_align(ui_shell.gauge_icon, LV_ALIGN_TOP_RIGHT, -12, 111);
 
     ui_shell.gauge_line = lv_obj_create(ui_shell.clock);
+    lv_obj_remove_flag(
+        ui_shell.gauge_line, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_style_all(ui_shell.gauge_line);
     lv_obj_set_size(ui_shell.gauge_line, 180, 2);
     lv_obj_set_style_bg_color(ui_shell.gauge_line, lv_color_black(), 0);
@@ -130,6 +137,8 @@ void UiShell::init()
     lv_obj_align(ui_shell.gauge_line, LV_ALIGN_TOP_RIGHT, -12, 127);
 
     ui_shell.gauge_box = lv_obj_create(ui_shell.clock);
+    lv_obj_remove_flag(
+        ui_shell.gauge_box, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_style_all(ui_shell.gauge_box);
     lv_obj_set_size(ui_shell.gauge_box, 10, 10);
     lv_obj_set_style_border_color(ui_shell.gauge_box, lv_color_black(), 0);
