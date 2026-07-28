@@ -9,7 +9,7 @@
 */
 
 /* adapt to current compiler/host processor */
-#ifdef __x86_64__
+#if defined(__x86_64__) && !defined(MACLOCK_LOCAL)
 #error "source is configured for 32 bit compiler"
 #endif
 
@@ -42,10 +42,18 @@ typedef unsigned short ui4b;
 typedef short si4b;
 #define HaveRealsi4b 1
 
+#ifdef MACLOCK_LOCAL
+typedef unsigned int ui5b;
+#else
 typedef unsigned long ui5b;
+#endif
 #define HaveRealui5b 1
 
+#ifdef MACLOCK_LOCAL
+typedef int si5b;
+#else
 typedef long si5b;
+#endif
 #define HaveRealsi5b 1
 
 #define HaveRealui6b 0

@@ -550,12 +550,14 @@ static void request_state(UiState state)
     active_app->requestState(state);
 }
 
-MaclockApp::MaclockApp()
-    : rtc_service_(i2c_bus_),
+MaclockApp::MaclockApp(MaclockHal &hal)
+    : hal_(hal),
+      rtc_service_(i2c_bus_),
       weather_service_(i2c_bus_),
       audio_service_(display_service_),
       timer_view_(timer_service_)
 {
+    maclock_install_hal(hal_);
 }
 
 void MaclockApp::requestState(UiState state)
@@ -607,7 +609,7 @@ static DiagnosticsSnapshot make_diagnostics_snapshot()
         wifi_service.snapshot()};
 
     static constexpr uint8_t addresses[] = {
-        0x18, 0x38, 0x40, 0x47, 0x68};
+        0x18, 0x38, 0x40, 0x47, 0x50, 0x68};
     size_t length = 0;
     for (uint8_t address : addresses)
     {

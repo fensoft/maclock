@@ -59,7 +59,11 @@
 #define MyWindowScale 2
 #define WantInitRunInBackground 0
 #define WantInitNotAutoSlow 0
+#ifdef MACLOCK_LOCAL
+#define WantInitSpeedValue 0
+#else
 #define WantInitSpeedValue 5
+#endif
 #define WantEnblCtrlInt 1
 #define WantEnblCtrlRst 1
 #define WantEnblCtrlKtg 1

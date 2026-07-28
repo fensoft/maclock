@@ -24,6 +24,93 @@ Join the community on the [Discord server](https://discord.gg/89etSPMFym).
 See the illustrated [BUILD.md](BUILD.md) guide for required hardware,
 disassembly, wiring, firmware preparation, and flashing.
 
+## macOS Desktop Simulator
+
+The `maclock-local` CMake target runs the complete application on macOS:
+the real LVGL configuration and clock screens, both web portals, audio, and
+Mini vMac all use the same application code as the ESP32 firmware. SDL3
+stores the complete 320×240 RGB565 framebuffer but presents only Maclock's
+active 304×224 viewport, hiding the unused black top/right area. A Dear ImGui
+side panel simulates the attached hardware.
+
+The first configure downloads pinned host-only dependencies, so it requires an
+Internet connection. Xcode Command Line Tools and CMake 3.24 or newer are
+required.
+
+```sh
+cmake --preset macos-debug
+cmake --build --preset macos-debug
+open "build/macos-debug/Maclock Simulator.app"
+```
+
+Release and AddressSanitizer builds use `macos-release` and `macos-asan`
+instead. The simulator accepts:
+
+```text
+--startup config|clock|emulator|firmware
+--data-dir PATH
+--state-dir PATH
+--reset-state
+--http-port PORT
+--scale auto|1|2|3|4
+--floppy-inserted
+```
+
+The default startup is Configuration. The display scale is chosen
+automatically as the largest integer scale that fits the usable desktop;
+`--scale` can override it. `firmware` preserves the saved device boot
+preference; the other startup values override it for that run.
+`--floppy-inserted` starts the active-low floppy input asserted, which is
+useful when testing the full clock startup without waiting at the disk prompt.
+
+Click or drag directly on the framebuffer to use the existing FT6336 touch
+path. Right-clicking the framebuffer holds the discrete-touch input until the
+mouse button is released; desktop Mini vMac reads it directly so double-clicks
+remain distinct. The fixed hardware toolbar provides the floppy level,
+held Alarm, Clock, Alarm + Clock, and discrete-touch inputs, encoder steps, and
+the current encoder value. Every momentary control follows mouse-down and
+mouse-up directly instead of generating a fixed-duration pulse. The
+displayed framebuffer follows the firmware's real backlight PWM, with its
+current percentage shown above the screen. The hardware panel uses the bundled
+Chicago font and classic Macintosh monochrome controls. A mouse wheel over the
+screen also turns the encoder. Mini vMac runs at the original 1× Macintosh
+speed in the desktop simulator; the optimized ESP32 speed remains unchanged.
+The I²C panel can
+switch between BMP5xx at `0x47`/`0x50`, HTU2x at `0x40`, or a disconnected
+sensor and can adjust temperature, pressure, and humidity. It can also switch
+the RTC between DS3231 and DS1307, disconnect it, or reset its session-local
+offset to host time.
+
+By default, persistent data lives at:
+
+```text
+~/Library/Application Support/Maclock Simulator
+```
+
+Preferences use an atomically replaced typed file, EEPROM uses a binary image,
+and LittleFS overlays writes on top of the repository's read-only `data/`
+directory. Mini vMac disk writes therefore survive a restart without changing
+repository ROMs, disks, MP3s, or images. `--reset-state` removes only the
+resolved simulator state directory.
+
+The simulated Wi-Fi network is `Mac Host Network`; connection succeeds with
+any credentials and reports deterministic local values. A fresh simulator
+state starts with Wi-Fi enabled on that network and Paris selected for online
+weather, so neither portal is required before the local control panel works.
+Changing or disabling Wi-Fi saves that choice; `--reset-state` restores the
+defaults. These defaults are desktop-only and never change ESP32 credentials.
+Outbound HTTP uses the host network, NTP uses host time, and firmware port 80
+is mapped to `http://127.0.0.1:8088/` by default. Captive DNS and mDNS report
+success but do not redirect host traffic. The desktop **Open Portal** control
+opens the active localhost address. Battery state is intentionally unavailable
+and has no simulator control.
+
+Useful non-interactive smoke test:
+
+```sh
+ctest --test-dir build/macos-debug --output-on-failure
+```
+
 ## Software Manual
 
 ### Controls
@@ -238,7 +325,7 @@ The startup diagnostic expects:
 | --- | --- |
 | `0x18` | ES8311 audio codec |
 | `0x38` | FT6336 touchscreen |
-| `0x40` or `0x47` | HTU2x or BMP580/BMP581 weather sensor |
+| `0x40`, `0x47`, or `0x50` | HTU2x or BMP580/BMP581 weather sensor |
 | `0x68` | DS1307 or DS3231 real-time clock |
 
 | Successful plugin detection | Missing-plugin diagnostic |

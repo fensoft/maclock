@@ -2,15 +2,20 @@
 void MaclockApp::begin()
 {
     active_app = this;
+    hal_.begin();
     Serial.begin(115200);
     analogWrite(TFT_BL_VAR, 0);
     settings_store.begin();
     app_settings = settings_store.load();
+    hal_.overrideBootEmulator(
+        app_settings.boot_floppy_emulator);
     localization_set_language(app_settings.language);
     datetime_editor.setDateFormat(g_date_format);
     audio_service.begin();
     alarm_service.begin(settings_store.preferences());
     wifi_service.begin(settings_store.preferences());
+    if (hal_.isLocal())
+        wifi_service.startTask();
     const String saved_chime_path = settings_store.loadChimePath(
         g_legacy_chime_sound_paths[g_chime.sound]);
     strlcpy(
@@ -51,6 +56,7 @@ void MaclockApp::begin()
     apply_boot_brightness(g_boot_brightness, false);
 
     const bool boot_options_requested = !digitalRead(GPIO_CLOCK);
+    hal_.appReady();
     bool emulator_returned_to_menu = false;
 
     if (!boot_options_requested && g_boot_floppy_emulator) {
@@ -87,6 +93,7 @@ void MaclockApp::begin()
 
 void MaclockApp::tick()
 {
+    hal_.pump();
     unsigned long now = millis();
     InputSnapshot inputs = input_service.read();
     const bool screen_touch_pressed =
@@ -190,6 +197,8 @@ void MaclockApp::tick()
 
     switch (current_state_)
     {
+    case UiState::None:
+        break;
     case UI_STATE_EMPTY_SCREEN: //  empty screen, start sound
         if (now - state_start_ms_ >= 0)
         {

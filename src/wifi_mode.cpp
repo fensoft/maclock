@@ -9,6 +9,7 @@
 #include <time.h>
 
 #include "localization.h"
+#include "maclock_hal.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -23,6 +24,11 @@ static constexpr uint32_t kNtpRefreshMs = 6UL * 60UL * 60UL * 1000UL;
 static constexpr uint32_t kForecastStaleSeconds = 6UL * 60UL * 60UL;
 static constexpr uint16_t kHttpTimeoutMs = 12000;
 static constexpr size_t kMaxDetectedNetworks = 12;
+static constexpr char kLocalDefaultCity[] = "Paris";
+static constexpr char kLocalDefaultLocation[] = "Paris, FR";
+static constexpr char kLocalDefaultTimezone[] = "Europe/Paris";
+static constexpr double kLocalDefaultLatitude = 48.856613;
+static constexpr double kLocalDefaultLongitude = 2.352222;
 
 struct WifiSettings
 {
@@ -847,6 +853,78 @@ static void configure_portal_routes()
     g_web_server.onNotFound(send_setup_page);
     g_portal_routes_ready = true;
 }
+
+static bool has_saved_wifi_settings(
+    Preferences &preferences)
+{
+    static constexpr const char *keys[] = {
+        "wifi_on", "wifi_ssid", "wifi_pass", "wifi_city",
+        "wifi_coord", "wifi_lat", "wifi_lon", "wifi_loc",
+        "wifi_tz", "wifi_offset"};
+    for (const char *key : keys)
+    {
+        if (preferences.isKey(key))
+            return true;
+    }
+    return false;
+}
+
+static int32_t local_utc_offset_seconds()
+{
+    const time_t now = time(nullptr);
+    struct tm local_time = {};
+    struct tm utc_time = {};
+    if (now == static_cast<time_t>(-1) ||
+        !localtime_r(&now, &local_time) ||
+        !gmtime_r(&now, &utc_time))
+    {
+        return 0;
+    }
+
+    // Ask mktime to interpret both values using the host's current
+    // daylight-saving state, then compare the resulting epochs.
+    utc_time.tm_isdst = local_time.tm_isdst;
+    const time_t local_epoch = mktime(&local_time);
+    const time_t utc_as_local_epoch = mktime(&utc_time);
+    if (local_epoch == static_cast<time_t>(-1) ||
+        utc_as_local_epoch == static_cast<time_t>(-1))
+    {
+        return 0;
+    }
+    return static_cast<int32_t>(
+        difftime(local_epoch, utc_as_local_epoch));
+}
+
+static void seed_local_wifi_defaults(
+    Preferences &preferences)
+{
+    if (!maclock_hal_installed() ||
+        !maclock_hal().isLocal() ||
+        has_saved_wifi_settings(preferences))
+    {
+        return;
+    }
+
+    preferences.putBool("wifi_on", true);
+    preferences.putString(
+        "wifi_ssid",
+        maclock_hal().network().simulatedSsid());
+    preferences.putString("wifi_pass", "");
+    preferences.putString("wifi_city", kLocalDefaultCity);
+    preferences.putBool("wifi_coord", true);
+    preferences.putDouble(
+        "wifi_lat", kLocalDefaultLatitude);
+    preferences.putDouble(
+        "wifi_lon", kLocalDefaultLongitude);
+    preferences.putString(
+        "wifi_loc", kLocalDefaultLocation);
+    preferences.putString(
+        "wifi_tz", kLocalDefaultTimezone);
+    preferences.putInt(
+        "wifi_offset", local_utc_offset_seconds());
+    Serial.println(
+        "[Wi-Fi] Seeded fresh simulator Wi-Fi defaults");
+}
 } // namespace
 
 WifiService::State &WifiService::state()
@@ -862,6 +940,8 @@ void WifiService::begin(Preferences &preferences)
     g_preferences = &preferences;
     if (!g_lock)
         g_lock = xSemaphoreCreateMutex();
+
+    seed_local_wifi_defaults(preferences);
 
     WifiSettings settings = {};
     settings.enabled = preferences.getBool("wifi_on", false);

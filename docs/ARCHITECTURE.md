@@ -10,6 +10,88 @@ TFT_eSPI owns the ILI9341 panel, LVGL implements the normal interface, LittleFS
 stores runtime media, and a prepared Mini vMac source tree supplies the emulator
 core.
 
+## Platform HAL
+
+`MaclockApp` receives a `MaclockHal&`; `begin()` and `tick()` remain its only
+application entry points. The HAL is divided into narrow runtime/timing, GPIO,
+I²C, SPI, display, audio, storage, and networking interfaces.
+
+- `Esp32MaclockHal` is the firmware composition adapter. Arduino, Espressif,
+  TFT_eSPI, codec, FreeRTOS, and filesystem behavior remains owned by the
+  existing physical services, so pin definitions, task parameters,
+  Preferences keys, and timing are unchanged.
+- `LocalMaclockHal` installs desktop compatibility implementations before
+  `MaclockApp::begin()`. Existing `TwoWire`, `SPIClass`, `TFT_eSPI`,
+  `Preferences`, `EEPROM`, FreeRTOS, Espressif I²S/heap/timer, Wi-Fi, HTTP, and
+  Arduino GPIO calls then delegate to the local HAL. Mini vMac's generated core
+  remains unchanged and its existing Arduino bridge compiles against those
+  shims.
+
+The desktop target is a separate CMake-built macOS application. PlatformIO's
+`lolin_s3` environment does not include any SDL, ImGui, miniaudio, host
+filesystem, or host networking source.
+
+### LocalMaclockHal runtime
+
+SDL3 is initialized before application setup. SDL events and Dear ImGui are
+pumped from the normal loop and from Arduino `yield()`/`delay()`, keeping the
+window responsive during startup audio and synchronous Mini vMac execution.
+The synchronized framebuffer remains 320×240 RGB565, while the SDL image
+samples the active 304×224 region at `(0, 16)` to hide unused panel edges.
+Touch coordinates are translated back into full-frame coordinates. Unless
+explicitly overridden, the window selects the largest integer framebuffer
+scale that fits the primary display's usable bounds. Presentation preserves
+logical RGB565 words and applies the current backlight PWM to each channel
+without modifying the underlying framebuffer.
+
+The local device model provides:
+
+- active-low GPIO for Floppy, Alarm, Clock, and discrete touch plus an encoder;
+- virtual SPI transactions and the TFT_eSPI operations used by LVGL and
+  Mini vMac;
+- FT6336 registers at `0x38`, populated by inverse-rotation mapping of SDL
+  mouse press, drag, and release events;
+- ES8311 registers at `0x18`, BMP5xx at selectable `0x47`/`0x50`, optional
+  HTU2x at `0x40`, and selectable DS3231/DS1307 behavior at `0x68`;
+- host-time RTC progression with a session-local adjustment offset;
+- FreeRTOS task, mutex, event-group, stream-buffer, delay, and cooperative
+  shutdown compatibility backed by C++ threads and condition variables;
+- miniaudio output for decoded MP3 and Mini vMac PCM, with codec mute and a
+  0–100% unity-or-lower gain path. Its bounded queue applies producer
+  backpressure and drains through the final device callback before EOF can
+  mute the codec;
+- a deliberately stable unavailable/not-charging battery result.
+
+The default `config` launch holds Clock only through boot sampling, then
+releases it before the input task starts. `emulator` and `clock` override the
+saved startup choice for the current process; `firmware` uses the saved
+preference. Desktop Alarm and Clock clicks remain active-low for at least
+120 ms so the normal 20 ms input task cannot miss them; discrete touch remains
+active longer to pass its production filtering. Window close requests assert
+Clock and Alarm together long enough to use the existing Mini vMac safe-exit
+path.
+
+### Desktop persistence and networking
+
+The local Preferences file is typed and atomically replaced. EEPROM uses a
+persistent binary image. The LittleFS compatibility layer merges repository
+`data/` as a read-only base with a writable state overlay and copies a base
+file into the overlay before its first mutation. Directory enumeration merges
+both layers. This prevents emulator disk writes or application changes from
+modifying repository assets.
+
+Simulated Wi-Fi scanning returns `Mac Host Network`; association is
+credential-independent and IP/RSSI data is deterministic. When the local
+Preferences namespace contains no Wi-Fi keys, `WifiService` seeds a
+desktop-only enabled configuration for that network and Paris weather
+coordinates. Existing keys always win, including a saved disabled state, and
+resetting simulator state recreates the defaults. Firmware HTTP listeners are
+remapped from port 80 to localhost port 8088 by default. Socket threads queue
+requests so route callbacks execute from the application loop and therefore
+retain the firmware's LVGL ownership rule. Outbound weather HTTP uses the host
+network, while NTP reads host time. Captive DNS and mDNS are successful no-ops
+rather than host network reconfiguration.
+
 ## High-Level Boot Flow
 
 `src/main.cpp` is intentionally only the Arduino adapter: its static
@@ -291,12 +373,12 @@ The shared bus uses SDA 16 and SCL 15. The codec setup initializes it at
 | `0x18` | ES8311 | Normal-mode MP3 output |
 | `0x38` | FT6336 | Touch coordinates |
 | `0x40` | HTU2x | Temperature and humidity |
-| `0x47` | BMP580/BMP581 | Temperature and pressure |
+| `0x47` or `0x50` | BMP580/BMP581 | Temperature and pressure |
 | `0x68` | DS1307 or DS3231 | Clock and calendar |
 
-Weather detection prefers BMP5xx at `0x47`. If it is absent, HTU2x at `0x40`
-is attempted. BMP mode maps pressure from 980–1040 hPa to the gauge and weather
-icon; HTU mode maps 0–100% relative humidity.
+Weather detection prefers BMP5xx at `0x47`, then `0x50`. If neither is
+available, HTU2x at `0x40` is attempted. BMP mode maps pressure from 980–1040
+hPa to the gauge and weather icon; HTU mode maps 0–100% relative humidity.
 
 RTC detection first checks for an ACK at `0x68`, then probes control-register
 behavior to distinguish DS1307 from DS3231. `rtc_now()` returns a fixed

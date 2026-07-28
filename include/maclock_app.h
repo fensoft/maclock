@@ -14,6 +14,7 @@
 #include "display_service.h"
 #include "i2c_bus.h"
 #include "input_service.h"
+#include "maclock_hal.h"
 #include "rtc_service.h"
 #include "settings_store.h"
 #include "timer_ui.h"
@@ -25,7 +26,7 @@ class MaclockApp final
       public ControlPanelEventSink
 {
 public:
-    MaclockApp();
+    explicit MaclockApp(MaclockHal &hal);
 
     void begin();
     void tick();
@@ -77,6 +78,7 @@ public:
     DisplayService &display() { return display_service_; }
 
 private:
+    MaclockHal &hal_;
     SettingsStore settings_store_;
     AppSettings settings_;
     I2cBus i2c_bus_;

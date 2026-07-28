@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 
+#include "maclock_hal.h"
+
 namespace
 {
 InputService *g_emulator_input = nullptr;
@@ -79,6 +81,11 @@ bool InputService::discreteTouchPressed() const
 
 bool InputService::readEmulatorMouseButton()
 {
+    if (maclock_hal_installed() &&
+        maclock_hal().isLocal())
+    {
+        return digitalRead(GPIO_TOUCH) == LOW;
+    }
     return touch_.update();
 }
 

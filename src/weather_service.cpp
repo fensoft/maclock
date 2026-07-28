@@ -7,18 +7,27 @@ void WeatherService::begin()
 {
     type_ = WeatherSensorType::None;
     address_ = 0;
-    if (bmp_.begin(BMP5XX_ALTERNATIVE_ADDRESS, &bus_.wire()))
+    static constexpr uint8_t bmp_addresses[] = {
+        BMP5XX_ALTERNATIVE_ADDRESS, 0x50};
+    for (const uint8_t candidate : bmp_addresses)
     {
-        type_ = WeatherSensorType::Bmp5xx;
-        address_ = BMP5XX_ALTERNATIVE_ADDRESS;
-        bmp_.setTemperatureOversampling(BMP5XX_OVERSAMPLING_16X);
-        bmp_.setPressureOversampling(BMP5XX_OVERSAMPLING_16X);
-        bmp_.setIIRFilterCoeff(BMP5XX_IIR_FILTER_COEFF_127);
-        bmp_.setOutputDataRate(BMP5XX_ODR_120_HZ);
-        bmp_.setPowerMode(BMP5XX_POWERMODE_NORMAL);
-        bmp_.enablePressure(true);
-        Serial.println("BMP5xx detected at 0x47");
-        return;
+        if (bmp_.begin(candidate, &bus_.wire()))
+        {
+            type_ = WeatherSensorType::Bmp5xx;
+            address_ = candidate;
+            bmp_.setTemperatureOversampling(
+                BMP5XX_OVERSAMPLING_16X);
+            bmp_.setPressureOversampling(
+                BMP5XX_OVERSAMPLING_16X);
+            bmp_.setIIRFilterCoeff(
+                BMP5XX_IIR_FILTER_COEFF_127);
+            bmp_.setOutputDataRate(BMP5XX_ODR_120_HZ);
+            bmp_.setPowerMode(BMP5XX_POWERMODE_NORMAL);
+            bmp_.enablePressure(true);
+            Serial.printf(
+                "BMP5xx detected at 0x%02X\n", candidate);
+            return;
+        }
     }
 
     if (htu2x_.begin(&bus_.wire()))

@@ -56,7 +56,7 @@ touch controller (`0x38`). Supported external devices are:
 | Address | Device |
 | --- | --- |
 | `0x40` | HTU2x temperature/humidity sensor |
-| `0x47` | BMP580/BMP581 pressure/temperature sensor |
+| `0x47` or `0x50` | BMP580/BMP581 pressure/temperature sensor |
 | `0x68` | DS1307 or DS3231 real-time clock |
 
 ## Physical Assembly
