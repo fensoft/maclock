@@ -14,7 +14,10 @@ public:
         const ControlPanelSnapshot &snapshot) const;
     void receiveUpload(WebServer &server);
     void finishUpload(WebServer &server);
-    void importFromUrl(WebServer &server);
+    void importFromUrl(
+        WebServer &server, ControlPanelEventSink &events);
+    void searchMyInstants(
+        WebServer &server, ControlPanelEventSink &events);
     void remove(WebServer &server, ControlPanelEventSink &events);
 
 private:

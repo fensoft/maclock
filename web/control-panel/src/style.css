@@ -926,6 +926,7 @@ input[type="radio"]:checked::after {
 .sound-source-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 16px;
 }
 
@@ -967,6 +968,68 @@ input[type="radio"]:checked::after {
   border: 2px inset #aaa;
   border-radius: 0;
   background: #fff;
+}
+
+.myinstants-browser {
+  overflow: hidden;
+  border: 1px solid #000;
+  background: #fff;
+}
+
+.myinstants-browser-heading {
+  display: flex;
+  min-height: 29px;
+  padding: 5px 7px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid #000;
+  background: #eee;
+}
+
+.myinstants-browser-heading strong {
+  font-size: 13px;
+}
+
+.myinstants-browser-heading span {
+  font-family: Geneva, "Helvetica Neue", Arial, sans-serif;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.myinstants-result-list {
+  max-height: 260px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.myinstants-result-row {
+  display: grid;
+  min-height: 48px;
+  padding: 6px 7px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #999;
+}
+
+.myinstants-result-row:last-child {
+  border-bottom: 0;
+}
+
+.myinstants-result-row:nth-child(even) {
+  background: #eee;
+}
+
+.myinstants-result-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.myinstants-result-row .mac-button {
+  min-height: 30px;
 }
 
 .sound-browser {
@@ -1522,6 +1585,14 @@ hr {
   .sound-import-line .mac-button,
   .sound-import-line .mac-button-default {
     width: 100%;
+  }
+
+  .myinstants-result-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .myinstants-result-row .sound-file-actions {
+    grid-column: auto;
   }
 
   .screensaver-modes {

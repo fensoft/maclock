@@ -290,6 +290,12 @@ void DisplayService::stopAudioOutput()
     }
 }
 
+void DisplayService::startAudioOutput()
+{
+    if (audio_output_)
+        audio_output_->begin();
+}
+
 void DisplayService::prepareAudioPlayback()
 {
     if (audio_output_)

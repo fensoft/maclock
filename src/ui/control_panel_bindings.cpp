@@ -315,4 +315,21 @@ bool MaclockApp::previewControlSound(
     return true;
 }
 
+void MaclockApp::beginControlPanelNetworkTransfer()
+{
+    if (hal_.isLocal())
+        return;
+    audio_service.stop();
+    audio_service.suspendTask();
+    display_service.stopAudioOutput();
+}
+
+void MaclockApp::endControlPanelNetworkTransfer()
+{
+    if (hal_.isLocal())
+        return;
+    display_service.startAudioOutput();
+    audio_service.resumeTask();
+}
+
 #endif

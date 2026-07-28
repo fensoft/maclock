@@ -570,7 +570,25 @@ static void configure_routes()
         "/api/sound/import", HTTP_POST,
         []()
         {
-            g_sound_library.importFromUrl(g_server);
+            if (!g_events)
+            {
+                send_result(
+                    false, "Control service is unavailable", 503);
+                return;
+            }
+            g_sound_library.importFromUrl(g_server, *g_events);
+        });
+    g_server.on(
+        "/api/sound/myinstants/search", HTTP_POST,
+        []()
+        {
+            if (!g_events)
+            {
+                send_result(
+                    false, "Control service is unavailable", 503);
+                return;
+            }
+            g_sound_library.searchMyInstants(g_server, *g_events);
         });
     g_server.on(
         "/api/sound/delete", HTTP_POST,

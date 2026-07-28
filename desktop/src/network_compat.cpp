@@ -151,6 +151,11 @@ void HTTPClient::setTimeout(int timeout_ms)
     timeout_ms_ = timeout_ms;
 }
 
+void HTTPClient::setUserAgent(const String &user_agent)
+{
+    user_agent_ = user_agent;
+}
+
 void HTTPClient::useHTTP10(bool)
 {
 }
@@ -189,7 +194,8 @@ int HTTPClient::GET()
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Maclock-Simulator/1.0");
+    curl_easy_setopt(
+        curl, CURLOPT_USERAGENT, user_agent_.c_str());
     const CURLcode result = curl_easy_perform(curl);
     long status = 0;
     if (result == CURLE_OK)

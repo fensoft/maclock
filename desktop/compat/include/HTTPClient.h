@@ -13,6 +13,7 @@ public:
 
     void setConnectTimeout(int timeout_ms);
     void setTimeout(int timeout_ms);
+    void setUserAgent(const String &user_agent);
     void useHTTP10(bool enabled);
     bool begin(NetworkClient &client, const String &url);
     int GET();
@@ -23,6 +24,7 @@ public:
 private:
     String url_;
     String response_;
+    String user_agent_ = "Maclock-Simulator/1.0";
     int connect_timeout_ms_ = 5000;
     int timeout_ms_ = 10000;
 };

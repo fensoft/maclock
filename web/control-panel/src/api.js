@@ -291,21 +291,62 @@ export async function uploadSound(file) {
   return parseResponse(response);
 }
 
-export async function importSoundUrl(url) {
+export async function importSoundUrl(url, suggestedName = "") {
   if (import.meta.env.DEV) {
     await new Promise((resolve) => setTimeout(resolve, 450));
     let name = "imported-sound.mp3";
+    if (suggestedName.trim()) name = suggestedName.trim();
     try {
-      const parsed = new URL(url);
-      name = decodeURIComponent(parsed.pathname.split("/").pop()) || name;
-      if (!/\.mp3$/i.test(name)) name = "myinstants-sound.mp3";
+      if (!suggestedName.trim()) {
+        const parsed = new URL(url);
+        name = decodeURIComponent(parsed.pathname.split("/").pop()) || name;
+        if (!/\.mp3$/i.test(name)) name = "myinstants-sound.mp3";
+      }
     } catch {
       // The firmware performs the authoritative URL validation.
     }
     const entry = uniqueDemoSound(name, 65536);
     return { ok: true, message: "Sound imported", path: entry.path };
   }
-  return postForm("/api/sound/import", { url });
+  return postForm("/api/sound/import", { url, name: suggestedName });
+}
+
+export async function searchMyInstants(query) {
+  if (import.meta.env.DEV) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const normalized = query.trim().toLowerCase();
+    const samples = [
+      {
+        name: "DJ Airhorn",
+        mp3Url:
+          "https://www.myinstants.com/media/sounds/dj-airhorn-sound-effect-kingbeatz_1.mp3",
+        pageUrl: "https://www.myinstants.com/en/instant/dj-airhorn/",
+      },
+      {
+        name: "VERY LOUD AIRHORN",
+        mp3Url:
+          "https://www.myinstants.com/media/sounds/veryloudairhorn.mp3",
+        pageUrl:
+          "https://www.myinstants.com/en/instant/very-loud-airhorn/",
+      },
+      {
+        name: "Macintosh Startup",
+        mp3Url:
+          "https://www.myinstants.com/media/sounds/mac-startup.mp3",
+        pageUrl:
+          "https://www.myinstants.com/en/instant/macintosh-startup/",
+      },
+    ];
+    return {
+      ok: true,
+      query,
+      results: samples.filter(
+        (result) =>
+          !normalized || result.name.toLowerCase().includes(normalized),
+      ),
+    };
+  }
+  return postForm("/api/sound/myinstants/search", { query });
 }
 
 export async function deleteSound(path) {

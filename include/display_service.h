@@ -20,6 +20,7 @@ public:
     void registerLittleFs();
     void beginCodec();
     void stopAudioOutput();
+    void startAudioOutput();
 
     TFT_eSPI &tft() { return tft_; }
     AudioOutputI2S *audioOutput() { return audio_output_; }

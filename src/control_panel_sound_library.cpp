@@ -16,6 +16,7 @@ static constexpr size_t kMaxSoundFileBytes =
     6U * 1024U * 1024U;
 static constexpr const char *kSoundUploadTemporaryPath =
     "/.maclock-sound-upload.tmp";
+static constexpr size_t kMaxMyInstantsResults = 20;
 
 void send_json(
     WebServer &server, JsonDocument &document,
@@ -277,11 +278,14 @@ bool begin_import_http(
     if (url_has_prefix(url, "https://"))
     {
         secure_client.setInsecure();
+        secure_client.setHandshakeTimeout(30);
         client = &secure_client;
     }
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 #endif
     http.useHTTP10(true);
+    http.setUserAgent(
+        "Maclock/1.0 (+https://github.com/fensoft/maclock)");
     http.setConnectTimeout(10000);
     http.setTimeout(20000);
     return http.begin(*client, url);
@@ -308,7 +312,18 @@ bool fetch_import_page(
     const int response = http.GET();
     if (response != HTTP_CODE_OK)
     {
-        error = "The sound page could not be downloaded";
+        error = String("The sound page returned HTTP ") +
+                String(response);
+#ifndef MACLOCK_LOCAL
+        if (response < 0)
+        {
+            char tls_error[160] = {};
+            secure_client.lastError(
+                tls_error, sizeof(tls_error));
+            if (tls_error[0])
+                error += String(": ") + tls_error;
+        }
+#endif
         http.end();
         return false;
     }
@@ -320,6 +335,246 @@ bool fetch_import_page(
         return false;
     }
     return true;
+}
+
+String percent_encode(const String &value)
+{
+    static constexpr char kHex[] = "0123456789ABCDEF";
+    String result;
+    result.reserve(value.length() * 3);
+    for (size_t i = 0; i < value.length(); ++i)
+    {
+        const unsigned char byte =
+            static_cast<unsigned char>(value[i]);
+        if (isalnum(byte) || byte == '-' || byte == '_' ||
+            byte == '.' || byte == '~')
+        {
+            result += static_cast<char>(byte);
+        }
+        else
+        {
+            result += '%';
+            result += kHex[byte >> 4];
+            result += kHex[byte & 0x0F];
+        }
+    }
+    return result;
+}
+
+void append_utf8(String &text, uint32_t codepoint)
+{
+    if (codepoint <= 0x7F)
+    {
+        text += static_cast<char>(codepoint);
+    }
+    else if (codepoint <= 0x7FF)
+    {
+        text += static_cast<char>(0xC0 | (codepoint >> 6));
+        text += static_cast<char>(0x80 | (codepoint & 0x3F));
+    }
+    else if (codepoint <= 0xFFFF)
+    {
+        text += static_cast<char>(0xE0 | (codepoint >> 12));
+        text += static_cast<char>(
+            0x80 | ((codepoint >> 6) & 0x3F));
+        text += static_cast<char>(0x80 | (codepoint & 0x3F));
+    }
+    else if (codepoint <= 0x10FFFF)
+    {
+        text += static_cast<char>(0xF0 | (codepoint >> 18));
+        text += static_cast<char>(
+            0x80 | ((codepoint >> 12) & 0x3F));
+        text += static_cast<char>(
+            0x80 | ((codepoint >> 6) & 0x3F));
+        text += static_cast<char>(0x80 | (codepoint & 0x3F));
+    }
+}
+
+bool decode_numeric_entity(
+    const char *start, const char *end, uint32_t &value)
+{
+    if (!start || start >= end || *start != '#')
+        return false;
+    ++start;
+    uint8_t base = 10;
+    if (start < end && (*start == 'x' || *start == 'X'))
+    {
+        base = 16;
+        ++start;
+    }
+    if (start >= end)
+        return false;
+
+    value = 0;
+    for (const char *cursor = start; cursor < end; ++cursor)
+    {
+        uint8_t digit = 0;
+        if (*cursor >= '0' && *cursor <= '9')
+            digit = static_cast<uint8_t>(*cursor - '0');
+        else if (base == 16 &&
+                 *cursor >= 'a' && *cursor <= 'f')
+            digit = static_cast<uint8_t>(*cursor - 'a' + 10);
+        else if (base == 16 &&
+                 *cursor >= 'A' && *cursor <= 'F')
+            digit = static_cast<uint8_t>(*cursor - 'A' + 10);
+        else
+            return false;
+        if (digit >= base ||
+            value > (0x10FFFFU - digit) / base)
+        {
+            return false;
+        }
+        value = value * base + digit;
+    }
+    return value > 0 && value <= 0x10FFFFU;
+}
+
+String decode_html_text(const char *start, const char *end)
+{
+    String result;
+    if (!start || !end || start >= end)
+        return result;
+    result.reserve(static_cast<size_t>(end - start));
+    for (const char *cursor = start; cursor < end;)
+    {
+        if (*cursor != '&')
+        {
+            result += *cursor++;
+            continue;
+        }
+        const char *semicolon = cursor + 1;
+        while (semicolon < end && *semicolon != ';' &&
+               semicolon - cursor <= 12)
+        {
+            ++semicolon;
+        }
+        if (semicolon >= end || *semicolon != ';')
+        {
+            result += *cursor++;
+            continue;
+        }
+
+        const char *entity = cursor + 1;
+        const size_t length =
+            static_cast<size_t>(semicolon - entity);
+        if (length == 3 && strncmp(entity, "amp", 3) == 0)
+            result += '&';
+        else if (length == 4 &&
+                 strncmp(entity, "quot", 4) == 0)
+            result += '"';
+        else if (length == 4 &&
+                 strncmp(entity, "apos", 4) == 0)
+            result += '\'';
+        else if (length == 2 &&
+                 strncmp(entity, "lt", 2) == 0)
+            result += '<';
+        else if (length == 2 &&
+                 strncmp(entity, "gt", 2) == 0)
+            result += '>';
+        else
+        {
+            uint32_t codepoint = 0;
+            if (!decode_numeric_entity(
+                    entity, semicolon, codepoint))
+            {
+                for (const char *raw = cursor;
+                     raw <= semicolon; ++raw)
+                {
+                    result += *raw;
+                }
+                cursor = semicolon + 1;
+                continue;
+            }
+            append_utf8(result, codepoint);
+        }
+        cursor = semicolon + 1;
+    }
+    result.trim();
+    return result;
+}
+
+size_t append_myinstants_results(
+    const String &page, JsonArray results)
+{
+    static constexpr const char *kPlayMarker =
+        "onclick=\"play('";
+    static constexpr const char *kInstantLinkMarker =
+        "<a href=\"/en/instant/";
+    static constexpr const char *kMediaPrefix =
+        "/media/sounds/";
+
+    const char *cursor = page.c_str();
+    const char *page_end = cursor + page.length();
+    size_t count = 0;
+    while (cursor < page_end && count < kMaxMyInstantsResults)
+    {
+        const char *play = strstr(cursor, kPlayMarker);
+        if (!play)
+            break;
+        const char *mp3_start = play + strlen(kPlayMarker);
+        const char *mp3_end = strchr(mp3_start, '\'');
+        if (!mp3_end || mp3_end >= page_end)
+            break;
+        cursor = mp3_end + 1;
+
+        const char *link = strstr(cursor, kInstantLinkMarker);
+        const char *next_play = strstr(cursor, kPlayMarker);
+        if (!link || (next_play && next_play < link))
+            continue;
+        const char *page_url_start = link + strlen("<a href=\"");
+        const char *page_url_end = strchr(page_url_start, '"');
+        if (!page_url_end)
+            break;
+        const char *name_start = strchr(page_url_end, '>');
+        if (!name_start)
+            break;
+        ++name_start;
+        const char *name_end = strstr(name_start, "</a>");
+        if (!name_end)
+            break;
+        cursor = name_end + 4;
+
+        const size_t mp3_length =
+            static_cast<size_t>(mp3_end - mp3_start);
+        const size_t page_url_length =
+            static_cast<size_t>(page_url_end - page_url_start);
+        if (mp3_length <= strlen(kMediaPrefix) + 4 ||
+            mp3_length > 240 ||
+            page_url_length > 240 ||
+            strncmp(
+                mp3_start, kMediaPrefix,
+                strlen(kMediaPrefix)) != 0 ||
+            tolower(static_cast<unsigned char>(mp3_end[-4])) !=
+                '.' ||
+            tolower(static_cast<unsigned char>(mp3_end[-3])) !=
+                'm' ||
+            tolower(static_cast<unsigned char>(mp3_end[-2])) !=
+                'p' ||
+            tolower(static_cast<unsigned char>(mp3_end[-1])) !=
+                '3')
+        {
+            continue;
+        }
+
+        const String name = decode_html_text(name_start, name_end);
+        if (!name.length())
+            continue;
+        JsonObject result = results.add<JsonObject>();
+        result["name"] = name;
+        String mp3_url = "https://www.myinstants.com";
+        for (const char *item = mp3_start; item < mp3_end; ++item)
+            mp3_url += *item;
+        result["mp3Url"] = mp3_url;
+        String page_url = "https://www.myinstants.com";
+        for (const char *item = page_url_start;
+             item < page_url_end; ++item)
+        {
+            page_url += *item;
+        }
+        result["pageUrl"] = page_url;
+        ++count;
+    }
+    return count;
 }
 
 bool resolve_import_url(
@@ -391,7 +646,8 @@ String filename_from_url(const String &url)
 }
 
 bool download_import(
-    const String &url, String &saved_path, String &error)
+    const String &url, const String &suggested_name,
+    String &saved_path, String &error)
 {
     NetworkClient client;
 #ifndef MACLOCK_LOCAL
@@ -462,7 +718,11 @@ bool download_import(
         return false;
     }
 
-    saved_path = unique_sound_path(filename_from_url(url));
+    const String filename = suggested_name.length()
+                                ? sanitize_sound_filename(
+                                      suggested_name.c_str())
+                                : filename_from_url(url);
+    saved_path = unique_sound_path(filename);
     if (!saved_path.length() ||
         !LittleFS.rename(
             kSoundUploadTemporaryPath, saved_path.c_str()))
@@ -620,18 +880,28 @@ void ControlPanelSoundLibrary::finishUpload(
 }
 
 void ControlPanelSoundLibrary::importFromUrl(
-    WebServer &server)
+    WebServer &server, ControlPanelEventSink &events)
 {
     String requested_url = server.arg("url");
     requested_url.trim();
+    String suggested_name = server.arg("name");
+    suggested_name.trim();
+    if (suggested_name.length() > 96)
+        suggested_name.clear();
     String mp3_url;
     String saved_path;
     String error;
-    if (!requested_url.length() ||
-        requested_url.length() > 512 ||
-        !resolve_import_url(
-            requested_url, mp3_url, error) ||
-        !download_import(mp3_url, saved_path, error))
+    const bool valid_url =
+        requested_url.length() &&
+        requested_url.length() <= 512;
+    events.beginControlPanelNetworkTransfer();
+    const bool imported =
+        valid_url &&
+        resolve_import_url(requested_url, mp3_url, error) &&
+        download_import(
+            mp3_url, suggested_name, saved_path, error);
+    events.endControlPanelNetworkTransfer();
+    if (!imported)
     {
         send_result(
             server, false,
@@ -645,6 +915,48 @@ void ControlPanelSoundLibrary::importFromUrl(
     document["message"] = "Sound imported";
     document["path"] = saved_path;
     send_json(server, document, 201);
+}
+
+void ControlPanelSoundLibrary::searchMyInstants(
+    WebServer &server, ControlPanelEventSink &events)
+{
+    String query = server.arg("query");
+    query.trim();
+    if (query.length() < 2 || query.length() > 80)
+    {
+        send_result(
+            server, false,
+            "Search for at least 2 and at most 80 characters",
+            400);
+        return;
+    }
+
+    const String search_url =
+        String("https://www.myinstants.com/en/search/?name=") +
+        percent_encode(query);
+    String page;
+    String error;
+    events.beginControlPanelNetworkTransfer();
+    const bool fetched =
+        fetch_import_page(search_url, page, error);
+    events.endControlPanelNetworkTransfer();
+    if (!fetched)
+    {
+        send_result(
+            server, false,
+            error.length() ? error.c_str()
+                           : "MyInstants search failed",
+            502);
+        return;
+    }
+
+    JsonDocument document;
+    document["ok"] = true;
+    document["query"] = query;
+    JsonArray results =
+        document["results"].to<JsonArray>();
+    append_myinstants_results(page, results);
+    send_json(server, document);
 }
 
 void ControlPanelSoundLibrary::remove(

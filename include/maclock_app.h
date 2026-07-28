@@ -62,6 +62,8 @@ public:
         const char *city, const char *country) override;
     bool previewControlSound(
         const char *sound_path, uint8_t volume) override;
+    void beginControlPanelNetworkTransfer() override;
+    void endControlPanelNetworkTransfer() override;
 
     // Internal accessors used only by LVGL and emulator compatibility thunks.
     SettingsStore &settingsStore() { return settings_store_; }

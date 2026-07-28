@@ -79,6 +79,8 @@ public:
         const char *city, const char *country) = 0;
     virtual bool previewControlSound(
         const char *sound_path, uint8_t volume) = 0;
+    virtual void beginControlPanelNetworkTransfer() = 0;
+    virtual void endControlPanelNetworkTransfer() = 0;
 };
 
 class ControlPanelService

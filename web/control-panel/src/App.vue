@@ -14,6 +14,7 @@ import {
   fetchStatus,
   importSoundUrl,
   postForm,
+  searchMyInstants as searchMyInstantsApi,
   uploadSound,
 } from "./api";
 import MacAppIcon from "./components/MacAppIcon.vue";
@@ -55,9 +56,12 @@ const soundFileInput = ref(null);
 const soundDragActive = ref(false);
 const soundImportUrl = ref("");
 const myInstantsQuery = ref("");
+const myInstantsResults = ref([]);
+const myInstantsSearched = ref(false);
 const deleteSoundTarget = ref(null);
 let statusPoll = 0;
 let noticeTimeout = 0;
+let myInstantsAudio = null;
 
 const sounds = computed(() => panelState.value?.sounds || []);
 const currentLanguage = computed(
@@ -588,11 +592,60 @@ async function importSound() {
   }
 }
 
-function searchMyInstants() {
+function stopMyInstantsPreview() {
+  if (!myInstantsAudio) return;
+  myInstantsAudio.pause();
+  myInstantsAudio.src = "";
+  myInstantsAudio = null;
+}
+
+function previewMyInstants(result) {
+  stopMyInstantsPreview();
+  myInstantsAudio = new Audio(result.mp3Url);
+  myInstantsAudio.volume = 0.7;
+  myInstantsAudio.addEventListener(
+    "ended",
+    () => {
+      myInstantsAudio = null;
+    },
+    { once: true },
+  );
+  myInstantsAudio.play().catch(() => {
+    stopMyInstantsPreview();
+    showNotice(t("myInstantsPreviewError"), "error");
+  });
+}
+
+async function searchMyInstants() {
   const query = myInstantsQuery.value.trim();
-  const url = new URL("https://www.myinstants.com/en/search/");
-  if (query) url.searchParams.set("name", query);
-  window.open(url.toString(), "_blank", "noopener,noreferrer");
+  if (query.length < 2 || busy.value) return;
+  stopMyInstantsPreview();
+  busy.value = "myinstants-search";
+  myInstantsSearched.value = false;
+  try {
+    const response = await searchMyInstantsApi(query);
+    myInstantsResults.value = response.results || [];
+    myInstantsSearched.value = true;
+  } catch {
+    myInstantsResults.value = [];
+    showNotice(t("myInstantsSearchError"), "error");
+  } finally {
+    busy.value = "";
+  }
+}
+
+async function importMyInstantsResult(result) {
+  if (!result || busy.value) return;
+  const draft = cloneValue(panelState.value.systemSounds);
+  busy.value = `myinstants-import-${result.mp3Url}`;
+  try {
+    await importSoundUrl(result.mp3Url, result.name);
+    await refreshSoundLibrary(t("soundImported"), draft);
+  } catch {
+    showNotice(t("soundOperationError"), "error");
+  } finally {
+    busy.value = "";
+  }
 }
 
 function requestSoundDeletion(sound) {
@@ -645,7 +698,12 @@ watch(
   { immediate: true },
 );
 
+watch(activeApp, (app) => {
+  if (app !== "sounds") stopMyInstantsPreview();
+});
+
 onBeforeUnmount(() => {
+  stopMyInstantsPreview();
   window.clearInterval(statusPoll);
   window.clearTimeout(noticeTimeout);
   window.removeEventListener("keydown", handleGlobalKeydown);
@@ -1645,11 +1703,70 @@ onBeforeUnmount(() => {
                       />
                       <MacButton
                         secondary
-                        :disabled="!!busy"
+                        :disabled="
+                          !!busy || myInstantsQuery.trim().length < 2
+                        "
                         @click="searchMyInstants"
                       >
-                        {{ t("search") }}
+                        {{
+                          busy === "myinstants-search"
+                            ? t("searching")
+                            : t("search")
+                        }}
                       </MacButton>
+                    </div>
+
+                    <div
+                      v-if="myInstantsSearched"
+                      class="myinstants-browser"
+                      aria-live="polite"
+                    >
+                      <div class="myinstants-browser-heading">
+                        <strong>{{ t("myInstantsResults") }}</strong>
+                        <span>
+                          {{
+                            t("resultCount", {
+                              count: myInstantsResults.length,
+                            })
+                          }}
+                        </span>
+                      </div>
+                      <ul
+                        v-if="myInstantsResults.length"
+                        class="myinstants-result-list"
+                      >
+                        <li
+                          v-for="result in myInstantsResults"
+                          :key="result.mp3Url"
+                          class="myinstants-result-row"
+                        >
+                          <span>{{ result.name }}</span>
+                          <div class="sound-file-actions">
+                            <MacButton
+                              secondary
+                              :aria-label="
+                                t('previewNamedSound', {
+                                  name: result.name,
+                                })
+                              "
+                              :disabled="!!busy"
+                              @click="previewMyInstants(result)"
+                            >
+                              ▶
+                            </MacButton>
+                            <MacButton
+                              default-action
+                              :disabled="!!busy"
+                              @click="importMyInstantsResult(result)"
+                            >
+                              {{ t("addSound") }}
+                            </MacButton>
+                          </div>
+                        </li>
+                      </ul>
+                      <p v-else class="empty-sound-list">
+                        {{ t("noMyInstantsResults") }}
+                      </p>
                     </div>
                   </section>
                 </div>
