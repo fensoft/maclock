@@ -11,6 +11,12 @@ const demoState = {
     seconds: true,
     weekday: false,
   },
+  location: {
+    city: "Paris",
+    country: "FR",
+    resolved: "Paris, FR",
+    timezone: "Europe/Paris",
+  },
   screensaver: {
     mode: 1,
     delay: 1,
@@ -119,6 +125,18 @@ function applyDemo(path, values) {
       leadingZero: number("leadingZero") !== 0,
       seconds: number("seconds") !== 0,
       weekday: number("weekday") !== 0,
+    });
+  } else if (path === "/api/location") {
+    Object.assign(demoState.location, {
+      city: String(values.city || "").trim(),
+      country: String(values.country || "").trim().toUpperCase(),
+      resolved: [
+        String(values.city || "").trim(),
+        String(values.country || "").trim().toUpperCase(),
+      ]
+        .filter(Boolean)
+        .join(", "),
+      timezone: "Updating…",
     });
   } else if (path === "/api/screensaver") {
     Object.assign(demoState.screensaver, {

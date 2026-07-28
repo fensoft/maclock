@@ -58,6 +58,8 @@ public:
     bool applyControlSystemSounds(
         const char *startup_path, uint8_t startup_volume,
         const char *floppy_path, uint8_t floppy_volume) override;
+    bool applyControlLocation(
+        const char *city, const char *country) override;
     bool previewControlSound(
         const char *sound_path, uint8_t volume) override;
 

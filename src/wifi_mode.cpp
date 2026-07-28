@@ -25,6 +25,7 @@ static constexpr uint32_t kForecastStaleSeconds = 6UL * 60UL * 60UL;
 static constexpr uint16_t kHttpTimeoutMs = 12000;
 static constexpr size_t kMaxDetectedNetworks = 12;
 static constexpr char kLocalDefaultCity[] = "Paris";
+static constexpr char kLocalDefaultCountry[] = "FR";
 static constexpr char kLocalDefaultLocation[] = "Paris, FR";
 static constexpr char kLocalDefaultTimezone[] = "Europe/Paris";
 static constexpr double kLocalDefaultLatitude = 48.856613;
@@ -37,6 +38,7 @@ struct WifiSettings
     char ssid[33];
     char password[65];
     char city[49];
+    char country[3];
     double latitude;
     double longitude;
     int32_t utc_offset_seconds;
@@ -129,6 +131,17 @@ template <size_t N>
 static void copy_text(char (&destination)[N], const char *source)
 {
     strlcpy(destination, source ? source : "", N);
+}
+
+static bool normalize_country_code(String &country)
+{
+    country.trim();
+    country.toUpperCase();
+    if (!country.length())
+        return true;
+    return country.length() == 2 &&
+           country[0] >= 'A' && country[0] <= 'Z' &&
+           country[1] >= 'A' && country[1] <= 'Z';
 }
 
 static void set_status(const char *status)
@@ -339,12 +352,17 @@ static bool geocode_city(WifiSettings &settings)
 {
     set_status("Finding configured city...");
     Serial.printf("[Wi-Fi] Looking up city: %s\n", settings.city);
-    const String url =
+    String url =
         String(F("http://geocoding-api.open-meteo.com/v1/search?name=")) +
         url_encode(settings.city) +
         F("&count=1&language=") +
         language_code() +
         F("&format=json");
+    if (settings.country[0])
+    {
+        url += F("&countryCode=");
+        url += settings.country;
+    }
 
     NetworkClient client;
     HTTPClient http;
@@ -412,6 +430,8 @@ static bool geocode_city(WifiSettings &settings)
     const char *name = result["name"] | settings.city;
     const char *country = result["country_code"] | "";
     const char *timezone = result["timezone"] | "";
+    if (*country)
+        copy_text(settings.country, country);
     char location[49];
     if (*country)
         snprintf(location, sizeof(location), "%s, %s", name, country);
@@ -420,6 +440,7 @@ static bool geocode_city(WifiSettings &settings)
 
     lock_state();
     g_settings = settings;
+    copy_text(g_snapshot.country, settings.country);
     copy_text(g_snapshot.location, location);
     copy_text(g_snapshot.timezone, timezone);
     unlock_state();
@@ -430,6 +451,8 @@ static bool geocode_city(WifiSettings &settings)
         g_preferences->putDouble("wifi_lat", settings.latitude);
         g_preferences->putDouble("wifi_lon", settings.longitude);
         g_preferences->putString("wifi_loc", location);
+        g_preferences->putString(
+            "wifi_country", settings.country);
         g_preferences->putString("wifi_tz", timezone);
     }
     Serial.printf(
@@ -756,6 +779,13 @@ static void send_setup_page()
         "</label><input id=city name=city maxlength=48 required value=\"");
     page += html_escape(settings.city);
     page += F(
+        "\"><label>");
+    page += html_escape(tr("Country code"));
+    page += F(
+        "</label><input id=country name=country maxlength=2 "
+        "pattern='[A-Za-z]{2}' value=\"");
+    page += html_escape(settings.country);
+    page += F(
         "\"><small>");
     page += html_escape(
         tr("Used for timezone, DST, and weather."));
@@ -781,8 +811,16 @@ static void save_setup()
     String ssid = g_web_server.arg("ssid");
     String password = g_web_server.arg("pass");
     String city = g_web_server.arg("city");
+    String country = g_web_server.arg("country");
     ssid.trim();
     city.trim();
+    if (!normalize_country_code(country))
+    {
+        g_web_server.send(
+            400, "text/plain",
+            tr("Country code must contain two letters."));
+        return;
+    }
     if (!ssid.length() || !city.length())
     {
         g_web_server.send(400, "text/plain",
@@ -803,10 +841,12 @@ static void save_setup()
     else
         copy_text(g_settings.password, password);
     copy_text(g_settings.city, city);
+    copy_text(g_settings.country, country);
     g_snapshot.enabled = true;
     g_snapshot.configured = true;
     copy_text(g_snapshot.ssid, ssid);
     copy_text(g_snapshot.city, city);
+    copy_text(g_snapshot.country, country);
     copy_text(g_snapshot.location, "");
     copy_text(g_snapshot.timezone, "");
     copy_text(g_snapshot.status, "Saved - exit setup to connect");
@@ -820,6 +860,7 @@ static void save_setup()
         if (!keep_password)
             g_preferences->putString("wifi_pass", password);
         g_preferences->putString("wifi_city", city);
+        g_preferences->putString("wifi_country", country);
         g_preferences->putBool("wifi_coord", false);
     }
 
@@ -859,6 +900,7 @@ static bool has_saved_wifi_settings(
 {
     static constexpr const char *keys[] = {
         "wifi_on", "wifi_ssid", "wifi_pass", "wifi_city",
+        "wifi_country",
         "wifi_coord", "wifi_lat", "wifi_lon", "wifi_loc",
         "wifi_tz", "wifi_offset"};
     for (const char *key : keys)
@@ -911,6 +953,8 @@ static void seed_local_wifi_defaults(
         maclock_hal().network().simulatedSsid());
     preferences.putString("wifi_pass", "");
     preferences.putString("wifi_city", kLocalDefaultCity);
+    preferences.putString(
+        "wifi_country", kLocalDefaultCountry);
     preferences.putBool("wifi_coord", true);
     preferences.putDouble(
         "wifi_lat", kLocalDefaultLatitude);
@@ -953,6 +997,21 @@ void WifiService::begin(Preferences &preferences)
               preferences.getString("wifi_pass", ""));
     copy_text(settings.city,
               preferences.getString("wifi_city", ""));
+    String country =
+        preferences.getString("wifi_country", "");
+    if (!country.length())
+    {
+        const String location =
+            preferences.getString("wifi_loc", "");
+        const int separator = location.lastIndexOf(", ");
+        if (separator >= 0 &&
+            location.length() - separator == 4)
+        {
+            country = location.substring(separator + 2);
+        }
+    }
+    normalize_country_code(country);
+    copy_text(settings.country, country);
     settings.latitude = preferences.isKey("wifi_lat")
                             ? preferences.getDouble("wifi_lat", 0.0)
                             : 0.0;
@@ -969,6 +1028,7 @@ void WifiService::begin(Preferences &preferences)
         settings.ssid[0] != '\0' && settings.city[0] != '\0';
     copy_text(g_snapshot.ssid, settings.ssid);
     copy_text(g_snapshot.city, settings.city);
+    copy_text(g_snapshot.country, settings.country);
     copy_text(
         g_snapshot.location,
         preferences.isKey("wifi_loc")
@@ -1016,6 +1076,63 @@ void WifiService::setEnabled(bool enabled)
     unlock_state();
     if (g_preferences)
         g_preferences->putBool("wifi_on", enabled);
+}
+
+bool WifiService::setLocation(
+    const char *city, const char *country)
+{
+    active_wifi_service = this;
+    String next_city = city ? city : "";
+    String next_country = country ? country : "";
+    next_city.trim();
+    if (!next_city.length() ||
+        next_city.length() >= sizeof(g_settings.city) ||
+        !normalize_country_code(next_country))
+    {
+        return false;
+    }
+
+    char pending_location[49];
+    if (next_country.length())
+    {
+        snprintf(
+            pending_location, sizeof(pending_location),
+            "%s, %s", next_city.c_str(),
+            next_country.c_str());
+    }
+    else
+    {
+        copy_text(pending_location, next_city);
+    }
+
+    lock_state();
+    g_settings.coordinates_valid = false;
+    copy_text(g_settings.city, next_city);
+    copy_text(g_settings.country, next_country);
+    copy_text(g_snapshot.city, next_city);
+    copy_text(g_snapshot.country, next_country);
+    copy_text(g_snapshot.location, pending_location);
+    copy_text(g_snapshot.timezone, "");
+    copy_text(g_snapshot.status, "Location update pending");
+    g_snapshot.configured =
+        g_settings.ssid[0] != '\0' &&
+        g_settings.city[0] != '\0';
+    g_snapshot.forecast_valid = false;
+    unlock_state();
+
+    g_last_forecast_ms = 0;
+    g_last_ntp_ms = 0;
+    if (g_preferences)
+    {
+        g_preferences->putString("wifi_city", next_city);
+        g_preferences->putString(
+            "wifi_country", next_country);
+        g_preferences->putBool("wifi_coord", false);
+        g_preferences->putString(
+            "wifi_loc", pending_location);
+        g_preferences->putString("wifi_tz", "");
+    }
+    return true;
 }
 
 WifiModeSnapshot WifiService::snapshot()

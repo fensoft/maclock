@@ -183,6 +183,9 @@ static void refresh_language_ui()
     lv_label_set_text(
         boot_options_view.calibration_label,
         tr("Press Clock for screen calibration"));
+    lv_label_set_text(
+        boot_options_view.home_calibration_label,
+        tr("Click again for calibration"));
     lv_label_set_text(boot_options_view.previous_label, tr("Previous"));
     lv_label_set_text(boot_options_view.next_label, tr("Next"));
     boot_options_view.chime_sound_selector.refreshLanguage();

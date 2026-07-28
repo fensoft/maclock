@@ -197,6 +197,7 @@ public:
     lv_obj_t *title_zoom;
     lv_obj_t *pages[BOOT_OPTIONS_PAGE_COUNT];
     lv_obj_t *section_labels[BOOT_OPTIONS_SECTION_COUNT];
+    lv_obj_t *home_calibration_label;
     lv_obj_t *brightness_options;
     lv_obj_t *remember_selection;
     lv_obj_t *language_options;

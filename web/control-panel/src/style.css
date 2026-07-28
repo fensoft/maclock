@@ -830,6 +830,33 @@ hr {
   font-size: 12px;
 }
 
+.location-summary {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px;
+  border: 3px double #000;
+  background: #fff;
+  font-family: Geneva, "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+}
+
+.location-summary div {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.location-summary dt {
+  font-weight: 700;
+}
+
+.location-summary dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 footer {
   display: flex;
   flex-wrap: wrap;

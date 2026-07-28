@@ -190,6 +190,13 @@ static void send_state()
     timer["sound"] = snapshot.timer.sound;
     timer["volume"] = snapshot.timer.volume;
 
+    JsonObject location =
+        document["location"].to<JsonObject>();
+    location["city"] = snapshot.location.city;
+    location["country"] = snapshot.location.country;
+    location["resolved"] = snapshot.location.resolved;
+    location["timezone"] = snapshot.location.timezone;
+
     JsonArray sounds = document["sounds"].to<JsonArray>();
     for (size_t i = 0; i < SoundSelector::count(); ++i)
     {
@@ -309,6 +316,35 @@ static void apply_screensaver()
                    ? "Screensaver launched"
                    : "Screensaver settings saved")
             : "Screensaver settings were not applied",
+        applied ? 200 : 500);
+}
+
+static void apply_location()
+{
+    String city = g_server.arg("city");
+    String country = g_server.arg("country");
+    city.trim();
+    country.trim();
+    country.toUpperCase();
+    const bool country_valid =
+        !country.length() ||
+        (country.length() == 2 &&
+         country[0] >= 'A' && country[0] <= 'Z' &&
+         country[1] >= 'A' && country[1] <= 'Z');
+    if (!city.length() || city.length() > 48 ||
+        !country_valid)
+    {
+        send_result(false, "Invalid location settings", 400);
+        return;
+    }
+
+    const bool applied = g_events &&
+        g_events->applyControlLocation(
+            city.c_str(), country.c_str());
+    send_result(
+        applied,
+        applied ? "Location update started"
+                : "Location was not updated",
         applied ? 200 : 500);
 }
 
@@ -514,6 +550,7 @@ static void configure_routes()
     g_server.on("/api/state", HTTP_GET, send_state);
     g_server.on("/api/status", HTTP_GET, send_status);
     g_server.on("/api/appearance", HTTP_POST, apply_appearance);
+    g_server.on("/api/location", HTTP_POST, apply_location);
     g_server.on(
         "/api/screensaver",
         HTTP_POST,

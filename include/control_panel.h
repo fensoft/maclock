@@ -28,6 +28,14 @@ struct ControlPanelTimer
     char sound[SOUND_SELECTOR_PATH_MAX] = "/quack.mp3";
 };
 
+struct ControlPanelLocation
+{
+    char city[49] = "";
+    char country[3] = "";
+    char resolved[49] = "";
+    char timezone[41] = "";
+};
+
 struct ControlPanelSnapshot
 {
     AppSettings settings;
@@ -40,6 +48,7 @@ struct ControlPanelSnapshot
     char chime_sound[SOUND_SELECTOR_PATH_MAX] = "/quack.mp3";
     ControlPanelAlarm alarms[kControlPanelAlarmCount];
     ControlPanelTimer timer;
+    ControlPanelLocation location;
 };
 
 class ControlPanelEventSink
@@ -66,6 +75,8 @@ public:
     virtual bool applyControlSystemSounds(
         const char *startup_path, uint8_t startup_volume,
         const char *floppy_path, uint8_t floppy_volume) = 0;
+    virtual bool applyControlLocation(
+        const char *city, const char *country) = 0;
     virtual bool previewControlSound(
         const char *sound_path, uint8_t volume) = 0;
 };

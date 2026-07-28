@@ -17,6 +17,7 @@ struct WifiModeSnapshot
     char status[65];
     char ip_address[16];
     int32_t rssi;
+    char country[3];
     float current_temperature;
     float minimum_temperature;
     float maximum_temperature;
@@ -33,6 +34,7 @@ public:
     void begin(Preferences &preferences);
     void startTask();
     void setEnabled(bool enabled);
+    bool setLocation(const char *city, const char *country);
     WifiModeSnapshot snapshot();
 
     void startPortal();

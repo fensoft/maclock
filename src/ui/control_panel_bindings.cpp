@@ -59,6 +59,23 @@ ControlPanelSnapshot MaclockApp::controlPanelSnapshot()
         snapshot.timer.sound,
         timer_service.soundPath(),
         sizeof(snapshot.timer.sound));
+    const WifiModeSnapshot wifi = wifi_service.snapshot();
+    strlcpy(
+        snapshot.location.city,
+        wifi.city,
+        sizeof(snapshot.location.city));
+    strlcpy(
+        snapshot.location.country,
+        wifi.country,
+        sizeof(snapshot.location.country));
+    strlcpy(
+        snapshot.location.resolved,
+        wifi.location,
+        sizeof(snapshot.location.resolved));
+    strlcpy(
+        snapshot.location.timezone,
+        wifi.timezone,
+        sizeof(snapshot.location.timezone));
     return snapshot;
 }
 
@@ -273,6 +290,12 @@ bool MaclockApp::applyControlSystemSounds(
         g_startup_sound_path, g_startup_sound_volume,
         g_floppy_sound_path, g_floppy_sound_volume);
     return true;
+}
+
+bool MaclockApp::applyControlLocation(
+    const char *city, const char *country)
+{
+    return wifi_service.setLocation(city, country);
 }
 
 bool MaclockApp::previewControlSound(

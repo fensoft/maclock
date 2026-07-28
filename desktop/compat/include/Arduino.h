@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cctype>
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
@@ -64,6 +65,20 @@ public:
         return value_.substr(from, to - from);
     }
 
+    String substring(size_t from) const
+    {
+        return substring(from, value_.size());
+    }
+
+    int lastIndexOf(const char *value) const
+    {
+        const size_t position =
+            value_.rfind(value ? value : "");
+        return position == std::string::npos
+                   ? -1
+                   : static_cast<int>(position);
+    }
+
     void toCharArray(char *buffer, size_t size) const
     {
         if (!buffer || size == 0)
@@ -74,6 +89,15 @@ public:
 
     bool equalsIgnoreCase(const String &other) const;
     void trim();
+    void toUpperCase()
+    {
+        std::transform(
+            value_.begin(), value_.end(), value_.begin(),
+            [](unsigned char value)
+            {
+                return static_cast<char>(std::toupper(value));
+            });
+    }
     int read() const
     {
         return read_position_ < value_.size()

@@ -199,11 +199,35 @@ void BootOptionsView::init(lv_obj_t *screen)
             lv_obj_get_child(button, 0);
         lv_obj_set_user_data(
             button, (void *)(uintptr_t)i);
-        lv_obj_set_size(button, 130, 58);
+        lv_obj_set_size(button, 130, 52);
         lv_obj_align(
             button, section_alignments[i],
             section_x[i], 0);
     }
+    boot_options_view.home_calibration_label =
+        lv_label_create(home_page);
+    lv_label_set_text(
+        boot_options_view.home_calibration_label,
+        tr("Click again for calibration"));
+    lv_obj_set_style_text_font(
+        boot_options_view.home_calibration_label,
+        &lv_font_chicago_8, 0);
+    lv_obj_set_style_bg_color(
+        boot_options_view.home_calibration_label,
+        lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(
+        boot_options_view.home_calibration_label,
+        LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_left(
+        boot_options_view.home_calibration_label, 4, 0);
+    lv_obj_set_style_pad_right(
+        boot_options_view.home_calibration_label, 4, 0);
+    lv_obj_set_style_pad_top(
+        boot_options_view.home_calibration_label, 1, 0);
+    lv_obj_set_style_pad_bottom(
+        boot_options_view.home_calibration_label, 1, 0);
+    lv_obj_center(
+        boot_options_view.home_calibration_label);
 
     lv_obj_t *preferences_page =
         boot_options_view.pages[BOOT_OPTIONS_PREFERENCES];

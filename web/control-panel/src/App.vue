@@ -123,6 +123,22 @@ function saveAppearance() {
   );
 }
 
+function saveLocation() {
+  const location = panelState.value.location;
+  location.country = String(location.country || "")
+    .trim()
+    .toUpperCase();
+  runAction(
+    "location",
+    "/api/location",
+    {
+      city: location.city,
+      country: location.country,
+    },
+    t("locationSaved"),
+  );
+}
+
 function screensaverAction(action) {
   const screensaver = panelState.value.screensaver;
   runAction(
@@ -410,6 +426,65 @@ onBeforeUnmount(() => {
                   max="12"
                 />
               </label>
+
+              <div class="button-row">
+                <MacButton
+                  default-action
+                  type="submit"
+                  :disabled="!!busy"
+                >
+                  {{ t("apply") }}
+                </MacButton>
+              </div>
+            </form>
+          </MacWindow>
+
+          <MacWindow id="location" :title="t('location')">
+            <form class="panel-form" @submit.prevent="saveLocation">
+              <div class="two-column location-fields">
+                <label class="field">
+                  <span>{{ t("city") }}</span>
+                  <input
+                    v-model.trim="panelState.location.city"
+                    type="text"
+                    maxlength="48"
+                    autocomplete="address-level2"
+                    required
+                  />
+                </label>
+
+                <label class="field">
+                  <span>{{ t("countryCode") }}</span>
+                  <input
+                    v-model.trim="panelState.location.country"
+                    type="text"
+                    maxlength="2"
+                    pattern="[A-Za-z]{2}"
+                    autocomplete="country"
+                    placeholder="FR"
+                  />
+                </label>
+              </div>
+
+              <p class="help-text">{{ t("countryHelp") }}</p>
+
+              <dl class="location-summary">
+                <div>
+                  <dt>{{ t("resolvedLocation") }}</dt>
+                  <dd>
+                    {{
+                      panelState.location.resolved ||
+                      panelState.location.city
+                    }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{{ t("timezone") }}</dt>
+                  <dd>
+                    {{ panelState.location.timezone || t("updating") }}
+                  </dd>
+                </div>
+              </dl>
 
               <div class="button-row">
                 <MacButton
