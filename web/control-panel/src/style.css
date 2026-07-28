@@ -92,11 +92,18 @@ a:focus-visible {
 }
 
 .menu-bar .apple {
-  display: grid;
-  width: 22px;
+  display: inline-grid;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 24px;
   place-items: center;
-  font-size: 13px;
-  transform: rotate(45deg);
+}
+
+.menu-bar .apple svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
 }
 
 .menu-bar > span {

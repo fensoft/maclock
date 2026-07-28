@@ -1,15 +1,15 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { fetchState, fetchStatus, postForm } from "./api";
 import MacButton from "./components/MacButton.vue";
 import MacWindow from "./components/MacWindow.vue";
+import {
+  languageCodes,
+  languageOptions,
+  translate,
+} from "./i18n";
 
-const faceOptions = ["Macintosh", "Compact Digital", "Analog", "Flip Clock"];
-const themeOptions = ["Light", "Dark"];
-const hourFormatOptions = ["24-hour", "12-hour"];
-const chimeOptions = ["Off", "Hourly", "Quarter-hour"];
-const weekdays = ["M", "T", "W", "T", "F", "S", "S"];
 const volumeLevels = [10, 20, 40, 60, 80, 100];
 const volumeOptions = volumeLevels.map((volume) => `${volume}%`);
 
@@ -22,6 +22,22 @@ let statusPoll = 0;
 let noticeTimeout = 0;
 
 const sounds = computed(() => panelState.value?.sounds || []);
+const currentLanguage = computed(
+  () => Number(panelState.value?.appearance?.language) || 0,
+);
+const t = (key, replacements) =>
+  translate(currentLanguage.value, key, replacements);
+const faceOptions = computed(() =>
+  ["macintosh", "compactDigital", "analog", "flipClock"].map((key) => t(key)),
+);
+const themeOptions = computed(() => ["light", "dark"].map((key) => t(key)));
+const hourFormatOptions = computed(() =>
+  ["hour24", "hour12"].map((key) => t(key)),
+);
+const chimeOptions = computed(() =>
+  ["off", "hourly", "quarterHour"].map((key) => t(key)),
+);
+const weekdays = computed(() => t("weekdays"));
 const timerText = computed(() => {
   const seconds = Math.max(0, timerRemaining.value);
   const hours = Math.floor(seconds / 3600);
@@ -46,7 +62,7 @@ async function loadState({ quiet = false } = {}) {
     panelState.value = await fetchState();
     timerRemaining.value = panelState.value.timer.remaining || 0;
   } catch (error) {
-    showNotice(error.message || "Could not contact Maclock", "error");
+    showNotice(t("contactError"), "error");
   } finally {
     loading.value = false;
   }
@@ -62,11 +78,11 @@ async function runAction(
   if (busy.value) return;
   busy.value = key;
   try {
-    const result = await postForm(path, values);
-    showNotice(result.message || successMessage);
+    await postForm(path, values);
+    showNotice(successMessage);
     if (refresh) await loadState({ quiet: true });
   } catch (error) {
-    showNotice(error.message || "The setting was not saved", "error");
+    showNotice(t("saveError"), "error");
   } finally {
     busy.value = "";
   }
@@ -83,7 +99,7 @@ function saveAppearance() {
       seconds: appearance.seconds ? 1 : 0,
       weekday: appearance.weekday ? 1 : 0,
     },
-    "Appearance saved",
+    t("appearanceSaved"),
   );
 }
 
@@ -109,7 +125,7 @@ function saveAlarm(index) {
       sound: alarm.sound,
       volume: alarm.volume,
     },
-    `Alarm ${index + 1} saved`,
+    t("alarmSaved", { number: index + 1 }),
   );
 }
 
@@ -124,7 +140,7 @@ function timerAction(action) {
       sound: timer.sound,
       volume: timer.volume,
     },
-    action === "start" ? "Timer started" : "Timer saved",
+    action === "start" ? t("timerStarted") : t("timerSaved"),
   );
 }
 
@@ -140,7 +156,7 @@ function saveNightMode() {
       screenOff: night.screenOff ? 1 : 0,
       offHour: night.offHour,
     },
-    "Night mode saved",
+    t("nightSaved"),
   );
 }
 
@@ -157,7 +173,7 @@ function saveChime() {
       quietStart: chime.quietStart,
       quietEnd: chime.quietEnd,
     },
-    "Chime saved",
+    t("chimeSaved"),
   );
 }
 
@@ -167,7 +183,7 @@ function saveSystemSounds() {
     "sounds",
     "/api/sounds",
     system,
-    "System sounds saved",
+    t("soundsSaved"),
   );
 }
 
@@ -179,7 +195,7 @@ function previewSound(sound, volume, levelScale = false) {
     `preview-${sound}`,
     "/api/preview",
     { sound, volume: previewVolume },
-    "Playing sound",
+    t("playing"),
     { refresh: false },
   );
 }
@@ -201,6 +217,14 @@ onMounted(async () => {
   statusPoll = window.setInterval(pollStatus, 3000);
 });
 
+watch(
+  currentLanguage,
+  (language) => {
+    document.documentElement.lang = languageCodes[language] || "en";
+  },
+  { immediate: true },
+);
+
 onBeforeUnmount(() => {
   window.clearInterval(statusPoll);
   window.clearTimeout(noticeTimeout);
@@ -209,23 +233,29 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="desktop">
-    <nav class="menu-bar" aria-label="Control panel sections">
-      <a class="apple" href="#welcome" aria-label="Maclock home">◆</a>
-      <a href="#appearance">File</a>
-      <a href="#alarms">Edit</a>
-      <a href="#timer">View</a>
-      <a href="#sounds">Special</a>
-      <span>Maclock Control</span>
+    <nav class="menu-bar" :aria-label="t('menuSections')">
+      <a class="apple" href="#welcome" :aria-label="t('home')">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35-.07 2.29.74 3.08.79 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.53 4.09M12.03 7.25C11.88 5.02 13.69 3.18 15.77 3c.29 2.58-2.34 4.5-3.74 4.25"
+          />
+        </svg>
+      </a>
+      <a href="#appearance">{{ t("file") }}</a>
+      <a href="#alarms">{{ t("edit") }}</a>
+      <a href="#timer">{{ t("view") }}</a>
+      <a href="#sounds">{{ t("special") }}</a>
+      <span>{{ t("control") }}</span>
     </nav>
 
     <main>
       <div v-if="loading" class="startup-screen" role="status">
         <div class="watch-cursor" aria-hidden="true">◷</div>
-        <strong>Opening Maclock Control Panel…</strong>
+        <strong>{{ t("opening") }}</strong>
       </div>
 
       <template v-else-if="panelState">
-        <MacWindow id="welcome" title="Maclock Control Panel" wide>
+        <MacWindow id="welcome" :title="t('panelTitle')" wide>
           <div class="welcome-layout">
             <div class="classic-mac" aria-hidden="true">
               <div class="classic-mac__screen">
@@ -235,24 +265,34 @@ onBeforeUnmount(() => {
               <span></span>
             </div>
             <div>
-              <h1>Maclock Control Panel</h1>
-              <p>
-                Adjust your clock from any computer or phone on the same
-                network. Changes are saved directly to Maclock.
-              </p>
+              <h1>{{ t("panelTitle") }}</h1>
+              <p>{{ t("welcome") }}</p>
               <div class="connection-badge">
                 <span aria-hidden="true"></span>
-                Connected locally
+                {{ t("connected") }}
               </div>
             </div>
           </div>
         </MacWindow>
 
         <div class="control-grid">
-          <MacWindow id="appearance" title="Appearance">
+          <MacWindow id="appearance" :title="t('appearance')">
             <form class="panel-form" @submit.prevent="saveAppearance">
               <label class="field">
-                <span>Clock face</span>
+                <span>{{ t("language") }}</span>
+                <select v-model.number="panelState.appearance.language">
+                  <option
+                    v-for="(name, index) in languageOptions"
+                    :key="name"
+                    :value="index"
+                  >
+                    {{ name }}
+                  </option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>{{ t("clockFace") }}</span>
                 <select v-model.number="panelState.appearance.face">
                   <option
                     v-for="(name, index) in faceOptions"
@@ -265,7 +305,7 @@ onBeforeUnmount(() => {
               </label>
 
               <fieldset class="radio-box">
-                <legend>Theme</legend>
+                <legend>{{ t("theme") }}</legend>
                 <label
                   v-for="(name, index) in themeOptions"
                   :key="name"
@@ -281,7 +321,7 @@ onBeforeUnmount(() => {
               </fieldset>
 
               <fieldset class="radio-box">
-                <legend>Hour format</legend>
+                <legend>{{ t("hourFormat") }}</legend>
                 <label
                   v-for="(name, index) in hourFormatOptions"
                   :key="name"
@@ -301,7 +341,7 @@ onBeforeUnmount(() => {
                   v-model="panelState.appearance.leadingZero"
                   type="checkbox"
                 />
-                <span>Show leading zero</span>
+                <span>{{ t("leadingZero") }}</span>
               </label>
 
               <label class="check-line">
@@ -309,7 +349,7 @@ onBeforeUnmount(() => {
                   v-model="panelState.appearance.seconds"
                   type="checkbox"
                 />
-                <span>Show seconds on digital and flip faces</span>
+                <span>{{ t("showSeconds") }}</span>
               </label>
 
               <label class="check-line">
@@ -317,12 +357,12 @@ onBeforeUnmount(() => {
                   v-model="panelState.appearance.weekday"
                   type="checkbox"
                 />
-                <span>Show 3-letter weekday before the date</span>
+                <span>{{ t("showWeekday") }}</span>
               </label>
 
               <label class="field">
                 <span class="field-line">
-                  <span>Brightness</span>
+                  <span>{{ t("brightness") }}</span>
                   <output>{{ panelState.appearance.brightness }} / 12</output>
                 </span>
                 <input
@@ -339,25 +379,25 @@ onBeforeUnmount(() => {
                   type="submit"
                   :disabled="!!busy"
                 >
-                  Apply
+                  {{ t("apply") }}
                 </MacButton>
               </div>
             </form>
           </MacWindow>
 
-          <MacWindow id="timer" title="Timer">
+          <MacWindow id="timer" :title="t('timer')">
             <form class="panel-form" @submit.prevent="timerAction('start')">
               <div
                 class="timer-display"
                 :class="{ active: panelState.timer.active }"
                 aria-live="polite"
               >
-                {{ panelState.timer.active ? timerText : "READY" }}
+                {{ panelState.timer.active ? timerText : t("ready") }}
               </div>
 
               <div class="timer-fields">
                 <label class="field">
-                  <span>Minutes</span>
+                  <span>{{ t("minutes") }}</span>
                   <input
                     v-model.number="panelState.timer.minutes"
                     type="number"
@@ -366,7 +406,7 @@ onBeforeUnmount(() => {
                   />
                 </label>
                 <label class="field">
-                  <span>Volume</span>
+                  <span>{{ t("volume") }}</span>
                   <select v-model.number="panelState.timer.volume">
                     <option
                       v-for="(name, index) in volumeOptions"
@@ -380,7 +420,7 @@ onBeforeUnmount(() => {
               </div>
 
               <label class="field">
-                <span>Sound</span>
+                <span>{{ t("sound") }}</span>
                 <div class="sound-line">
                   <select v-model="panelState.timer.sound">
                     <option
@@ -393,7 +433,7 @@ onBeforeUnmount(() => {
                   </select>
                   <MacButton
                     secondary
-                    aria-label="Preview timer sound"
+                    :aria-label="t('previewTimer')"
                     :disabled="!!busy"
                     @click="
                       previewSound(
@@ -415,7 +455,7 @@ onBeforeUnmount(() => {
                   :disabled="!!busy"
                   @click="timerAction('cancel')"
                 >
-                  Cancel
+                  {{ t("cancel") }}
                 </MacButton>
                 <MacButton
                   v-else
@@ -423,20 +463,20 @@ onBeforeUnmount(() => {
                   :disabled="!!busy"
                   @click="timerAction('save')"
                 >
-                  Save
+                  {{ t("save") }}
                 </MacButton>
                 <MacButton
                   default-action
                   type="submit"
                   :disabled="!!busy"
                 >
-                  Start
+                  {{ t("start") }}
                 </MacButton>
               </div>
             </form>
           </MacWindow>
 
-          <MacWindow id="alarms" title="Alarm Clock" wide>
+          <MacWindow id="alarms" :title="t('alarmClock')" wide>
             <div class="alarm-grid">
               <form
                 v-for="(alarm, alarmIndex) in panelState.alarms"
@@ -445,16 +485,16 @@ onBeforeUnmount(() => {
                 @submit.prevent="saveAlarm(alarmIndex)"
               >
                 <div class="alarm-heading">
-                  <strong>Alarm {{ alarmIndex + 1 }}</strong>
+                  <strong>{{ t("alarm") }} {{ alarmIndex + 1 }}</strong>
                   <label class="switch-label">
                     <input v-model="alarm.enabled" type="checkbox" />
-                    <span>{{ alarm.enabled ? "On" : "Off" }}</span>
+                    <span>{{ alarm.enabled ? t("on") : t("off") }}</span>
                   </label>
                 </div>
 
                 <div class="time-entry">
                   <label>
-                    <span>Hour</span>
+                    <span>{{ t("hour") }}</span>
                     <input
                       v-model.number="alarm.hour"
                       type="number"
@@ -464,7 +504,7 @@ onBeforeUnmount(() => {
                   </label>
                   <b aria-hidden="true">:</b>
                   <label>
-                    <span>Minute</span>
+                    <span>{{ t("minute") }}</span>
                     <input
                       v-model.number="alarm.minute"
                       type="number"
@@ -475,7 +515,7 @@ onBeforeUnmount(() => {
                 </div>
 
                 <fieldset class="weekdays">
-                  <legend>Repeat</legend>
+                  <legend>{{ t("repeat") }}</legend>
                   <button
                     v-for="(day, dayIndex) in weekdays"
                     :key="dayIndex"
@@ -491,7 +531,7 @@ onBeforeUnmount(() => {
                 </fieldset>
 
                 <label class="field">
-                  <span>Sound</span>
+                  <span>{{ t("sound") }}</span>
                   <div class="sound-line">
                     <select v-model="alarm.sound">
                       <option
@@ -504,7 +544,7 @@ onBeforeUnmount(() => {
                     </select>
                     <MacButton
                       secondary
-                      aria-label="Preview alarm sound"
+                      :aria-label="t('previewAlarm')"
                       :disabled="!!busy"
                       @click="
                         previewSound(alarm.sound, alarm.volume, true)
@@ -516,7 +556,7 @@ onBeforeUnmount(() => {
                 </label>
 
                 <label class="field">
-                  <span>Volume</span>
+                  <span>{{ t("volume") }}</span>
                   <select v-model.number="alarm.volume">
                     <option
                       v-for="(name, index) in volumeOptions"
@@ -534,23 +574,23 @@ onBeforeUnmount(() => {
                     type="submit"
                     :disabled="!!busy"
                   >
-                    Save
+                    {{ t("save") }}
                   </MacButton>
                 </div>
               </form>
             </div>
           </MacWindow>
 
-          <MacWindow id="night" title="Night Mode">
+          <MacWindow id="night" :title="t('nightMode')">
             <form class="panel-form" @submit.prevent="saveNightMode">
               <label class="check-line">
                 <input v-model="panelState.night.enabled" type="checkbox" />
-                <span>Automatically dim the display</span>
+                <span>{{ t("automaticDim") }}</span>
               </label>
 
               <div class="two-column">
                 <label class="field">
-                  <span>Dim from</span>
+                  <span>{{ t("dimFrom") }}</span>
                   <select v-model.number="panelState.night.start">
                     <option v-for="hour in 24" :key="hour" :value="hour - 1">
                       {{ String(hour - 1).padStart(2, "0") }}:00
@@ -558,7 +598,7 @@ onBeforeUnmount(() => {
                   </select>
                 </label>
                 <label class="field">
-                  <span>Normal at</span>
+                  <span>{{ t("normalAt") }}</span>
                   <select v-model.number="panelState.night.end">
                     <option v-for="hour in 24" :key="hour" :value="hour - 1">
                       {{ String(hour - 1).padStart(2, "0") }}:00
@@ -571,11 +611,11 @@ onBeforeUnmount(() => {
 
               <label class="check-line">
                 <input v-model="panelState.night.screenOff" type="checkbox" />
-                <span>Turn the screen completely off</span>
+                <span>{{ t("screenOff") }}</span>
               </label>
 
               <label class="field">
-                <span>Screen-off time</span>
+                <span>{{ t("screenOffTime") }}</span>
                 <select
                   v-model.number="panelState.night.offHour"
                   :disabled="!panelState.night.screenOff"
@@ -585,9 +625,7 @@ onBeforeUnmount(() => {
                   </option>
                 </select>
               </label>
-              <p class="help-text">
-                Touching the screen or either clock button wakes it temporarily.
-              </p>
+              <p class="help-text">{{ t("wakeHelp") }}</p>
 
               <div class="button-row">
                 <MacButton
@@ -595,16 +633,16 @@ onBeforeUnmount(() => {
                   type="submit"
                   :disabled="!!busy"
                 >
-                  Save
+                  {{ t("save") }}
                 </MacButton>
               </div>
             </form>
           </MacWindow>
 
-          <MacWindow id="chime" title="Hourly Chime">
+          <MacWindow id="chime" :title="t('hourlyChime')">
             <form class="panel-form" @submit.prevent="saveChime">
               <label class="field">
-                <span>Schedule</span>
+                <span>{{ t("schedule") }}</span>
                 <select v-model.number="panelState.chime.mode">
                   <option
                     v-for="(name, index) in chimeOptions"
@@ -617,7 +655,7 @@ onBeforeUnmount(() => {
               </label>
 
               <label class="field">
-                <span>Sound</span>
+                <span>{{ t("sound") }}</span>
                 <div class="sound-line">
                   <select v-model="panelState.chime.sound">
                     <option
@@ -630,7 +668,7 @@ onBeforeUnmount(() => {
                   </select>
                   <MacButton
                     secondary
-                    aria-label="Preview chime"
+                    :aria-label="t('previewChime')"
                     :disabled="!!busy"
                     @click="
                       previewSound(
@@ -646,7 +684,7 @@ onBeforeUnmount(() => {
               </label>
 
               <label class="field">
-                <span>Volume</span>
+                <span>{{ t("volume") }}</span>
                 <select v-model.number="panelState.chime.volume">
                   <option
                     v-for="(name, index) in volumeOptions"
@@ -660,12 +698,12 @@ onBeforeUnmount(() => {
 
               <label class="check-line">
                 <input v-model="panelState.chime.quiet" type="checkbox" />
-                <span>Use quiet hours</span>
+                <span>{{ t("quietHours") }}</span>
               </label>
 
               <div class="two-column">
                 <label class="field">
-                  <span>Quiet from</span>
+                  <span>{{ t("quietFrom") }}</span>
                   <select v-model.number="panelState.chime.quietStart">
                     <option v-for="hour in 24" :key="hour" :value="hour - 1">
                       {{ String(hour - 1).padStart(2, "0") }}:00
@@ -673,7 +711,7 @@ onBeforeUnmount(() => {
                   </select>
                 </label>
                 <label class="field">
-                  <span>Resume at</span>
+                  <span>{{ t("resumeAt") }}</span>
                   <select v-model.number="panelState.chime.quietEnd">
                     <option v-for="hour in 24" :key="hour" :value="hour - 1">
                       {{ String(hour - 1).padStart(2, "0") }}:00
@@ -688,13 +726,13 @@ onBeforeUnmount(() => {
                   type="submit"
                   :disabled="!!busy"
                 >
-                  Save
+                  {{ t("save") }}
                 </MacButton>
               </div>
             </form>
           </MacWindow>
 
-          <MacWindow id="sounds" title="Sound Manager" wide>
+          <MacWindow id="sounds" :title="t('soundManager')" wide>
             <form class="sound-manager" @submit.prevent="saveSystemSounds">
               <div class="speaker-icon" aria-hidden="true">
                 <span></span>
@@ -702,9 +740,9 @@ onBeforeUnmount(() => {
 
               <div class="sound-settings">
                 <div class="sound-setting">
-                  <strong>Startup sound</strong>
+                  <strong>{{ t("startupSound") }}</strong>
                   <label class="field">
-                    <span>Sound file</span>
+                    <span>{{ t("soundFile") }}</span>
                     <div class="sound-line">
                       <select v-model="panelState.systemSounds.startup">
                         <option
@@ -717,7 +755,7 @@ onBeforeUnmount(() => {
                       </select>
                       <MacButton
                         secondary
-                        aria-label="Preview startup sound"
+                        :aria-label="t('previewStartup')"
                         :disabled="!!busy"
                         @click="
                           previewSound(
@@ -732,7 +770,7 @@ onBeforeUnmount(() => {
                   </label>
                   <label class="field">
                     <span class="field-line">
-                      <span>Volume</span>
+                      <span>{{ t("volume") }}</span>
                       <output>
                         {{ panelState.systemSounds.startupVolume }}%
                       </output>
@@ -752,9 +790,9 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div class="sound-setting">
-                  <strong>Floppy sound</strong>
+                  <strong>{{ t("floppySound") }}</strong>
                   <label class="field">
-                    <span>Sound file</span>
+                    <span>{{ t("soundFile") }}</span>
                     <div class="sound-line">
                       <select v-model="panelState.systemSounds.floppy">
                         <option
@@ -767,7 +805,7 @@ onBeforeUnmount(() => {
                       </select>
                       <MacButton
                         secondary
-                        aria-label="Preview floppy sound"
+                        :aria-label="t('previewFloppy')"
                         :disabled="!!busy"
                         @click="
                           previewSound(
@@ -782,7 +820,7 @@ onBeforeUnmount(() => {
                   </label>
                   <label class="field">
                     <span class="field-line">
-                      <span>Volume</span>
+                      <span>{{ t("volume") }}</span>
                       <output>
                         {{ panelState.systemSounds.floppyVolume }}%
                       </output>
@@ -808,7 +846,7 @@ onBeforeUnmount(() => {
                   type="submit"
                   :disabled="!!busy"
                 >
-                  Save Sounds
+                  {{ t("saveSounds") }}
                 </MacButton>
               </div>
             </form>
@@ -816,10 +854,9 @@ onBeforeUnmount(() => {
         </div>
 
         <footer>
-          <strong>Maclock Control Panel</strong>
+          <strong>{{ t("panelTitle") }}</strong>
           <span aria-hidden="true">•</span>
-          This is the everyday control panel. The “Maclock Setup” Wi-Fi portal
-          remains separate and is only used to join a network.
+          {{ t("footer") }}
           <span aria-hidden="true">•</span>
           <a
             class="github-link"
@@ -827,7 +864,7 @@ onBeforeUnmount(() => {
             target="_blank"
             rel="noopener noreferrer"
           >
-            View on GitHub
+            {{ t("viewGithub") }}
           </a>
         </footer>
       </template>

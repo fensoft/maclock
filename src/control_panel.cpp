@@ -115,6 +115,8 @@ static void send_state()
 
     JsonObject appearance =
         document["appearance"].to<JsonObject>();
+    appearance["language"] =
+        static_cast<uint8_t>(snapshot.settings.language);
     appearance["face"] =
         static_cast<uint8_t>(snapshot.settings.clock_face);
     appearance["theme"] =
@@ -212,6 +214,7 @@ static void send_status()
 
 static void apply_appearance()
 {
+    uint32_t language = 0;
     uint32_t face = 0;
     uint32_t theme = 0;
     uint32_t brightness = 0;
@@ -220,6 +223,8 @@ static void apply_appearance()
     uint32_t seconds = 0;
     uint32_t weekday = 0;
     if (!read_uint(
+            "language", 0, UI_LANGUAGE_COUNT - 1, language) ||
+        !read_uint(
             "face", 0,
             static_cast<uint8_t>(ClockFace::Count) - 1, face) ||
         !read_uint(
@@ -246,6 +251,7 @@ static void apply_appearance()
     time_format.show_weekday = weekday != 0;
     const bool applied = g_events &&
         g_events->applyControlAppearance(
+            static_cast<UiLanguage>(language),
             static_cast<ClockFace>(face),
             static_cast<ClockTheme>(theme),
             static_cast<uint8_t>(brightness),

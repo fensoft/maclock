@@ -1,7 +1,16 @@
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
 const demoState = {
-  appearance: { face: 0, theme: 0, brightness: 7 },
+  appearance: {
+    language: 0,
+    face: 0,
+    theme: 0,
+    brightness: 7,
+    hourFormat: 0,
+    leadingZero: true,
+    seconds: true,
+    weekday: false,
+  },
   systemSounds: {
     startup: "/startup.mp3",
     startupVolume: 80,
@@ -97,9 +106,14 @@ function applyDemo(path, values) {
   const number = (key) => Number(values[key]);
   if (path === "/api/appearance") {
     Object.assign(demoState.appearance, {
+      language: number("language"),
       face: number("face"),
       theme: number("theme"),
       brightness: number("brightness"),
+      hourFormat: number("hourFormat"),
+      leadingZero: number("leadingZero") !== 0,
+      seconds: number("seconds") !== 0,
+      weekday: number("weekday") !== 0,
     });
   } else if (path === "/api/alarm") {
     const alarm = demoState.alarms[number("index")];

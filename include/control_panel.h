@@ -48,6 +48,7 @@ public:
 
     virtual ControlPanelSnapshot controlPanelSnapshot() = 0;
     virtual bool applyControlAppearance(
+        UiLanguage language,
         ClockFace face, ClockTheme theme, uint8_t brightness,
         const TimeFormatSettings &time_format) = 0;
     virtual bool applyControlAlarm(

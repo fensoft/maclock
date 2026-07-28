@@ -61,10 +61,12 @@ ControlPanelSnapshot MaclockApp::controlPanelSnapshot()
 }
 
 bool MaclockApp::applyControlAppearance(
+    UiLanguage language,
     ClockFace face, ClockTheme theme, uint8_t brightness,
     const TimeFormatSettings &time_format)
 {
-    if (static_cast<uint8_t>(face) >=
+    if (language >= UI_LANGUAGE_COUNT ||
+        static_cast<uint8_t>(face) >=
             static_cast<uint8_t>(ClockFace::Count) ||
         static_cast<uint8_t>(theme) >=
             static_cast<uint8_t>(ClockTheme::Count) ||
@@ -75,9 +77,13 @@ bool MaclockApp::applyControlAppearance(
         return false;
     }
 
+    const bool language_changed =
+        app_settings.language != language;
+    app_settings.language = language;
     app_settings.clock_face = face;
     app_settings.clock_theme = theme;
     app_settings.time_format = time_format;
+    settings_store.saveLanguage(language);
     settings_store.saveClockFace(face);
     settings_store.saveClockTheme(theme);
     settings_store.saveTimeFormat(time_format);
@@ -90,6 +96,11 @@ bool MaclockApp::applyControlAppearance(
         static_cast<uint8_t>(face));
     update_regional_options_ui();
     update_display_options_ui();
+    if (language_changed)
+    {
+        localization_set_language(language);
+        refresh_language_ui();
+    }
 
     clock_view.applyTimeFormatLayout();
     clock_view.applyTheme();

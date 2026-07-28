@@ -39,6 +39,7 @@ public:
 
     ControlPanelSnapshot controlPanelSnapshot() override;
     bool applyControlAppearance(
+        UiLanguage language,
         ClockFace face, ClockTheme theme, uint8_t brightness,
         const TimeFormatSettings &time_format) override;
     bool applyControlAlarm(
