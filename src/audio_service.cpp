@@ -120,6 +120,20 @@ bool AudioService::play(const char *path, uint8_t volume)
     return started;
 }
 
+void AudioService::setVolume(uint8_t volume)
+{
+    if (lock_)
+        xSemaphoreTake(lock_, portMAX_DELAY);
+    const es8311_handle_t codec = display_.codec();
+    if (codec && decoder_ && decoder_->isRunning())
+    {
+        es8311_voice_volume_set(
+            codec, audio_volume_codec_level(volume), nullptr);
+    }
+    if (lock_)
+        xSemaphoreGive(lock_);
+}
+
 bool AudioService::takeFinished()
 {
     portENTER_CRITICAL(&finished_mux_);

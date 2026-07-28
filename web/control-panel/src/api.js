@@ -51,6 +51,10 @@ const demoState = {
       weekdays: 31,
       sound: "/quack.mp3",
       volume: 4,
+      oneTime: false,
+      gradualVolume: true,
+      sunrise: true,
+      label: "Wake up",
     },
     {
       enabled: false,
@@ -59,6 +63,10 @@ const demoState = {
       weekdays: 96,
       sound: "/alarm.mp3",
       volume: 4,
+      oneTime: false,
+      gradualVolume: false,
+      sunrise: false,
+      label: "Weekend",
     },
     {
       enabled: false,
@@ -67,8 +75,23 @@ const demoState = {
       weekdays: 127,
       sound: "/chime.mp3",
       volume: 2,
+      oneTime: true,
+      gradualVolume: false,
+      sunrise: false,
+      label: "",
     },
   ],
+  upcomingAlarm: {
+    valid: true,
+    snoozed: false,
+    oneTime: false,
+    index: 0,
+    dayOffset: 1,
+    weekday: 1,
+    hour: 7,
+    minute: 30,
+    label: "Wake up",
+  },
   timer: {
     active: false,
     minutes: 25,
@@ -106,6 +129,44 @@ function refreshDemoSoundUsage() {
   demoState.sounds.forEach((sound) => {
     sound.inUse = used.has(sound.path);
   });
+}
+
+function refreshDemoUpcomingAlarm() {
+  const now = new Date();
+  let best = null;
+  demoState.alarms.forEach((alarm, index) => {
+    if (!alarm.enabled) return;
+    for (let dayOffset = 0; dayOffset <= 7; dayOffset += 1) {
+      const candidate = new Date(now);
+      candidate.setDate(now.getDate() + dayOffset);
+      candidate.setHours(alarm.hour, alarm.minute, 0, 0);
+      if (candidate <= now) continue;
+      const mondayWeekday = (candidate.getDay() + 6) % 7;
+      if (
+        !alarm.oneTime &&
+        (alarm.weekdays & (1 << mondayWeekday)) === 0
+      ) {
+        continue;
+      }
+      if (!best || candidate < best.candidate) {
+        best = { alarm, index, dayOffset, mondayWeekday, candidate };
+      }
+      break;
+    }
+  });
+  demoState.upcomingAlarm = best
+    ? {
+        valid: true,
+        snoozed: false,
+        oneTime: best.alarm.oneTime,
+        index: best.index,
+        dayOffset: best.dayOffset,
+        weekday: best.mondayWeekday,
+        hour: best.alarm.hour,
+        minute: best.alarm.minute,
+        label: best.alarm.label,
+      }
+    : { valid: false };
 }
 
 function uniqueDemoSound(name, size = 0) {
@@ -191,7 +252,12 @@ function applyDemo(path, values) {
       weekdays: number("weekdays"),
       sound: values.sound,
       volume: number("volume"),
+      oneTime: number("oneTime") !== 0,
+      gradualVolume: number("gradualVolume") !== 0,
+      sunrise: number("sunrise") !== 0,
+      label: String(values.label || "").trim(),
     });
+    refreshDemoUpcomingAlarm();
   } else if (path === "/api/timer") {
     Object.assign(demoState.timer, {
       minutes: number("minutes"),
@@ -237,6 +303,7 @@ export async function fetchState() {
   if (!import.meta.env.DEV) return realFetch("/api/state");
   await new Promise((resolve) => setTimeout(resolve, 180));
   refreshDemoSoundUsage();
+  refreshDemoUpcomingAlarm();
   return clone(demoState);
 }
 
@@ -257,6 +324,7 @@ export async function fetchStatus() {
     screensaver: {
       active: demoState.screensaver.active,
     },
+    upcomingAlarm: clone(demoState.upcomingAlarm),
   };
 }
 

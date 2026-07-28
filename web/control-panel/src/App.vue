@@ -115,6 +115,28 @@ const timerText = computed(() => {
     .map((value) => String(value).padStart(2, "0"))
     .join(":");
 });
+const upcomingAlarmText = computed(() => {
+  const upcoming = panelState.value?.upcomingAlarm;
+  if (!upcoming?.valid) return t("noUpcomingAlarm");
+  const label =
+    String(upcoming.label || "").trim() ||
+    `${t("alarm")} ${Number(upcoming.index) + 1}`;
+  let day = t("today");
+  if (Number(upcoming.dayOffset) === 1) {
+    day = t("tomorrow");
+  } else if (Number(upcoming.dayOffset) > 1) {
+    day = t("weekdayNames")[Number(upcoming.weekday)] || "";
+  }
+  const time = `${String(upcoming.hour).padStart(2, "0")}:${String(
+    upcoming.minute,
+  ).padStart(2, "0")}`;
+  const schedule = upcoming.snoozed
+    ? t("snoozed")
+    : upcoming.oneTime
+      ? t("oneTime")
+      : day;
+  return `${t("nextAlarm")}: ${label} — ${schedule}, ${time}`;
+});
 
 function cloneValue(value) {
   return JSON.parse(JSON.stringify(value));
@@ -160,6 +182,10 @@ function editableSnapshot(appId) {
           "weekdays",
           "sound",
           "volume",
+          "oneTime",
+          "gradualVolume",
+          "sunrise",
+          "label",
         ]),
       );
     case "night":
@@ -452,6 +478,10 @@ function saveAlarm(index) {
       weekdays: alarm.weekdays,
       sound: alarm.sound,
       volume: alarm.volume,
+      oneTime: alarm.oneTime ? 1 : 0,
+      gradualVolume: alarm.gradualVolume ? 1 : 0,
+      sunrise: alarm.sunrise ? 1 : 0,
+      label: alarm.label || "",
     },
     t("alarmSaved", { number: index + 1 }),
   );
@@ -678,6 +708,9 @@ async function pollStatus() {
     timerRemaining.value = status.timer.remaining || 0;
     panelState.value.screensaver.active =
       status.screensaver.active;
+    if (status.upcomingAlarm) {
+      panelState.value.upcomingAlarm = status.upcomingAlarm;
+    }
   } catch {
     // Keep the last known timer state during a transient Wi-Fi interruption.
   }
@@ -1174,6 +1207,11 @@ onBeforeUnmount(() => {
             "
             @close="closeActiveApp()"
           >
+            <div class="upcoming-alarm-preview" role="status">
+              <span aria-hidden="true">◷</span>
+              <strong>{{ upcomingAlarmText }}</strong>
+            </div>
+
             <div class="alarm-grid">
               <form
                 v-for="(alarm, alarmIndex) in panelState.alarms"
@@ -1188,6 +1226,16 @@ onBeforeUnmount(() => {
                     <span>{{ alarm.enabled ? t("on") : t("off") }}</span>
                   </label>
                 </div>
+
+                <label class="field">
+                  <span>{{ t("alarmLabel") }}</span>
+                  <input
+                    v-model.trim="alarm.label"
+                    type="text"
+                    maxlength="24"
+                    :placeholder="`${t('alarm')} ${alarmIndex + 1}`"
+                  />
+                </label>
 
                 <div class="time-entry">
                   <label>
@@ -1211,7 +1259,15 @@ onBeforeUnmount(() => {
                   </label>
                 </div>
 
-                <fieldset class="weekdays">
+                <label class="check-line alarm-option">
+                  <input v-model="alarm.oneTime" type="checkbox" />
+                  <span>{{ t("oneTimeAlarm") }}</span>
+                </label>
+
+                <fieldset
+                  class="weekdays"
+                  :disabled="alarm.oneTime"
+                >
                   <legend>{{ t("repeat") }}</legend>
                   <button
                     v-for="(day, dayIndex) in weekdays"
@@ -1264,6 +1320,20 @@ onBeforeUnmount(() => {
                     </option>
                   </select>
                 </label>
+
+                <div class="alarm-options">
+                  <label class="check-line">
+                    <input
+                      v-model="alarm.gradualVolume"
+                      type="checkbox"
+                    />
+                    <span>{{ t("gradualVolume") }}</span>
+                  </label>
+                  <label class="check-line">
+                    <input v-model="alarm.sunrise" type="checkbox" />
+                    <span>{{ t("sunriseScreen") }}</span>
+                  </label>
+                </div>
 
                 <div class="button-row">
                   <MacButton

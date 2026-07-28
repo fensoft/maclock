@@ -767,6 +767,24 @@ input[type="radio"]:checked::after {
   gap: 18px;
 }
 
+.upcoming-alarm-preview {
+  display: flex;
+  min-height: 42px;
+  margin-bottom: 18px;
+  padding: 9px 12px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 3px double #000;
+  background: #fff;
+  text-align: center;
+}
+
+.upcoming-alarm-preview span {
+  font-size: 22px;
+  line-height: 1;
+}
+
 .alarm-card {
   display: grid;
   gap: 15px;
@@ -780,6 +798,22 @@ input[type="radio"]:checked::after {
   );
   background-size: 4px 4px;
   box-shadow: inset -2px -2px 0 #999;
+}
+
+.alarm-option {
+  min-height: 30px;
+}
+
+.alarm-options {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #000;
+  background: #fff;
+}
+
+.weekdays:disabled {
+  opacity: 0.45;
 }
 
 .alarm-heading {

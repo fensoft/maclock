@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "alarm_ui.h"
 #include "app_types.h"
 #include "sound_selector.h"
 #include "wifi_mode.h"
@@ -16,7 +17,24 @@ struct ControlPanelAlarm
     uint8_t minute = 0;
     uint8_t weekdays = 0x7F;
     uint8_t volume = kDefaultAudioVolumeIndex;
+    bool one_time = false;
+    bool gradual_volume = false;
+    bool sunrise = false;
+    char label[kAlarmLabelMaxLength + 1] = "";
     char sound[SOUND_SELECTOR_PATH_MAX] = "/quack.mp3";
+};
+
+struct ControlPanelUpcomingAlarm
+{
+    bool valid = false;
+    bool snoozed = false;
+    bool one_time = false;
+    uint8_t index = 0;
+    uint8_t day_offset = 0;
+    uint8_t weekday = 0;
+    uint8_t hour = 0;
+    uint8_t minute = 0;
+    char label[kAlarmLabelMaxLength + 1] = "";
 };
 
 struct ControlPanelTimer
@@ -47,6 +65,7 @@ struct ControlPanelSnapshot
     uint8_t floppy_volume = 60;
     char chime_sound[SOUND_SELECTOR_PATH_MAX] = "/quack.mp3";
     ControlPanelAlarm alarms[kControlPanelAlarmCount];
+    ControlPanelUpcomingAlarm upcoming_alarm;
     ControlPanelTimer timer;
     ControlPanelLocation location;
 };

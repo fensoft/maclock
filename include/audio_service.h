@@ -21,6 +21,7 @@ public:
     void resumeTask();
 
     bool play(const char *path, uint8_t volume);
+    void setVolume(uint8_t volume);
     void stop();
     bool takeFinished();
     bool running();

@@ -42,10 +42,41 @@ ControlPanelSnapshot MaclockApp::controlPanelSnapshot()
         snapshot.alarms[i].minute = alarm.minute;
         snapshot.alarms[i].weekdays = alarm.weekdays;
         snapshot.alarms[i].volume = alarm.volume;
+        snapshot.alarms[i].one_time =
+            alarm.one_time != 0;
+        snapshot.alarms[i].gradual_volume =
+            alarm.gradual_volume != 0;
+        snapshot.alarms[i].sunrise =
+            alarm.sunrise != 0;
+        strlcpy(
+            snapshot.alarms[i].label,
+            alarm.label,
+            sizeof(snapshot.alarms[i].label));
         strlcpy(
             snapshot.alarms[i].sound,
             alarm_service.soundPath(i),
             sizeof(snapshot.alarms[i].sound));
+    }
+    UpcomingAlarm upcoming;
+    if (alarm_service.upcoming(rtc_now(), upcoming))
+    {
+        snapshot.upcoming_alarm.valid = true;
+        snapshot.upcoming_alarm.snoozed =
+            upcoming.snoozed;
+        snapshot.upcoming_alarm.one_time =
+            upcoming.one_time;
+        snapshot.upcoming_alarm.index =
+            static_cast<uint8_t>(upcoming.index);
+        snapshot.upcoming_alarm.day_offset =
+            upcoming.day_offset;
+        snapshot.upcoming_alarm.weekday =
+            upcoming.weekday;
+        snapshot.upcoming_alarm.hour = upcoming.hour;
+        snapshot.upcoming_alarm.minute = upcoming.minute;
+        strlcpy(
+            snapshot.upcoming_alarm.label,
+            upcoming.label,
+            sizeof(snapshot.upcoming_alarm.label));
     }
 
     snapshot.timer.active = timer_service.active();
@@ -187,12 +218,20 @@ bool MaclockApp::applyControlAlarm(
     settings.weekdays = alarm.weekdays;
     settings.sound = 0;
     settings.volume = alarm.volume;
+    settings.one_time = alarm.one_time ? 1 : 0;
+    settings.gradual_volume =
+        alarm.gradual_volume ? 1 : 0;
+    settings.sunrise = alarm.sunrise ? 1 : 0;
+    strlcpy(
+        settings.label,
+        alarm.label,
+        sizeof(settings.label));
     const bool configured = alarm_service.configure(
         index, settings, alarm.sound);
     if (configured &&
         current_state_ == UiState::AlarmEditor)
     {
-        alarm_view.enter();
+        alarm_view.enter(rtc_now());
         alarm_view.showEditor();
         lv_timer_handler();
     }

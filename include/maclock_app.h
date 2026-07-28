@@ -109,6 +109,7 @@ private:
     unsigned long state_start_ms_ = 0;
     bool startup_sound_started_ = false;
     int active_alarm_index_ = -1;
+    uint8_t active_alarm_volume_ = 0;
 
     char control_preview_sound_[SOUND_SELECTOR_PATH_MAX] = {};
     uint32_t control_preview_due_ms_ = 0;

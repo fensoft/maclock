@@ -185,7 +185,26 @@ static void send_state()
         item["weekdays"] = alarm.weekdays;
         item["sound"] = alarm.sound;
         item["volume"] = alarm.volume;
+        item["oneTime"] = alarm.one_time;
+        item["gradualVolume"] = alarm.gradual_volume;
+        item["sunrise"] = alarm.sunrise;
+        item["label"] = alarm.label;
     }
+    JsonObject upcoming =
+        document["upcomingAlarm"].to<JsonObject>();
+    upcoming["valid"] = snapshot.upcoming_alarm.valid;
+    upcoming["snoozed"] =
+        snapshot.upcoming_alarm.snoozed;
+    upcoming["oneTime"] =
+        snapshot.upcoming_alarm.one_time;
+    upcoming["index"] = snapshot.upcoming_alarm.index;
+    upcoming["dayOffset"] =
+        snapshot.upcoming_alarm.day_offset;
+    upcoming["weekday"] =
+        snapshot.upcoming_alarm.weekday;
+    upcoming["hour"] = snapshot.upcoming_alarm.hour;
+    upcoming["minute"] = snapshot.upcoming_alarm.minute;
+    upcoming["label"] = snapshot.upcoming_alarm.label;
 
     JsonObject timer = document["timer"].to<JsonObject>();
     timer["active"] = snapshot.timer.active;
@@ -223,6 +242,21 @@ static void send_status()
         snapshot.timer.remaining_seconds;
     document["screensaver"]["active"] =
         snapshot.screensaver_active;
+    JsonObject upcoming =
+        document["upcomingAlarm"].to<JsonObject>();
+    upcoming["valid"] = snapshot.upcoming_alarm.valid;
+    upcoming["snoozed"] =
+        snapshot.upcoming_alarm.snoozed;
+    upcoming["oneTime"] =
+        snapshot.upcoming_alarm.one_time;
+    upcoming["index"] = snapshot.upcoming_alarm.index;
+    upcoming["dayOffset"] =
+        snapshot.upcoming_alarm.day_offset;
+    upcoming["weekday"] =
+        snapshot.upcoming_alarm.weekday;
+    upcoming["hour"] = snapshot.upcoming_alarm.hour;
+    upcoming["minute"] = snapshot.upcoming_alarm.minute;
+    upcoming["label"] = snapshot.upcoming_alarm.label;
     send_json(document);
 }
 
@@ -351,7 +385,12 @@ static void apply_alarm()
     uint32_t minute = 0;
     uint32_t weekdays = 0;
     uint32_t volume = 0;
+    uint32_t one_time = 0;
+    uint32_t gradual_volume = 0;
+    uint32_t sunrise = 0;
     String sound;
+    String label = g_server.arg("label");
+    label.trim();
     if (!read_uint(
             "index", 0, kControlPanelAlarmCount - 1, index) ||
         !read_uint("enabled", 0, 1, enabled) ||
@@ -360,6 +399,11 @@ static void apply_alarm()
         !read_uint("weekdays", 0, 0x7F, weekdays) ||
         !read_uint(
             "volume", 0, kAudioVolumeLevelCount - 1, volume) ||
+        !read_uint("oneTime", 0, 1, one_time) ||
+        !read_uint(
+            "gradualVolume", 0, 1, gradual_volume) ||
+        !read_uint("sunrise", 0, 1, sunrise) ||
+        label.length() > kAlarmLabelMaxLength ||
         !read_sound(sound))
     {
         send_result(false, "Invalid alarm settings", 400);
@@ -372,6 +416,11 @@ static void apply_alarm()
     alarm.minute = static_cast<uint8_t>(minute);
     alarm.weekdays = static_cast<uint8_t>(weekdays);
     alarm.volume = static_cast<uint8_t>(volume);
+    alarm.one_time = one_time != 0;
+    alarm.gradual_volume = gradual_volume != 0;
+    alarm.sunrise = sunrise != 0;
+    strlcpy(
+        alarm.label, label.c_str(), sizeof(alarm.label));
     strlcpy(alarm.sound, sound.c_str(), sizeof(alarm.sound));
     const bool applied = g_events &&
         g_events->applyControlAlarm(index, alarm);

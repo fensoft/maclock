@@ -12,10 +12,13 @@ LV_FONT_DECLARE(lv_font_chicago_48);
 namespace
 {
 static constexpr uint32_t kAlarmStorageMagic = 0x414C524D; // 'ALRM'
-static constexpr uint8_t kAlarmStorageVersion = 2;
-static constexpr uint8_t kLegacyAlarmStorageVersion = 1;
+static constexpr uint8_t kAlarmStorageVersion = 3;
+static constexpr uint8_t kAlarmStorageVersionV2 = 2;
+static constexpr uint8_t kAlarmStorageVersionV1 = 1;
 static constexpr uint8_t kAllWeekdays = 0x7F;
 static constexpr size_t kLegacyAlarmSoundCount = 3;
+static constexpr uint32_t kAlarmRampStepMs = 10000;
+static constexpr uint32_t kAlarmSunriseDurationMs = 60000;
 
 enum AlarmEditorPage
 {
@@ -23,22 +26,40 @@ enum AlarmEditorPage
     ALARM_PAGE_SELECT,
     ALARM_PAGE_TIME,
     ALARM_PAGE_DAYS,
+    ALARM_PAGE_OPTIONS,
+    ALARM_PAGE_LABEL,
     ALARM_PAGE_SOUND,
     ALARM_PAGE_VOLUME,
     ALARM_PAGE_ACTIONS,
     ALARM_PAGE_COUNT
 };
 
+struct LegacyAlarmConfig
+{
+    uint8_t enabled;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t weekdays;
+    uint8_t sound;
+    uint8_t volume;
+};
+static_assert(sizeof(LegacyAlarmConfig) == 6,
+              "Legacy alarm storage layout changed");
+
 using AlarmConfig = AlarmSettings;
-static_assert(
-    sizeof(AlarmConfig) == 6,
-    "AlarmSettings must preserve alarms_v1 storage layout");
 
 struct AlarmStorage
 {
     uint32_t magic;
     uint8_t version;
     AlarmConfig alarms[kAlarmCount];
+};
+
+struct LegacyAlarmStorage
+{
+    uint32_t magic;
+    uint8_t version;
+    LegacyAlarmConfig alarms[kAlarmCount];
 };
 
 struct AlarmEditorUi
@@ -51,6 +72,9 @@ struct AlarmEditorUi
     lv_obj_t *time_value;
     lv_obj_t *time_matrix;
     lv_obj_t *days_matrix;
+    lv_obj_t *options_matrix;
+    lv_obj_t *label_value;
+    lv_obj_t *label_matrix;
     SoundSelector sound_selector;
     lv_obj_t *volume_matrix;
     lv_obj_t *summary;
@@ -62,6 +86,7 @@ struct AlarmEditorUi
     lv_obj_t *next_label;
     lv_obj_t *home_alarm_label;
     lv_obj_t *home_timer_label;
+    lv_obj_t *upcoming;
     lv_obj_t *save_label;
 };
 
@@ -98,6 +123,8 @@ struct AlarmService::State
     const char *enabled_map[3] = {};
     const char *time_map[5] = {};
     const char *days_map[9] = {};
+    const char *options_map[6] = {};
+    const char *label_map[7] = {};
     const char *page_names[ALARM_PAGE_COUNT] = {};
 };
 
@@ -126,6 +153,8 @@ AlarmService *active_alarm_service = nullptr;
 #define g_enabled_map (active_alarm_service->state().enabled_map)
 #define g_time_map (active_alarm_service->state().time_map)
 #define g_days_map (active_alarm_service->state().days_map)
+#define g_options_map (active_alarm_service->state().options_map)
+#define g_label_map (active_alarm_service->state().label_map)
 #define g_page_names (active_alarm_service->state().page_names)
 
 static const char *g_volume_map[] = {
@@ -163,9 +192,24 @@ static void UpdateLanguageMaps()
     g_page_names[1] = tr("Alarm");
     g_page_names[2] = tr("Time");
     g_page_names[3] = tr("Days");
-    g_page_names[4] = tr("Sound");
-    g_page_names[5] = tr("Volume");
-    g_page_names[6] = tr("Actions");
+    g_page_names[4] = tr("Options");
+    g_page_names[5] = tr("Label");
+    g_page_names[6] = tr("Sound");
+    g_page_names[7] = tr("Volume");
+    g_page_names[8] = tr("Actions");
+    g_options_map[0] = tr("One time");
+    g_options_map[1] = tr("Gradual volume");
+    g_options_map[2] = "\n";
+    g_options_map[3] = tr("Sunrise screen");
+    g_options_map[4] = tr("Repeat");
+    g_options_map[5] = "";
+    g_label_map[0] = tr("Alarm");
+    g_label_map[1] = tr("Wake up");
+    g_label_map[2] = "\n";
+    g_label_map[3] = tr("Work");
+    g_label_map[4] = tr("Medicine");
+    g_label_map[5] = tr("None");
+    g_label_map[6] = "";
 }
 
 static void SetAlarmDefaults()
@@ -191,7 +235,39 @@ static bool AlarmConfigIsValid(const AlarmConfig &alarm)
            alarm.minute < 60 &&
            (alarm.weekdays & ~kAllWeekdays) == 0 &&
            alarm.sound < kLegacyAlarmSoundCount &&
-           alarm.volume < kAudioVolumeLevelCount;
+           alarm.volume < kAudioVolumeLevelCount &&
+           alarm.one_time <= 1 &&
+           alarm.gradual_volume <= 1 &&
+           alarm.sunrise <= 1 &&
+           memchr(alarm.label, '\0', sizeof(alarm.label)) != nullptr;
+}
+
+static bool LegacyAlarmConfigIsValid(
+    const LegacyAlarmConfig &alarm, bool version_one)
+{
+    return alarm.enabled <= 1 &&
+           alarm.hour < 24 &&
+           alarm.minute < 60 &&
+           (alarm.weekdays & ~kAllWeekdays) == 0 &&
+           alarm.sound < kLegacyAlarmSoundCount &&
+           alarm.volume <
+               (version_one ? 4 : kAudioVolumeLevelCount);
+}
+
+static void MigrateLegacyAlarm(
+    AlarmConfig &target,
+    const LegacyAlarmConfig &source,
+    bool version_one)
+{
+    target = AlarmConfig();
+    target.enabled = source.enabled;
+    target.hour = source.hour;
+    target.minute = source.minute;
+    target.weekdays = source.weekdays;
+    target.sound = source.sound;
+    target.volume = version_one
+                        ? audio_volume_legacy_index(source.volume)
+                        : source.volume;
 }
 
 static void LoadAlarmSoundPaths(Preferences &preferences)
@@ -366,20 +442,68 @@ static void UpdateSummary()
     if (day_count == 0)
         strlcpy(days, "-", sizeof(days));
 
-    char text[160];
+    const char *label = alarm.label[0]
+                            ? alarm.label
+                            : tr("Alarm");
+    char features[64] = {};
+    if (alarm.gradual_volume)
+        strlcpy(features, tr("Gradual"), sizeof(features));
+    if (alarm.sunrise)
+    {
+        if (features[0])
+            strlcat(features, " + ", sizeof(features));
+        strlcat(features, tr("Sunrise"), sizeof(features));
+    }
+
+    char text[220];
     snprintf(text, sizeof(text),
-             "%s %u: %02u:%02u  %s\n%s: %s\n%s  %u%%",
+             "%s %u - %s: %02u:%02u  %s\n%s: %s\n%s  %u%%  %s",
              tr("Alarm"),
              (unsigned)g_selected_alarm + 1,
+             label,
              (unsigned)alarm.hour,
              (unsigned)alarm.minute,
              alarm.enabled ? tr("Enabled") : tr("Disabled"),
-             tr("Days"),
-             days,
+             alarm.one_time ? tr("Schedule") : tr("Days"),
+             alarm.one_time ? tr("One time") : days,
              SoundSelector::displayName(
                  g_edit_alarm_sound_paths[g_selected_alarm]),
-             (unsigned)audio_volume_from_index(alarm.volume));
+             (unsigned)audio_volume_from_index(alarm.volume),
+             features);
     lv_label_set_text(g_editor.summary, text);
+}
+
+static void UpdateUpcoming(const DateTime &now)
+{
+    if (!g_editor.upcoming)
+        return;
+
+    UpcomingAlarm upcoming;
+    if (!active_alarm_service->upcoming(now, upcoming))
+    {
+        lv_label_set_text(
+            g_editor.upcoming, tr("No upcoming alarm"));
+        return;
+    }
+
+    static const char *day_names[] = {
+        "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+    const char *day =
+        upcoming.day_offset == 0
+            ? tr("Today")
+            : (upcoming.day_offset == 1
+                   ? tr("Tomorrow")
+                   : tr(day_names[upcoming.weekday]));
+    const char *label = upcoming.label[0]
+                            ? upcoming.label
+                            : tr("Alarm");
+    char text[80];
+    snprintf(
+        text, sizeof(text), "%s: %s - %s %02u:%02u",
+        tr("Next alarm"), label, day,
+        (unsigned)upcoming.hour,
+        (unsigned)upcoming.minute);
+    lv_label_set_text(g_editor.upcoming, text);
 }
 
 static void TimeEvent(lv_event_t *event)
@@ -443,6 +567,119 @@ static void DaysEvent(lv_event_t *event)
     }
 }
 
+static void UpdateOptionsMatrix()
+{
+    if (!g_editor.options_matrix ||
+        g_selected_alarm >= kAlarmCount)
+    {
+        return;
+    }
+
+    const AlarmConfig &alarm =
+        g_edit_alarms[g_selected_alarm];
+    lv_buttonmatrix_clear_button_ctrl_all(
+        g_editor.options_matrix,
+        LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_buttonmatrix_set_button_ctrl(
+        g_editor.options_matrix,
+        alarm.one_time ? 0 : 3,
+        LV_BUTTONMATRIX_CTRL_CHECKED);
+    if (alarm.gradual_volume)
+    {
+        lv_buttonmatrix_set_button_ctrl(
+            g_editor.options_matrix, 1,
+            LV_BUTTONMATRIX_CTRL_CHECKED);
+    }
+    if (alarm.sunrise)
+    {
+        lv_buttonmatrix_set_button_ctrl(
+            g_editor.options_matrix, 2,
+            LV_BUTTONMATRIX_CTRL_CHECKED);
+    }
+}
+
+static void OptionsEvent(lv_event_t *event)
+{
+    (void)event;
+    if (g_selected_alarm >= kAlarmCount)
+        return;
+
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(
+            g_editor.options_matrix);
+    AlarmConfig &alarm =
+        g_edit_alarms[g_selected_alarm];
+    switch (selected)
+    {
+    case 0:
+        alarm.one_time = 1;
+        break;
+    case 1:
+        alarm.gradual_volume = !alarm.gradual_volume;
+        break;
+    case 2:
+        alarm.sunrise = !alarm.sunrise;
+        break;
+    case 3:
+        alarm.one_time = 0;
+        break;
+    default:
+        return;
+    }
+    UpdateOptionsMatrix();
+}
+
+static const char *AlarmPresetLabel(uint32_t selected)
+{
+    switch (selected)
+    {
+    case 0:
+        return tr("Alarm");
+    case 1:
+        return tr("Wake up");
+    case 2:
+        return tr("Work");
+    case 3:
+        return tr("Medicine");
+    case 4:
+        return "";
+    default:
+        return nullptr;
+    }
+}
+
+static void UpdateLabelValue()
+{
+    if (!g_editor.label_value ||
+        g_selected_alarm >= kAlarmCount)
+    {
+        return;
+    }
+    const char *label =
+        g_edit_alarms[g_selected_alarm].label;
+    lv_label_set_text(
+        g_editor.label_value,
+        label[0] ? label : tr("No label"));
+}
+
+static void LabelEvent(lv_event_t *event)
+{
+    (void)event;
+    if (g_selected_alarm >= kAlarmCount)
+        return;
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(
+            g_editor.label_matrix);
+    const char *label = AlarmPresetLabel(selected);
+    if (!label)
+        return;
+    strlcpy(
+        g_edit_alarms[g_selected_alarm].label,
+        label,
+        sizeof(g_edit_alarms[g_selected_alarm].label));
+    UpdateLabelValue();
+}
+
 static void SoundChanged(const char *path, void *user_data)
 {
     (void)user_data;
@@ -503,6 +740,8 @@ static void LoadEditorAlarm(size_t alarm_index)
         audio_volume_from_index(alarm.volume));
     SetMatrixChecked(
         g_editor.volume_matrix, kAudioVolumeLevelCount, alarm.volume);
+    UpdateOptionsMatrix();
+    UpdateLabelValue();
     UpdateTimeValue();
     UpdateSummary();
 }
@@ -659,19 +898,32 @@ static void InitEditorUi(lv_obj_t *screen)
         g_editor.pages[i] = CreateEditorPage(g_editor.panel);
 
     lv_obj_t *home_page = g_editor.pages[ALARM_PAGE_HOME];
+    g_editor.upcoming = lv_label_create(home_page);
+    lv_label_set_text(
+        g_editor.upcoming, tr("No upcoming alarm"));
+    lv_obj_set_width(g_editor.upcoming, 260);
+    lv_label_set_long_mode(
+        g_editor.upcoming, LV_LABEL_LONG_CLIP);
+    lv_obj_set_style_text_font(
+        g_editor.upcoming, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_align(
+        g_editor.upcoming, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(
+        g_editor.upcoming, LV_ALIGN_TOP_MID, 0, 0);
+
     lv_obj_t *alarm_button =
         CreateButton(home_page, tr("Alarm"),
                      OpenAlarmSettingsEvent);
     g_editor.home_alarm_label = lv_obj_get_child(alarm_button, 0);
-    lv_obj_set_size(alarm_button, 124, 124);
-    lv_obj_align(alarm_button, LV_ALIGN_LEFT_MID, 8, 0);
+    lv_obj_set_size(alarm_button, 124, 102);
+    lv_obj_align(alarm_button, LV_ALIGN_BOTTOM_LEFT, 8, 0);
 
     lv_obj_t *timer_button =
         CreateButton(home_page, tr("Timer"),
                      OpenTimerEvent);
     g_editor.home_timer_label = lv_obj_get_child(timer_button, 0);
-    lv_obj_set_size(timer_button, 124, 124);
-    lv_obj_align(timer_button, LV_ALIGN_RIGHT_MID, -8, 0);
+    lv_obj_set_size(timer_button, 124, 102);
+    lv_obj_align(timer_button, LV_ALIGN_BOTTOM_RIGHT, -8, 0);
 
     lv_obj_t *select_page = g_editor.pages[ALARM_PAGE_SELECT];
     g_editor.slot_matrix = lv_buttonmatrix_create(select_page);
@@ -728,6 +980,51 @@ static void InitEditorUi(lv_obj_t *screen)
     StyleMatrix(g_editor.days_matrix);
     lv_obj_add_event_cb(
         g_editor.days_matrix, DaysEvent,
+        LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *options_page =
+        g_editor.pages[ALARM_PAGE_OPTIONS];
+    g_editor.options_matrix =
+        lv_buttonmatrix_create(options_page);
+    lv_buttonmatrix_set_map(
+        g_editor.options_matrix, g_options_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        g_editor.options_matrix,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_one_checked(
+        g_editor.options_matrix, false);
+    SetClickOnRelease(g_editor.options_matrix);
+    lv_obj_set_size(g_editor.options_matrix, 260, 124);
+    lv_obj_center(g_editor.options_matrix);
+    StyleMatrix(g_editor.options_matrix);
+    lv_obj_add_event_cb(
+        g_editor.options_matrix, OptionsEvent,
+        LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *label_page =
+        g_editor.pages[ALARM_PAGE_LABEL];
+    g_editor.label_value = lv_label_create(label_page);
+    lv_label_set_text(
+        g_editor.label_value, tr("No label"));
+    lv_obj_set_width(g_editor.label_value, 260);
+    lv_obj_set_style_text_font(
+        g_editor.label_value, &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_align(
+        g_editor.label_value, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(
+        g_editor.label_value, LV_ALIGN_TOP_MID, 0, 2);
+
+    g_editor.label_matrix =
+        lv_buttonmatrix_create(label_page);
+    lv_buttonmatrix_set_map(
+        g_editor.label_matrix, g_label_map);
+    SetClickOnRelease(g_editor.label_matrix);
+    lv_obj_set_size(g_editor.label_matrix, 260, 96);
+    lv_obj_align(
+        g_editor.label_matrix, LV_ALIGN_BOTTOM_MID, 0, 0);
+    StyleMatrix(g_editor.label_matrix);
+    lv_obj_add_event_cb(
+        g_editor.label_matrix, LabelEvent,
         LV_EVENT_VALUE_CHANGED, nullptr);
 
     lv_obj_t *sound_page = g_editor.pages[ALARM_PAGE_SOUND];
@@ -853,45 +1150,65 @@ void AlarmService::begin(Preferences &preferences)
     g_snooze_alarm = -1;
     g_snooze_at = 0;
 
-    bool storage_valid =
-        preferences.getBytesLength("alarms_v1") ==
-        sizeof(AlarmStorage);
-    AlarmStorage storage = {};
-    if (storage_valid)
+    bool storage_valid = false;
+    bool migrated = false;
+    const size_t storage_length =
+        preferences.getBytesLength("alarms_v1");
+    if (storage_length == sizeof(AlarmStorage))
     {
+        AlarmStorage storage = {};
         storage_valid =
             preferences.getBytes(
                 "alarms_v1", &storage, sizeof(storage)) ==
                 sizeof(storage) &&
             storage.magic == kAlarmStorageMagic &&
-            (storage.version == kAlarmStorageVersion ||
-             storage.version == kLegacyAlarmStorageVersion);
+            storage.version == kAlarmStorageVersion;
+        for (size_t i = 0;
+             storage_valid && i < kAlarmCount; ++i)
+        {
+            storage_valid =
+                AlarmConfigIsValid(storage.alarms[i]);
+        }
+        if (storage_valid)
+        {
+            memcpy(
+                g_alarms, storage.alarms,
+                sizeof(g_alarms));
+        }
     }
-    const bool legacy_storage =
-        storage_valid &&
-        storage.version == kLegacyAlarmStorageVersion;
-    for (size_t i = 0; storage_valid && i < kAlarmCount; ++i)
+    else if (storage_length == sizeof(LegacyAlarmStorage))
     {
+        LegacyAlarmStorage storage = {};
         storage_valid =
-            AlarmConfigIsValid(storage.alarms[i]) &&
-            (!legacy_storage || storage.alarms[i].volume < 4);
-    }
-    if (storage_valid)
-    {
-        memcpy(g_alarms, storage.alarms, sizeof(g_alarms));
-        if (legacy_storage)
+            preferences.getBytes(
+                "alarms_v1", &storage, sizeof(storage)) ==
+                sizeof(storage) &&
+            storage.magic == kAlarmStorageMagic &&
+            (storage.version == kAlarmStorageVersionV1 ||
+             storage.version == kAlarmStorageVersionV2);
+        const bool version_one =
+            storage.version == kAlarmStorageVersionV1;
+        for (size_t i = 0;
+             storage_valid && i < kAlarmCount; ++i)
+        {
+            storage_valid = LegacyAlarmConfigIsValid(
+                storage.alarms[i], version_one);
+        }
+        if (storage_valid)
         {
             for (size_t i = 0; i < kAlarmCount; ++i)
             {
-                g_alarms[i].volume =
-                    audio_volume_legacy_index(
-                        g_alarms[i].volume);
+                MigrateLegacyAlarm(
+                    g_alarms[i],
+                    storage.alarms[i],
+                    version_one);
             }
+            migrated = true;
         }
     }
 
     LoadAlarmSoundPaths(preferences);
-    if (storage_valid && legacy_storage)
+    if (storage_valid && migrated)
         SaveAlarms();
 }
 
@@ -909,22 +1226,31 @@ int AlarmService::due(const DateTime &now)
     const uint32_t minute_stamp = now_seconds / 60;
     const uint8_t weekday_bit = AlarmWeekdayBit(now);
     int first_due_alarm = -1;
+    bool one_time_changed = false;
     for (size_t i = 0; i < kAlarmCount; ++i)
     {
-        const AlarmConfig &alarm = g_alarms[i];
+        AlarmConfig &alarm = g_alarms[i];
         if (!alarm.enabled ||
             alarm.hour != now.hour() ||
             alarm.minute != now.minute() ||
-            (alarm.weekdays & weekday_bit) == 0 ||
+            (!alarm.one_time &&
+             (alarm.weekdays & weekday_bit) == 0) ||
             g_last_trigger_minute[i] == minute_stamp)
         {
             continue;
         }
 
         g_last_trigger_minute[i] = minute_stamp;
+        if (alarm.one_time)
+        {
+            alarm.enabled = 0;
+            one_time_changed = true;
+        }
         if (first_due_alarm < 0)
             first_due_alarm = (int)i;
     }
+    if (one_time_changed)
+        SaveAlarms();
     return first_due_alarm;
 }
 
@@ -955,6 +1281,91 @@ bool AlarmService::hasActiveIndicator() const
     return false;
 }
 
+bool AlarmService::upcoming(
+    const DateTime &now,
+    UpcomingAlarm &upcoming_alarm) const
+{
+    upcoming_alarm = UpcomingAlarm();
+    const uint32_t now_seconds = now.unixtime();
+    uint32_t best_time = UINT32_MAX;
+    int best_index = -1;
+    bool best_snoozed = false;
+
+    if (g_snooze_alarm >= 0 &&
+        g_snooze_at > now_seconds)
+    {
+        best_time = g_snooze_at;
+        best_index = g_snooze_alarm;
+        best_snoozed = true;
+    }
+
+    for (size_t i = 0; i < kAlarmCount; ++i)
+    {
+        const AlarmConfig &alarm = g_alarms[i];
+        if (!alarm.enabled)
+            continue;
+
+        for (uint8_t day_offset = 0;
+             day_offset <= 7; ++day_offset)
+        {
+            const DateTime day(
+                now_seconds +
+                static_cast<uint32_t>(day_offset) * 86400U);
+            const DateTime candidate(
+                day.year(), day.month(), day.day(),
+                alarm.hour, alarm.minute, 0);
+            const uint32_t candidate_time =
+                candidate.unixtime();
+            if (candidate_time <= now_seconds)
+                continue;
+            if (!alarm.one_time &&
+                (alarm.weekdays &
+                 AlarmWeekdayBit(candidate)) == 0)
+            {
+                continue;
+            }
+            if (candidate_time < best_time)
+            {
+                best_time = candidate_time;
+                best_index = static_cast<int>(i);
+                best_snoozed = false;
+            }
+            break;
+        }
+    }
+
+    if (best_index < 0)
+        return false;
+
+    const AlarmConfig &alarm =
+        g_alarms[static_cast<size_t>(best_index)];
+    const DateTime next(best_time);
+    upcoming_alarm.valid = true;
+    upcoming_alarm.snoozed = best_snoozed;
+    upcoming_alarm.one_time =
+        !best_snoozed && alarm.one_time;
+    upcoming_alarm.index =
+        static_cast<size_t>(best_index);
+    upcoming_alarm.unix_time = best_time;
+    upcoming_alarm.day_offset = static_cast<uint8_t>(
+        (best_time - now_seconds) / 86400);
+    const DateTime today(
+        now.year(), now.month(), now.day(), 0, 0, 0);
+    const DateTime next_day(
+        next.year(), next.month(), next.day(), 0, 0, 0);
+    upcoming_alarm.day_offset = static_cast<uint8_t>(
+        (next_day.unixtime() - today.unixtime()) / 86400);
+    upcoming_alarm.weekday = static_cast<uint8_t>(
+        (next.dayOfTheWeek() + 6) % 7);
+    upcoming_alarm.hour = next.hour();
+    upcoming_alarm.minute = next.minute();
+    strlcpy(
+        upcoming_alarm.label,
+        alarm.label,
+        sizeof(upcoming_alarm.label));
+    return true;
+}
+
 const char *AlarmService::soundPath(size_t alarm_index) const
 {
     if (alarm_index >= kAlarmCount)
@@ -970,6 +1381,22 @@ uint8_t AlarmService::volume(size_t alarm_index) const
         return audio_volume_from_index(kDefaultAudioVolumeIndex);
     return audio_volume_from_index(
         g_alarms[alarm_index].volume);
+}
+
+uint8_t AlarmService::ringingVolume(
+    size_t alarm_index, uint32_t elapsed_ms) const
+{
+    if (alarm_index >= kAlarmCount)
+        return volume(alarm_index);
+    const AlarmConfig &alarm = g_alarms[alarm_index];
+    if (!alarm.gradual_volume)
+        return volume(alarm_index);
+
+    size_t step = elapsed_ms / kAlarmRampStepMs;
+    if (step > alarm.volume)
+        step = alarm.volume;
+    return audio_volume_from_index(
+        static_cast<uint8_t>(step));
 }
 
 AlarmSettings AlarmService::settings(size_t alarm_index) const
@@ -1021,7 +1448,7 @@ void AlarmView::hide()
         lv_obj_add_flag(g_ringing.panel, LV_OBJ_FLAG_HIDDEN);
 }
 
-void AlarmView::enter()
+void AlarmView::enter(const DateTime &now)
 {
     memcpy(g_edit_alarms, g_alarms, sizeof(g_edit_alarms));
     memcpy(
@@ -1030,6 +1457,7 @@ void AlarmView::enter()
     g_selected_alarm = 0;
     SetMatrixChecked(g_editor.slot_matrix, kAlarmCount, g_selected_alarm);
     LoadEditorAlarm(g_selected_alarm);
+    UpdateUpcoming(now);
     SetEditorPage(ALARM_PAGE_HOME);
 }
 
@@ -1045,10 +1473,13 @@ void AlarmView::showRinging(size_t alarm_index)
         return;
 
     const AlarmConfig &alarm = g_alarms[alarm_index];
-    char title[24];
+    char title[kAlarmLabelMaxLength + 12];
     char time[8];
-    snprintf(title, sizeof(title), "%s %u", tr("Alarm"),
-             (unsigned)alarm_index + 1);
+    if (alarm.label[0])
+        strlcpy(title, alarm.label, sizeof(title));
+    else
+        snprintf(title, sizeof(title), "%s %u", tr("Alarm"),
+                 (unsigned)alarm_index + 1);
     snprintf(time, sizeof(time), "%02u:%02u",
              (unsigned)alarm.hour, (unsigned)alarm.minute);
     lv_label_set_text(g_ringing.title, title);
@@ -1057,7 +1488,43 @@ void AlarmView::showRinging(size_t alarm_index)
         g_ringing.sound,
         SoundSelector::displayName(
             g_alarm_sound_paths[alarm_index]));
+    lv_obj_set_style_bg_color(
+        g_ringing.panel, lv_color_white(), 0);
+    lv_obj_set_style_text_color(
+        g_ringing.title, lv_color_black(), 0);
+    lv_obj_set_style_text_color(
+        g_ringing.time, lv_color_black(), 0);
+    lv_obj_set_style_text_color(
+        g_ringing.sound, lv_color_black(), 0);
     lv_obj_clear_flag(g_ringing.panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+void AlarmView::updateRinging(
+    size_t alarm_index, uint32_t elapsed_ms)
+{
+    if (!g_ringing.panel || alarm_index >= kAlarmCount ||
+        !g_alarms[alarm_index].sunrise)
+    {
+        return;
+    }
+
+    const uint32_t clamped =
+        elapsed_ms < kAlarmSunriseDurationMs
+            ? elapsed_ms
+            : kAlarmSunriseDurationMs;
+    const uint8_t mix = static_cast<uint8_t>(
+        (clamped * 255ULL) / kAlarmSunriseDurationMs);
+    const lv_color_t background = lv_color_mix(
+        lv_color_hex(0xFFF4D0),
+        lv_color_hex(0x341000),
+        mix);
+    const lv_color_t text =
+        mix < 128 ? lv_color_white() : lv_color_black();
+    lv_obj_set_style_bg_color(
+        g_ringing.panel, background, 0);
+    lv_obj_set_style_text_color(g_ringing.title, text, 0);
+    lv_obj_set_style_text_color(g_ringing.time, text, 0);
+    lv_obj_set_style_text_color(g_ringing.sound, text, 0);
 }
 
 void AlarmView::refreshLanguage()
@@ -1070,6 +1537,10 @@ void AlarmView::refreshLanguage()
     lv_buttonmatrix_set_map(g_editor.enabled_matrix, g_enabled_map);
     lv_buttonmatrix_set_map(g_editor.time_matrix, g_time_map);
     lv_buttonmatrix_set_map(g_editor.days_matrix, g_days_map);
+    lv_buttonmatrix_set_map(
+        g_editor.options_matrix, g_options_map);
+    lv_buttonmatrix_set_map(
+        g_editor.label_matrix, g_label_map);
     lv_label_set_text(g_editor.home_alarm_label, tr("Alarm"));
     lv_label_set_text(g_editor.home_timer_label, tr("Timer"));
     lv_label_set_text(g_editor.save_label, tr("Save"));
@@ -1079,6 +1550,8 @@ void AlarmView::refreshLanguage()
     lv_label_set_text(g_ringing.snooze_label, tr("Snooze 9 min"));
     lv_label_set_text(g_ringing.dismiss_label, tr("Dismiss"));
     g_editor.sound_selector.refreshLanguage();
+    UpdateOptionsMatrix();
+    UpdateLabelValue();
     SetEditorPage(g_editor_page);
     UpdateSummary();
 }

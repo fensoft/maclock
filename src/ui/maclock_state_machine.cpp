@@ -539,7 +539,7 @@ void MaclockApp::tick()
         break;
     case UI_STATE_ALARM_EDITOR:
         if (current_state_ != last_state_)
-            alarm_view.enter();
+            alarm_view.enter(rtc_now());
         ui_shell.hideAll();
         lv_obj_clear_flag(ui_shell.background, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(ui_shell.white_bar, LV_OBJ_FLAG_HIDDEN);
@@ -557,9 +557,30 @@ void MaclockApp::tick()
             lv_obj_clear_flag(ui_shell.black_line, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(ui_shell.corners, LV_OBJ_FLAG_HIDDEN);
             alarm_view.showRinging((size_t)active_alarm_index_);
+            active_alarm_volume_ =
+                alarm_service.ringingVolume(
+                    (size_t)active_alarm_index_, 0);
             audio_service.play(
                 alarm_service.soundPath((size_t)active_alarm_index_),
-                alarm_service.volume((size_t)active_alarm_index_));
+                active_alarm_volume_);
+        }
+        if (active_alarm_index_ >= 0)
+        {
+            const uint32_t alarm_elapsed =
+                now - state_start_ms_;
+            alarm_view.updateRinging(
+                (size_t)active_alarm_index_,
+                alarm_elapsed);
+            const uint8_t ramp_volume =
+                alarm_service.ringingVolume(
+                    (size_t)active_alarm_index_,
+                    alarm_elapsed);
+            if (ramp_volume != active_alarm_volume_)
+            {
+                active_alarm_volume_ = ramp_volume;
+                audio_service.setVolume(
+                    active_alarm_volume_);
+            }
         }
         lv_timer_handler();
         if (inputs.alarm || inputs.touch)
@@ -570,7 +591,7 @@ void MaclockApp::tick()
         {
             audio_service.play(
                 alarm_service.soundPath((size_t)active_alarm_index_),
-                alarm_service.volume((size_t)active_alarm_index_));
+                active_alarm_volume_);
         }
         break;
     case UI_STATE_TIMER_EDITOR:
@@ -798,7 +819,24 @@ void MaclockApp::tick()
         enc = kBrightnessMax;
     if (enc != input_service.encoderPosition())
         input_service.setEncoderPosition(enc);
-    if ((int32_t)(full_brightness_until_ms_ - now) > 0)
+    if (current_state_ == UI_STATE_ALARM_RINGING &&
+        active_alarm_index_ >= 0 &&
+        alarm_service.settings(
+            (size_t)active_alarm_index_).sunrise)
+    {
+        static constexpr uint32_t kSunriseDurationMs = 60000;
+        const uint32_t elapsed = now - state_start_ms_;
+        const uint32_t clamped =
+            elapsed < kSunriseDurationMs
+                ? elapsed
+                : kSunriseDurationMs;
+        const int sunrise_pwm =
+            16 + static_cast<int>(
+                     (239ULL * clamped) /
+                     kSunriseDurationMs);
+        analogWrite(TFT_BL_VAR, sunrise_pwm);
+    }
+    else if ((int32_t)(full_brightness_until_ms_ - now) > 0)
         analogWrite(TFT_BL_VAR, 255);
     else if (current_state_ == UI_STATE_NORMAL &&
              scheduled_display_state_ == NIGHT_DISPLAY_OFF)
