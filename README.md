@@ -145,10 +145,11 @@ Configuration opens on a four-button section hub instead of one long page
 sequence:
 
 - **General**: Language, Regional, and Date / Time (3 pages).
-- **Display**: Display, Clock Face, Screensaver, and the two Night pages
-  (5 pages).
+- **Display**: Display, Clock Face, Face Style, Face Details, Screensaver, and
+  the two Night pages (7 pages).
 - **Sound**: Chime, Chime Sound, Chime Volume, and Quiet Hours (4 pages).
-- **System**: Preferences, Start, Wi-Fi, Tools, and About (5 pages).
+- **System**: Preferences, Start, Wi-Fi, Tools, Software Update, and About
+  (6 pages).
 
 Each section has fixed **Previous**, **Sections**, and **Next** footer slots;
 the unavailable direction is left empty on the first or last page.
@@ -174,7 +175,11 @@ returns to the normal clock:
 - **Display** controls initial zero, the optional localized three-letter
   weekday, seconds, and light/dark clock theme with four large classic-Mac
   checkbox tiles in a 2×2 grid. Dates use a smaller crisp bitmap font while
-  the weekday is visible.
+  the weekday is visible. Hiding seconds also removes the Analog second hand.
+- **Face Style** chooses a contrast-safe Default, red, orange, green, blue, or
+  purple highlight and Small, Default, or Large clock numerals.
+- **Face Details** controls weather visibility on the Macintosh and Compact
+  faces plus Slow, Normal, or Fast Flip animation speed.
 - **About** shows the fensoft logo, author, GitHub address, and a scannable
   project QR code.
 - **Sections** returns to the configuration hub from any settings page.
@@ -257,8 +262,9 @@ Maclock is connected to the configured Wi-Fi, open:
 
 The responsive control panel can:
 
-- change the clock face, light/dark theme, brightness, 12/24-hour format,
-  leading zero, weekday, and seconds immediately;
+- change the clock face, light/dark theme, accent, numeral size, weather,
+  Flip speed, brightness, 12/24-hour format, leading zero, weekday, and
+  seconds immediately;
 - configure and persist all three alarms, including weekly days, sound, and
   volume;
 - save timer defaults, start or cancel the timer, and select its sound and

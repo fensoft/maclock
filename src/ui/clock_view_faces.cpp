@@ -183,22 +183,29 @@ void ClockView::init(lv_obj_t *screen)
     {
         clock_view.flip_cards[i] =
             create_flip_card(
-                clock_view.flip, 0, 40);
-        clock_view.flip_digits[i] =
-            create_clock_face_label(
-                clock_view.flip_cards[i],
-                &lv_font_chicago_48, lv_color_white());
-        lv_label_set_text(
-            clock_view.flip_digits[i], "0");
-        lv_obj_center(clock_view.flip_digits[i]);
+                clock_view.flip, 0, 40,
+                &clock_view.flip_animations[i].left_pin,
+                &clock_view.flip_animations[i].right_pin);
 
         FlipCardAnimation &animation =
             clock_view.flip_animations[i];
         animation.card = clock_view.flip_cards[i];
-        animation.label = clock_view.flip_digits[i];
-        animation.flap = create_flip_flap(
-            animation.card, &animation.flap_label,
-            40);
+        animation.top_panel = create_flip_half(
+            animation.card, 2, &animation.top_label,
+            40, false);
+        animation.bottom_panel = create_flip_half(
+            animation.card, 51, &animation.bottom_label,
+            40, true);
+        animation.top_flap = create_flip_flap(
+            animation.card, 2,
+            &animation.top_flap_label, 40, false);
+        animation.bottom_flap = create_flip_flap(
+            animation.card, 51,
+            &animation.bottom_flap_label, 40, true);
+        clock_view.flip_digits[i] =
+            animation.top_label;
+        position_flip_labels(
+            animation, &lv_font_chicago_48);
     }
 
     for (size_t i = 0; i < 2; ++i)
@@ -305,10 +312,18 @@ void ClockView::show(const ClockRenderSnapshot &snapshot)
         lv_obj_clear_flag(ui_shell.clock_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(ui_shell.time, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(ui_shell.date, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(ui_shell.temp, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(ui_shell.gauge_icon, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(ui_shell.gauge_line, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(ui_shell.gauge_box, LV_OBJ_FLAG_HIDDEN);
+        set_object_visible(
+            ui_shell.temp,
+            g_face_customization.show_weather);
+        set_object_visible(
+            ui_shell.gauge_icon,
+            g_face_customization.show_weather);
+        set_object_visible(
+            ui_shell.gauge_line,
+            g_face_customization.show_weather);
+        set_object_visible(
+            ui_shell.gauge_box,
+            g_face_customization.show_weather);
         update_alarm_indicator_layout(
             snapshot.alarm_indicator);
         lv_obj_clear_flag(ui_shell.corners, LV_OBJ_FLAG_HIDDEN);
@@ -392,6 +407,9 @@ void ClockView::update(const ClockRenderSnapshot &snapshot)
         lv_label_set_text(
             clock_view.compact_weather,
             lv_label_get_text(ui_shell.temp));
+        set_object_visible(
+            clock_view.compact_weather,
+            g_face_customization.show_weather);
     }
     else if (g_clock_face == CLOCK_FACE_ANALOG)
     {

@@ -81,6 +81,14 @@ static bool read_uint(
     return true;
 }
 
+static bool read_optional_uint(
+    const char *name, uint32_t minimum, uint32_t maximum,
+    uint32_t &value)
+{
+    return !g_server.hasArg(name) ||
+           read_uint(name, minimum, maximum, value);
+}
+
 static bool read_sound_arg(const char *name, String &sound)
 {
     if (!g_server.hasArg(name))
@@ -183,6 +191,14 @@ static void send_state()
         static_cast<uint8_t>(snapshot.settings.clock_face);
     appearance["theme"] =
         static_cast<uint8_t>(snapshot.settings.clock_theme);
+    appearance["accent"] = static_cast<uint8_t>(
+        snapshot.settings.face_customization.accent);
+    appearance["fontSize"] = static_cast<uint8_t>(
+        snapshot.settings.face_customization.numeral_size);
+    appearance["weather"] =
+        snapshot.settings.face_customization.show_weather;
+    appearance["flipSpeed"] = static_cast<uint8_t>(
+        snapshot.settings.face_customization.flip_speed);
     appearance["brightness"] = snapshot.brightness;
     appearance["hourFormat"] =
         static_cast<uint8_t>(
@@ -464,6 +480,20 @@ static void apply_appearance()
     uint32_t leading_zero = 0;
     uint32_t seconds = 0;
     uint32_t weekday = 0;
+    FaceCustomizationSettings face_customization;
+    if (g_events)
+    {
+        face_customization =
+            g_events->controlPanelSnapshot()
+                .settings.face_customization;
+    }
+    uint32_t accent =
+        static_cast<uint8_t>(face_customization.accent);
+    uint32_t font_size =
+        static_cast<uint8_t>(face_customization.numeral_size);
+    uint32_t weather = face_customization.show_weather ? 1 : 0;
+    uint32_t flip_speed =
+        static_cast<uint8_t>(face_customization.flip_speed);
     if (!read_uint(
             "language", 0, UI_LANGUAGE_COUNT - 1, language) ||
         !read_uint(
@@ -479,7 +509,22 @@ static void apply_appearance()
             hour_format) ||
         !read_uint("leadingZero", 0, 1, leading_zero) ||
         !read_uint("seconds", 0, 1, seconds) ||
-        !read_uint("weekday", 0, 1, weekday))
+        !read_uint("weekday", 0, 1, weekday) ||
+        !read_optional_uint(
+            "accent", 0,
+            static_cast<uint8_t>(FaceAccent::Count) - 1,
+            accent) ||
+        !read_optional_uint(
+            "fontSize", 0,
+            static_cast<uint8_t>(FaceNumeralSize::Count) - 1,
+            font_size) ||
+        !read_optional_uint("weather", 0, 1, weather) ||
+        !read_optional_uint(
+            "flipSpeed", 0,
+            static_cast<uint8_t>(
+                FlipAnimationSpeed::Count) -
+                1,
+            flip_speed))
     {
         send_result(false, "Invalid appearance settings", 400);
         return;
@@ -491,12 +536,20 @@ static void apply_appearance()
     time_format.leading_zero = leading_zero != 0;
     time_format.show_seconds = seconds != 0;
     time_format.show_weekday = weekday != 0;
+    face_customization.accent =
+        static_cast<FaceAccent>(accent);
+    face_customization.numeral_size =
+        static_cast<FaceNumeralSize>(font_size);
+    face_customization.show_weather = weather != 0;
+    face_customization.flip_speed =
+        static_cast<FlipAnimationSpeed>(flip_speed);
     const bool applied = g_events &&
         g_events->applyControlAppearance(
             static_cast<UiLanguage>(language),
             static_cast<ClockFace>(face),
             static_cast<ClockTheme>(theme),
             static_cast<uint8_t>(brightness),
+            face_customization,
             time_format);
     send_result(
         applied,

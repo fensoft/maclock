@@ -156,6 +156,30 @@ static void update_display_options_ui()
         g_clock_theme == CLOCK_THEME_DARK);
 }
 
+static void update_face_customization_options_ui()
+{
+    set_checked_button(
+        boot_options_view.face_accent_options,
+        static_cast<uint32_t>(g_face_customization.accent));
+    set_checked_button(
+        boot_options_view.face_size_options,
+        static_cast<uint32_t>(
+            g_face_customization.numeral_size));
+    set_checked_button(
+        boot_options_view.flip_speed_options,
+        static_cast<uint32_t>(
+            g_face_customization.flip_speed));
+    if (boot_options_view.weather_checkbox)
+    {
+        lv_checkbox_set_text(
+            boot_options_view.weather_checkbox,
+            tr("Show weather"));
+        set_checkbox_state(
+            boot_options_view.weather_checkbox,
+            g_face_customization.show_weather);
+    }
+}
+
 static void update_boot_translation_maps()
 {
     g_brightness_map[0] = tr("Latest");
@@ -171,6 +195,22 @@ static void update_boot_translation_maps()
     g_clock_face_map[3] = tr("Analog");
     g_clock_face_map[4] = tr("Flip");
     g_clock_face_map[5] = "";
+    g_face_accent_map[0] = tr("Default");
+    g_face_accent_map[1] = tr("Red");
+    g_face_accent_map[2] = tr("Orange");
+    g_face_accent_map[3] = "\n";
+    g_face_accent_map[4] = tr("Green");
+    g_face_accent_map[5] = tr("Blue");
+    g_face_accent_map[6] = tr("Purple");
+    g_face_accent_map[7] = "";
+    g_face_size_map[0] = tr("Small");
+    g_face_size_map[1] = tr("Default");
+    g_face_size_map[2] = tr("Large");
+    g_face_size_map[3] = "";
+    g_flip_speed_map[0] = tr("Slow");
+    g_flip_speed_map[1] = tr("Normal");
+    g_flip_speed_map[2] = tr("Fast");
+    g_flip_speed_map[3] = "";
     g_screensaver_map[0] = tr("Off");
     g_screensaver_map[1] = tr("After Dark");
     g_screensaver_map[2] = tr("Stars");
@@ -567,6 +607,70 @@ static void clock_face_event(lv_event_t *event)
         return;
     g_clock_face = (ClockFace)selected;
     settings_store.saveClockFace(g_clock_face);
+}
+
+static void apply_face_customization_change()
+{
+    settings_store.saveFaceCustomization(
+        g_face_customization);
+    clock_view.applyFaceCustomization();
+    clock_view.last_second = -1;
+    clock_view.last_update_ms = 0;
+    update_face_customization_options_ui();
+}
+
+static void face_accent_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected >=
+        static_cast<uint8_t>(FaceAccent::Count))
+    {
+        return;
+    }
+    g_face_customization.accent =
+        static_cast<FaceAccent>(selected);
+    apply_face_customization_change();
+}
+
+static void face_size_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected >=
+        static_cast<uint8_t>(FaceNumeralSize::Count))
+    {
+        return;
+    }
+    g_face_customization.numeral_size =
+        static_cast<FaceNumeralSize>(selected);
+    apply_face_customization_change();
+}
+
+static void weather_checkbox_event(lv_event_t *event)
+{
+    lv_obj_t *checkbox =
+        (lv_obj_t *)lv_event_get_target(event);
+    g_face_customization.show_weather =
+        lv_obj_has_state(checkbox, LV_STATE_CHECKED);
+    apply_face_customization_change();
+}
+
+static void flip_speed_event(lv_event_t *event)
+{
+    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    const uint32_t selected =
+        lv_buttonmatrix_get_selected_button(options);
+    if (selected >=
+        static_cast<uint8_t>(FlipAnimationSpeed::Count))
+    {
+        return;
+    }
+    g_face_customization.flip_speed =
+        static_cast<FlipAnimationSpeed>(selected);
+    apply_face_customization_change();
 }
 
 static void screensaver_event(lv_event_t *event)
@@ -1096,7 +1200,8 @@ void BootOptionsView::setPage(BootOptionsPage page)
     const char *page_names[BOOT_OPTIONS_PAGE_COUNT] = {
         tr("Configuration"), tr("Language"),
         tr("Regional"), tr("Date / Time"), tr("Display"),
-        tr("Clock Face"), tr("Screensaver"),
+        tr("Clock Face"), tr("Face Style"),
+        tr("Face Details"), tr("Screensaver"),
         tr("Night Schedule"), tr("Night Screen"), tr("Chime"),
         tr("Chime Sound"), tr("Chime Volume"), tr("Quiet Hours"),
         tr("Preferences"), tr("Start"), tr("Wi-Fi"),

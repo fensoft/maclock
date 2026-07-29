@@ -19,6 +19,38 @@ static const lv_font_t *configured_date_font(bool timer_active)
                : &lv_font_chicago_32;
 }
 
+static lv_color_t configured_accent_color(
+    bool dark_surface, lv_color_t fallback)
+{
+    switch (g_face_customization.accent)
+    {
+    case FaceAccent::Red:
+        return lv_color_hex(dark_surface ? 0xFF6B6B : 0xC62828);
+    case FaceAccent::Orange:
+        return lv_color_hex(dark_surface ? 0xFFB347 : 0xB45309);
+    case FaceAccent::Green:
+        return lv_color_hex(dark_surface ? 0x4ADE80 : 0x15803D);
+    case FaceAccent::Blue:
+        return lv_color_hex(dark_surface ? 0x60A5FA : 0x1D4ED8);
+    case FaceAccent::Purple:
+        return lv_color_hex(dark_surface ? 0xC084FC : 0x7E22CE);
+    case FaceAccent::Default:
+    case FaceAccent::Count:
+        return fallback;
+    }
+    return fallback;
+}
+
+static void set_object_visible(lv_obj_t *object, bool visible)
+{
+    if (!object)
+        return;
+    if (visible)
+        lv_obj_clear_flag(object, LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_add_flag(object, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void format_configured_time(
     const DateTime &current, char *text, size_t text_size)
 {
@@ -96,6 +128,15 @@ void ClockView::updateMacintoshLabels(
 
     format_display_date(now, buf, sizeof(buf));
     lv_label_set_text(ui_shell.date, buf);
+
+    if (!g_face_customization.show_weather)
+    {
+        set_object_visible(ui_shell.temp, false);
+        set_object_visible(ui_shell.gauge_icon, false);
+        set_object_visible(ui_shell.gauge_line, false);
+        set_object_visible(ui_shell.gauge_box, false);
+        return;
+    }
 
     const WifiModeSnapshot &online = snapshot.online;
     const WeatherReading &sensor = snapshot.sensor;
@@ -297,62 +338,93 @@ static void set_analog_hand(
 }
 
 static lv_obj_t *create_flip_card(
-    lv_obj_t *parent, int16_t x, int16_t width)
+    lv_obj_t *parent, int16_t x, int16_t width,
+    lv_obj_t **left_pin, lv_obj_t **right_pin)
 {
     lv_obj_t *card = lv_obj_create(parent);
     lv_obj_remove_style_all(card);
-    lv_obj_set_size(card, width, 96);
-    lv_obj_set_pos(card, x, 42);
-    lv_obj_set_style_bg_color(card, lv_color_black(), 0);
+    lv_obj_set_size(card, width, 100);
+    lv_obj_set_pos(card, x, 40);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x55544e), 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(card, lv_color_black(), 0);
-    lv_obj_set_style_border_width(card, 2, 0);
-    lv_obj_set_style_radius(card, 8, 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x77766e), 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_radius(card, 6, 0);
     lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *hinge = lv_obj_create(card);
-    lv_obj_remove_flag(hinge, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_remove_style_all(hinge);
-    lv_obj_set_size(hinge, lv_pct(100), 1);
-    lv_obj_align(hinge, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_bg_color(hinge, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(hinge, LV_OPA_50, 0);
+    lv_obj_t **pins[2] = {left_pin, right_pin};
+    const int16_t pin_positions[2] = {
+        1, static_cast<int16_t>(width - 5)};
+    for (size_t i = 0; i < 2; ++i)
+    {
+        lv_obj_t *pin = lv_obj_create(card);
+        *pins[i] = pin;
+        lv_obj_remove_style_all(pin);
+        lv_obj_set_size(pin, 4, 6);
+        lv_obj_set_pos(pin, pin_positions[i], 47);
+        lv_obj_set_style_bg_color(pin, lv_color_hex(0xb1afa4), 0);
+        lv_obj_set_style_bg_opa(pin, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(pin, 2, 0);
+        lv_obj_remove_flag(pin, LV_OBJ_FLAG_SCROLLABLE);
+    }
     return card;
 }
 
-static lv_obj_t *create_flip_flap(
-    lv_obj_t *card, lv_obj_t **label, int16_t width)
+static lv_obj_t *create_flip_half(
+    lv_obj_t *card, int16_t y, lv_obj_t **label,
+    int16_t width, bool bottom)
 {
-    lv_obj_t *flap = lv_obj_create(card);
-    lv_obj_remove_style_all(flap);
-    lv_obj_set_size(flap, lv_pct(100), lv_pct(100));
-    lv_obj_center(flap);
-    lv_obj_set_style_bg_color(flap, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(flap, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(flap, lv_color_black(), 0);
-    lv_obj_set_style_border_width(flap, 2, 0);
-    lv_obj_set_style_radius(flap, 8, 0);
-    lv_obj_set_style_transform_pivot_x(
-        flap, width / 2, 0);
-    lv_obj_set_style_transform_pivot_y(flap, 48, 0);
-    lv_obj_set_style_transform_scale_y(
-        flap, LV_SCALE_NONE, 0);
-    lv_obj_remove_flag(flap, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *hinge = lv_obj_create(flap);
-    lv_obj_remove_flag(hinge, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_remove_style_all(hinge);
-    lv_obj_set_size(hinge, lv_pct(100), 1);
-    lv_obj_align(hinge, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_bg_color(hinge, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(hinge, LV_OPA_50, 0);
+    lv_obj_t *half = lv_obj_create(card);
+    lv_obj_remove_style_all(half);
+    lv_obj_set_size(half, width - 4, 47);
+    lv_obj_set_pos(half, 2, y);
+    lv_obj_set_style_bg_color(
+        half,
+        bottom ? lv_color_hex(0x101010)
+               : lv_color_hex(0x1d1d1d),
+        0);
+    lv_obj_set_style_bg_opa(half, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(
+        half, lv_color_hex(0x090909), 0);
+    lv_obj_set_style_border_width(half, 1, 0);
+    lv_obj_set_style_radius(half, 3, 0);
+    lv_obj_remove_flag(half, LV_OBJ_FLAG_SCROLLABLE);
 
     *label = create_clock_face_label(
-        flap, &lv_font_chicago_48, lv_color_white());
-    lv_label_set_text(*label, "00");
-    lv_obj_center(*label);
+        half, &lv_font_chicago_48, lv_color_white());
+    lv_label_set_text(*label, "0");
+    lv_obj_set_width(*label, lv_pct(100));
+    lv_obj_set_style_text_align(
+        *label, LV_TEXT_ALIGN_CENTER, 0);
+    return half;
+}
+
+static lv_obj_t *create_flip_flap(
+    lv_obj_t *card, int16_t y, lv_obj_t **label,
+    int16_t width, bool bottom)
+{
+    lv_obj_t *flap = create_flip_half(
+        card, y, label, width, bottom);
+    lv_obj_set_style_transform_pivot_x(
+        flap, (width - 4) / 2, 0);
+    lv_obj_set_style_transform_pivot_y(
+        flap, bottom ? 0 : 47, 0);
+    lv_obj_set_style_transform_scale_y(
+        flap, LV_SCALE_NONE, 0);
     lv_obj_add_flag(flap, LV_OBJ_FLAG_HIDDEN);
     return flap;
+}
+
+static void position_flip_labels(
+    FlipCardAnimation &state, const lv_font_t *font)
+{
+    const int16_t line_height =
+        static_cast<int16_t>(lv_font_get_line_height(font));
+    const int16_t full_y = (96 - line_height) / 2;
+    lv_obj_set_y(state.top_label, full_y);
+    lv_obj_set_y(state.top_flap_label, full_y);
+    lv_obj_set_y(state.bottom_label, full_y - 49);
+    lv_obj_set_y(state.bottom_flap_label, full_y - 49);
 }
 
 static void flip_scale_y_animation(
@@ -360,6 +432,36 @@ static void flip_scale_y_animation(
 {
     lv_obj_set_style_transform_scale_y(
         (lv_obj_t *)object, scale, 0);
+}
+
+static uint32_t flip_collapse_duration()
+{
+    switch (g_face_customization.flip_speed)
+    {
+    case FlipAnimationSpeed::Slow:
+        return 260;
+    case FlipAnimationSpeed::Fast:
+        return 100;
+    case FlipAnimationSpeed::Normal:
+    case FlipAnimationSpeed::Count:
+        return 170;
+    }
+    return 170;
+}
+
+static uint32_t flip_expand_duration()
+{
+    switch (g_face_customization.flip_speed)
+    {
+    case FlipAnimationSpeed::Slow:
+        return 320;
+    case FlipAnimationSpeed::Fast:
+        return 130;
+    case FlipAnimationSpeed::Normal:
+    case FlipAnimationSpeed::Count:
+        return 210;
+    }
+    return 210;
 }
 
 static void flip_expand_completed(lv_anim_t *animation)
@@ -371,10 +473,14 @@ static void flip_expand_completed(lv_anim_t *animation)
     strlcpy(
         state->displayed, state->pending,
         sizeof(state->displayed));
-    lv_label_set_text(state->label, state->displayed);
+    lv_label_set_text(
+        state->top_label, state->displayed);
+    lv_label_set_text(
+        state->bottom_label, state->displayed);
     lv_obj_set_style_transform_scale_y(
-        state->flap, LV_SCALE_NONE, 0);
-    lv_obj_add_flag(state->flap, LV_OBJ_FLAG_HIDDEN);
+        state->bottom_flap, LV_SCALE_NONE, 0);
+    lv_obj_add_flag(
+        state->bottom_flap, LV_OBJ_FLAG_HIDDEN);
     state->animating = false;
 }
 
@@ -384,14 +490,20 @@ static void flip_collapse_completed(lv_anim_t *animation)
         (FlipCardAnimation *)lv_anim_get_user_data(animation);
     if (!state)
         return;
-    lv_label_set_text(state->flap_label, state->pending);
+    lv_obj_add_flag(
+        state->top_flap, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(
+        state->bottom_flap_label, state->pending);
+    lv_obj_clear_flag(
+        state->bottom_flap, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(state->bottom_flap);
 
     lv_anim_t expand;
     lv_anim_init(&expand);
-    lv_anim_set_var(&expand, state->flap);
+    lv_anim_set_var(&expand, state->bottom_flap);
     lv_anim_set_exec_cb(&expand, flip_scale_y_animation);
     lv_anim_set_values(&expand, 12, LV_SCALE_NONE);
-    lv_anim_set_duration(&expand, 210);
+    lv_anim_set_duration(&expand, flip_expand_duration());
     lv_anim_set_path_cb(&expand, lv_anim_path_ease_out);
     lv_anim_set_user_data(&expand, state);
     lv_anim_set_completed_cb(
@@ -402,12 +514,20 @@ static void flip_collapse_completed(lv_anim_t *animation)
 static void reset_flip_card_animation(
     FlipCardAnimation &state)
 {
-    if (!state.flap)
+    if (!state.top_flap)
         return;
-    lv_anim_delete(state.flap, flip_scale_y_animation);
+    lv_anim_delete(
+        state.top_flap, flip_scale_y_animation);
+    lv_anim_delete(
+        state.bottom_flap, flip_scale_y_animation);
     lv_obj_set_style_transform_scale_y(
-        state.flap, LV_SCALE_NONE, 0);
-    lv_obj_add_flag(state.flap, LV_OBJ_FLAG_HIDDEN);
+        state.top_flap, LV_SCALE_NONE, 0);
+    lv_obj_set_style_transform_scale_y(
+        state.bottom_flap, LV_SCALE_NONE, 0);
+    lv_obj_add_flag(
+        state.top_flap, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(
+        state.bottom_flap, LV_OBJ_FLAG_HIDDEN);
     state.initialized = false;
     state.animating = false;
 }
@@ -420,7 +540,7 @@ void ClockView::applyTimeFormatLayout()
     static constexpr int16_t compact_positions[4] = {
         22, 82, 166, 226};
     static constexpr int16_t seconds_positions[6] = {
-        8, 48, 102, 142, 196, 236};
+        19, 59, 113, 153, 207, 247};
 
     for (size_t i = 0; i < kFlipDigitCount; ++i)
     {
@@ -439,22 +559,42 @@ void ClockView::applyTimeFormatLayout()
             LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_size(
             clock_view.flip_cards[i],
-            card_width, 96);
+            card_width, 100);
         lv_obj_set_pos(
             clock_view.flip_cards[i],
             show_seconds
                 ? seconds_positions[i]
                 : compact_positions[i],
-            42);
+            40);
+        lv_obj_set_width(
+            clock_view.flip_animations[i].top_panel,
+            card_width - 4);
+        lv_obj_set_width(
+            clock_view.flip_animations[i].bottom_panel,
+            card_width - 4);
+        lv_obj_set_width(
+            clock_view.flip_animations[i].top_flap,
+            card_width - 4);
+        lv_obj_set_width(
+            clock_view.flip_animations[i].bottom_flap,
+            card_width - 4);
         lv_obj_set_style_transform_pivot_x(
-            clock_view.flip_animations[i].flap,
-            card_width / 2, 0);
+            clock_view.flip_animations[i].top_flap,
+            (card_width - 4) / 2, 0);
+        lv_obj_set_style_transform_pivot_x(
+            clock_view.flip_animations[i].bottom_flap,
+            (card_width - 4) / 2, 0);
+        lv_obj_set_x(
+            clock_view.flip_animations[i].left_pin, 1);
+        lv_obj_set_x(
+            clock_view.flip_animations[i].right_pin,
+            card_width - 5);
     }
 
     const int16_t colon_width = show_seconds ? 10 : 16;
     const int16_t colon_positions[2] = {
-        static_cast<int16_t>(show_seconds ? 90 : 144),
-        static_cast<int16_t>(show_seconds ? 184 : 0)};
+        static_cast<int16_t>(show_seconds ? 101 : 144),
+        static_cast<int16_t>(show_seconds ? 195 : 0)};
     for (size_t i = 0; i < 2; ++i)
     {
         if (i == 1 && !show_seconds)
@@ -500,6 +640,10 @@ void ClockView::applyTimeFormatLayout()
             clock_view.flip_meridiem,
             LV_OBJ_FLAG_HIDDEN);
     }
+
+    set_object_visible(
+        clock_view.analog_second_hand,
+        g_time_format.show_seconds);
 }
 
 static void update_flip_card(
@@ -513,8 +657,10 @@ static void update_flip_card(
         strlcpy(
             state.pending, value,
             sizeof(state.pending));
-        lv_label_set_text(state.label, value);
-        lv_label_set_text(state.flap_label, value);
+        lv_label_set_text(state.top_label, value);
+        lv_label_set_text(state.bottom_label, value);
+        lv_label_set_text(state.top_flap_label, value);
+        lv_label_set_text(state.bottom_flap_label, value);
         state.initialized = true;
         return;
     }
@@ -523,11 +669,22 @@ static void update_flip_card(
     {
         if (strcmp(value, state.pending) == 0)
             return;
-        lv_anim_delete(state.flap, flip_scale_y_animation);
+        lv_anim_delete(
+            state.top_flap, flip_scale_y_animation);
+        lv_anim_delete(
+            state.bottom_flap, flip_scale_y_animation);
         lv_obj_set_style_transform_scale_y(
-            state.flap, LV_SCALE_NONE, 0);
-        lv_obj_add_flag(state.flap, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(state.label, state.displayed);
+            state.top_flap, LV_SCALE_NONE, 0);
+        lv_obj_set_style_transform_scale_y(
+            state.bottom_flap, LV_SCALE_NONE, 0);
+        lv_obj_add_flag(
+            state.top_flap, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(
+            state.bottom_flap, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(
+            state.top_label, state.displayed);
+        lv_label_set_text(
+            state.bottom_label, state.displayed);
         state.animating = false;
     }
     if (strcmp(value, state.displayed) == 0)
@@ -535,20 +692,30 @@ static void update_flip_card(
 
     strlcpy(
         state.pending, value, sizeof(state.pending));
-    lv_label_set_text(state.label, state.pending);
-    lv_label_set_text(state.flap_label, state.displayed);
+    lv_label_set_text(state.top_label, state.pending);
+    lv_label_set_text(state.bottom_label, state.displayed);
+    lv_label_set_text(
+        state.top_flap_label, state.displayed);
+    lv_label_set_text(
+        state.bottom_flap_label, state.pending);
     lv_obj_set_style_transform_scale_y(
-        state.flap, LV_SCALE_NONE, 0);
-    lv_obj_clear_flag(state.flap, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(state.flap);
+        state.top_flap, LV_SCALE_NONE, 0);
+    lv_obj_set_style_transform_scale_y(
+        state.bottom_flap, 12, 0);
+    lv_obj_clear_flag(
+        state.top_flap, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(
+        state.bottom_flap, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(state.top_flap);
     state.animating = true;
 
     lv_anim_t collapse;
     lv_anim_init(&collapse);
-    lv_anim_set_var(&collapse, state.flap);
+    lv_anim_set_var(&collapse, state.top_flap);
     lv_anim_set_exec_cb(&collapse, flip_scale_y_animation);
     lv_anim_set_values(&collapse, LV_SCALE_NONE, 12);
-    lv_anim_set_duration(&collapse, 170);
+    lv_anim_set_duration(
+        &collapse, flip_collapse_duration());
     lv_anim_set_path_cb(&collapse, lv_anim_path_ease_in);
     lv_anim_set_user_data(&collapse, &state);
     lv_anim_set_completed_cb(
@@ -626,14 +793,107 @@ void ClockView::applyTheme()
         lv_obj_set_style_border_color(
             card.card, card_border, 0);
         lv_obj_set_style_bg_color(
-            card.flap, card_background, 0);
-        lv_obj_set_style_border_color(
-            card.flap, card_border, 0);
-        lv_obj_set_style_text_color(
-            card.label, lv_color_white(), 0);
-        lv_obj_set_style_text_color(
-            card.flap_label, lv_color_white(), 0);
+            card.top_panel, lv_color_hex(0x1d1d1d), 0);
+        lv_obj_set_style_bg_color(
+            card.top_flap, lv_color_hex(0x1d1d1d), 0);
+        lv_obj_set_style_bg_color(
+            card.bottom_panel, lv_color_hex(0x101010), 0);
+        lv_obj_set_style_bg_color(
+            card.bottom_flap, lv_color_hex(0x101010), 0);
+        for (lv_obj_t *label :
+             {card.top_label, card.bottom_label,
+              card.top_flap_label,
+              card.bottom_flap_label})
+            lv_obj_set_style_text_color(
+                label, lv_color_white(), 0);
     }
+
+    applyFaceCustomization();
+}
+
+void ClockView::applyFaceCustomization()
+{
+    const lv_font_t *time_font = &lv_font_chicago_48;
+    const lv_font_t *analog_font = &lv_font_chicago_8;
+    switch (g_face_customization.numeral_size)
+    {
+    case FaceNumeralSize::Small:
+        time_font = &lv_font_chicago_digits_40;
+        analog_font = &lv_font_chicago_digits_6;
+        break;
+    case FaceNumeralSize::Large:
+        time_font = &lv_font_chicago_digits_56;
+        analog_font = &lv_font_chicago_digits_10;
+        break;
+    case FaceNumeralSize::Default:
+    case FaceNumeralSize::Count:
+        break;
+    }
+
+    lv_obj_set_style_text_font(ui_shell.time, time_font, 0);
+    lv_obj_set_style_text_font(
+        clock_view.compact_time, time_font, 0);
+    for (lv_obj_t *number : clock_view.analog_numbers)
+        lv_obj_set_style_text_font(number, analog_font, 0);
+    for (FlipCardAnimation &card :
+         clock_view.flip_animations)
+    {
+        for (lv_obj_t *label :
+             {card.top_label, card.bottom_label,
+              card.top_flap_label,
+              card.bottom_flap_label})
+            lv_obj_set_style_text_font(label, time_font, 0);
+        position_flip_labels(card, time_font);
+        reset_flip_card_animation(card);
+    }
+
+    const bool dark =
+        g_clock_theme == CLOCK_THEME_DARK;
+    const lv_color_t face_foreground =
+        dark ? lv_color_white() : lv_color_black();
+    lv_obj_set_style_text_color(
+        ui_shell.time,
+        configured_accent_color(false, lv_color_black()), 0);
+    lv_obj_set_style_text_color(
+        clock_view.compact_time,
+        configured_accent_color(dark, face_foreground), 0);
+    const lv_color_t analog_accent =
+        configured_accent_color(dark, face_foreground);
+    lv_obj_set_style_line_color(
+        clock_view.analog_second_hand, analog_accent, 0);
+    lv_obj_set_style_bg_color(
+        clock_view.analog_center, analog_accent, 0);
+
+    const lv_color_t flip_digit_accent =
+        configured_accent_color(true, lv_color_white());
+    for (FlipCardAnimation &card :
+         clock_view.flip_animations)
+    {
+        for (lv_obj_t *label :
+             {card.top_label, card.bottom_label,
+              card.top_flap_label,
+              card.bottom_flap_label})
+            lv_obj_set_style_text_color(
+                label, flip_digit_accent, 0);
+    }
+    const lv_color_t flip_face_accent =
+        configured_accent_color(dark, face_foreground);
+    for (size_t i = 0; i < 2; ++i)
+    {
+        lv_obj_set_style_bg_color(
+            clock_view.flip_colon_tops[i],
+            flip_face_accent, 0);
+        lv_obj_set_style_bg_color(
+            clock_view.flip_colon_bottoms[i],
+            flip_face_accent, 0);
+    }
+
+    set_object_visible(
+        clock_view.compact_weather,
+        g_face_customization.show_weather);
+    set_object_visible(
+        clock_view.analog_second_hand,
+        g_time_format.show_seconds);
 }
 
 #endif

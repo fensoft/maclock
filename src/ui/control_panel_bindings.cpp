@@ -114,6 +114,7 @@ ControlPanelSnapshot MaclockApp::controlPanelSnapshot()
 bool MaclockApp::applyControlAppearance(
     UiLanguage language,
     ClockFace face, ClockTheme theme, uint8_t brightness,
+    const FaceCustomizationSettings &face_customization,
     const TimeFormatSettings &time_format)
 {
     if (language >= UI_LANGUAGE_COUNT ||
@@ -123,6 +124,14 @@ bool MaclockApp::applyControlAppearance(
             static_cast<uint8_t>(ClockTheme::Count) ||
         static_cast<uint8_t>(time_format.hour_format) >=
             static_cast<uint8_t>(HourFormat::Count) ||
+        static_cast<uint8_t>(face_customization.accent) >=
+            static_cast<uint8_t>(FaceAccent::Count) ||
+        static_cast<uint8_t>(
+            face_customization.numeral_size) >=
+            static_cast<uint8_t>(FaceNumeralSize::Count) ||
+        static_cast<uint8_t>(face_customization.flip_speed) >=
+            static_cast<uint8_t>(
+                FlipAnimationSpeed::Count) ||
         brightness > kBrightnessMax)
     {
         return false;
@@ -133,10 +142,12 @@ bool MaclockApp::applyControlAppearance(
     app_settings.language = language;
     app_settings.clock_face = face;
     app_settings.clock_theme = theme;
+    app_settings.face_customization = face_customization;
     app_settings.time_format = time_format;
     settings_store.saveLanguage(language);
     settings_store.saveClockFace(face);
     settings_store.saveClockTheme(theme);
+    settings_store.saveFaceCustomization(face_customization);
     settings_store.saveTimeFormat(time_format);
     settings_store.saveBrightness(brightness);
     input_service.setEncoderPosition(brightness);

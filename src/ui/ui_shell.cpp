@@ -136,6 +136,15 @@ static void refresh_language_ui()
     lv_buttonmatrix_set_map(
         boot_options_view.clock_face_options, g_clock_face_map);
     lv_buttonmatrix_set_map(
+        boot_options_view.face_accent_options,
+        g_face_accent_map);
+    lv_buttonmatrix_set_map(
+        boot_options_view.face_size_options,
+        g_face_size_map);
+    lv_buttonmatrix_set_map(
+        boot_options_view.flip_speed_options,
+        g_flip_speed_map);
+    lv_buttonmatrix_set_map(
         boot_options_view.screensaver_options, g_screensaver_map);
     lv_buttonmatrix_set_map(
         boot_options_view.screensaver_delay_options,
@@ -156,6 +165,15 @@ static void refresh_language_ui()
     lv_label_set_text(
         boot_options_view.screensaver_delay_label,
         tr("Start after"));
+    lv_label_set_text(
+        boot_options_view.face_accent_label,
+        tr("Accent"));
+    lv_label_set_text(
+        boot_options_view.face_size_label,
+        tr("Numeral size"));
+    lv_label_set_text(
+        boot_options_view.flip_speed_label,
+        tr("Flip speed"));
     lv_label_set_text(boot_options_view.dim_from_label, tr("Dim from"));
     lv_label_set_text(boot_options_view.normal_at_label, tr("Normal at"));
     lv_label_set_text(boot_options_view.screen_off_label, tr("Screen off at"));
@@ -218,6 +236,7 @@ static void refresh_language_ui()
         remember_selected < 2 ? remember_selected : 1);
     update_regional_options_ui();
     update_display_options_ui();
+    update_face_customization_options_ui();
     set_checked_button(
         boot_options_view.clock_face_options,
         (uint32_t)g_clock_face);

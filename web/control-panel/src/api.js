@@ -5,6 +5,10 @@ const demoState = {
     language: 0,
     face: 0,
     theme: 0,
+    accent: 0,
+    fontSize: 1,
+    weather: true,
+    flipSpeed: 1,
     brightness: 7,
     hourFormat: 0,
     leadingZero: true,
@@ -232,7 +236,7 @@ async function realFetch(path) {
 function applyDemo(path, values) {
   const number = (key) => Number(values[key]);
   if (path === "/api/appearance") {
-    Object.assign(demoState.appearance, {
+    const appearance = {
       language: number("language"),
       face: number("face"),
       theme: number("theme"),
@@ -241,7 +245,16 @@ function applyDemo(path, values) {
       leadingZero: number("leadingZero") !== 0,
       seconds: number("seconds") !== 0,
       weekday: number("weekday") !== 0,
-    });
+    };
+    if ("accent" in values) appearance.accent = number("accent");
+    if ("fontSize" in values) appearance.fontSize = number("fontSize");
+    if ("weather" in values) {
+      appearance.weather = number("weather") !== 0;
+    }
+    if ("flipSpeed" in values) {
+      appearance.flipSpeed = number("flipSpeed");
+    }
+    Object.assign(demoState.appearance, appearance);
   } else if (path === "/api/location") {
     Object.assign(demoState.location, {
       city: String(values.city || "").trim(),

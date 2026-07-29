@@ -45,6 +45,10 @@ LV_FONT_DECLARE(lv_font_chicago_8);
 LV_FONT_DECLARE(lv_font_chicago_24);
 LV_FONT_DECLARE(lv_font_chicago_32);
 LV_FONT_DECLARE(lv_font_chicago_48);
+LV_FONT_DECLARE(lv_font_chicago_digits_6);
+LV_FONT_DECLARE(lv_font_chicago_digits_10);
+LV_FONT_DECLARE(lv_font_chicago_digits_40);
+LV_FONT_DECLARE(lv_font_chicago_digits_56);
 
 static MaclockApp *active_app = nullptr;
 
@@ -144,6 +148,8 @@ enum BootOptionsPage
     BOOT_OPTIONS_DATETIME,
     BOOT_OPTIONS_DISPLAY,
     BOOT_OPTIONS_CLOCK_FACE,
+    BOOT_OPTIONS_FACE_STYLE,
+    BOOT_OPTIONS_FACE_DETAILS,
     BOOT_OPTIONS_SCREENSAVER,
     BOOT_OPTIONS_NIGHT_SCHEDULE,
     BOOT_OPTIONS_NIGHT_SCREEN,
@@ -224,6 +230,13 @@ public:
     BootDateTimeField datetime_selected = BOOT_DATETIME_HOUR;
     uint32_t datetime_last_refresh_ms = 0;
     lv_obj_t *clock_face_options;
+    lv_obj_t *face_accent_label;
+    lv_obj_t *face_accent_options;
+    lv_obj_t *face_size_label;
+    lv_obj_t *face_size_options;
+    lv_obj_t *weather_checkbox;
+    lv_obj_t *flip_speed_label;
+    lv_obj_t *flip_speed_options;
     lv_obj_t *screensaver_options;
     lv_obj_t *screensaver_delay_options;
     lv_obj_t *night_enabled_options;
@@ -308,9 +321,16 @@ static constexpr size_t kFlipDigitCount = 6;
 struct FlipCardAnimation
 {
     lv_obj_t *card;
-    lv_obj_t *label;
-    lv_obj_t *flap;
-    lv_obj_t *flap_label;
+    lv_obj_t *left_pin;
+    lv_obj_t *right_pin;
+    lv_obj_t *top_panel;
+    lv_obj_t *top_label;
+    lv_obj_t *bottom_panel;
+    lv_obj_t *bottom_label;
+    lv_obj_t *top_flap;
+    lv_obj_t *top_flap_label;
+    lv_obj_t *bottom_flap;
+    lv_obj_t *bottom_flap_label;
     char displayed[3];
     char pending[3];
     bool initialized;
@@ -347,6 +367,7 @@ public:
     void show(const ClockRenderSnapshot &snapshot);
     void update(const ClockRenderSnapshot &snapshot);
     void applyTheme();
+    void applyFaceCustomization();
     void applyTimeFormatLayout();
     void initScreensavers(lv_obj_t *screen);
     void showScreensaver();
@@ -549,6 +570,8 @@ static lv_timer_t *g_cursor_timer = nullptr;
 #define g_temperature_unit (app_settings.temperature_unit)
 #define g_clock_face (app_settings.clock_face)
 #define g_clock_theme (app_settings.clock_theme)
+#define g_face_customization \
+    (app_settings.face_customization)
 #define g_time_format (app_settings.time_format)
 #define g_screensaver_mode (app_settings.screensaver_mode)
 #define g_screensaver_delay_index \
@@ -588,6 +611,9 @@ static const char *g_remember_map[3] = {};
 static const char *g_date_format_map[4] = {
     "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", ""};
 static const char *g_clock_face_map[7] = {};
+static const char *g_face_accent_map[9] = {};
+static const char *g_face_size_map[4] = {};
+static const char *g_flip_speed_map[4] = {};
 static const char *g_screensaver_map[12] = {};
 static const uint8_t g_screensaver_delays_minutes[] = {
     1, 5, 10, 30};

@@ -42,6 +42,7 @@ public:
     bool applyControlAppearance(
         UiLanguage language,
         ClockFace face, ClockTheme theme, uint8_t brightness,
+        const FaceCustomizationSettings &face_customization,
         const TimeFormatSettings &time_format) override;
     bool applyControlScreensaver(
         ScreensaverMode mode, uint8_t delay_index,

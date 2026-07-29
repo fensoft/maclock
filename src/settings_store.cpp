@@ -93,6 +93,18 @@ AppSettings SettingsStore::load()
     settings.clock_theme = load_enum(
         preferences_, "clock_theme",
         ClockTheme::Light, ClockTheme::Count);
+    settings.face_customization.accent = load_enum(
+        preferences_, "face_accent",
+        FaceAccent::Default, FaceAccent::Count);
+    settings.face_customization.numeral_size = load_enum(
+        preferences_, "face_font",
+        FaceNumeralSize::Default, FaceNumeralSize::Count);
+    settings.face_customization.show_weather =
+        preferences_.getBool("show_weather", true);
+    settings.face_customization.flip_speed = load_enum(
+        preferences_, "flip_speed",
+        FlipAnimationSpeed::Normal,
+        FlipAnimationSpeed::Count);
     settings.time_format.hour_format = load_enum(
         preferences_, "hour_format",
         HourFormat::Hour24, HourFormat::Count);
@@ -184,6 +196,18 @@ void SettingsStore::saveClockFace(ClockFace value)
 void SettingsStore::saveClockTheme(ClockTheme value)
 {
     preferences_.putUChar("clock_theme", static_cast<uint8_t>(value));
+}
+
+void SettingsStore::saveFaceCustomization(
+    const FaceCustomizationSettings &value)
+{
+    preferences_.putUChar(
+        "face_accent", static_cast<uint8_t>(value.accent));
+    preferences_.putUChar(
+        "face_font", static_cast<uint8_t>(value.numeral_size));
+    preferences_.putBool("show_weather", value.show_weather);
+    preferences_.putUChar(
+        "flip_speed", static_cast<uint8_t>(value.flip_speed));
 }
 
 void SettingsStore::saveTimeFormat(

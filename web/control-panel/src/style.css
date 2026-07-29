@@ -597,6 +597,7 @@ input[type="radio"]:checked::after {
 }
 
 .radio-box,
+.accent-box,
 .weekdays {
   min-width: 0;
   margin: 0;
@@ -605,6 +606,7 @@ input[type="radio"]:checked::after {
 }
 
 .radio-box legend,
+.accent-box legend,
 .weekdays legend {
   padding: 0 6px;
   font-size: 13px;
@@ -614,6 +616,27 @@ input[type="radio"]:checked::after {
 .radio-box {
   display: flex;
   gap: 24px;
+}
+
+.accent-box {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+
+.accent-option {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.accent-swatch {
+  width: 24px;
+  height: 18px;
+  border: 2px solid #000;
+  box-shadow: inset 1px 1px 0 rgb(255 255 255 / 45%);
 }
 
 .button-row {
@@ -1737,6 +1760,10 @@ hr {
 
   .screensaver-modes {
     grid-template-columns: 1fr;
+  }
+
+  .accent-box {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .alarm-heading,

@@ -119,6 +119,10 @@ set(MACLOCK_APPLICATION_SOURCES
     src/lv_font_chicago_24.c
     src/lv_font_chicago_32.c
     src/lv_font_chicago_48.c
+    src/lv_font_chicago_digits_6.c
+    src/lv_font_chicago_digits_10.c
+    src/lv_font_chicago_digits_40.c
+    src/lv_font_chicago_digits_56.c
     src/maclock_app.cpp
     src/maclock_hal.cpp
     src/minivmac_ArduinoAPI.cpp

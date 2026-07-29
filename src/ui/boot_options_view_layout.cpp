@@ -488,6 +488,136 @@ void BootOptionsView::init(lv_obj_t *screen)
         boot_options_view.clock_face_options,
         clock_face_event, LV_EVENT_VALUE_CHANGED, nullptr);
 
+    lv_obj_t *face_style_page =
+        boot_options_view.pages[BOOT_OPTIONS_FACE_STYLE];
+    boot_options_view.face_accent_label =
+        lv_label_create(face_style_page);
+    lv_label_set_text(
+        boot_options_view.face_accent_label,
+        tr("Accent"));
+    lv_obj_set_style_text_font(
+        boot_options_view.face_accent_label,
+        &lv_font_chicago_8, 0);
+    lv_obj_align(
+        boot_options_view.face_accent_label,
+        LV_ALIGN_TOP_MID, 0, 0);
+
+    boot_options_view.face_accent_options =
+        lv_buttonmatrix_create(face_style_page);
+    lv_buttonmatrix_set_map(
+        boot_options_view.face_accent_options,
+        g_face_accent_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        boot_options_view.face_accent_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        boot_options_view.face_accent_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        boot_options_view.face_accent_options, true);
+    lv_obj_set_size(
+        boot_options_view.face_accent_options, 260, 62);
+    lv_obj_align(
+        boot_options_view.face_accent_options,
+        LV_ALIGN_TOP_MID, 0, 14);
+    style_boot_options_matrix(
+        boot_options_view.face_accent_options);
+    lv_obj_set_style_pad_row(
+        boot_options_view.face_accent_options, 4, 0);
+    lv_obj_set_style_pad_column(
+        boot_options_view.face_accent_options, 5, 0);
+    lv_obj_add_event_cb(
+        boot_options_view.face_accent_options,
+        face_accent_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    boot_options_view.face_size_label =
+        lv_label_create(face_style_page);
+    lv_label_set_text(
+        boot_options_view.face_size_label,
+        tr("Numeral size"));
+    lv_obj_set_style_text_font(
+        boot_options_view.face_size_label,
+        &lv_font_chicago_8, 0);
+    lv_obj_align(
+        boot_options_view.face_size_label,
+        LV_ALIGN_TOP_MID, 0, 80);
+
+    boot_options_view.face_size_options =
+        lv_buttonmatrix_create(face_style_page);
+    lv_buttonmatrix_set_map(
+        boot_options_view.face_size_options,
+        g_face_size_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        boot_options_view.face_size_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        boot_options_view.face_size_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        boot_options_view.face_size_options, true);
+    lv_obj_set_size(
+        boot_options_view.face_size_options, 260, 34);
+    lv_obj_align(
+        boot_options_view.face_size_options,
+        LV_ALIGN_BOTTOM_MID, 0, 0);
+    style_boot_options_matrix(
+        boot_options_view.face_size_options);
+    lv_obj_set_style_pad_column(
+        boot_options_view.face_size_options, 5, 0);
+    lv_obj_add_event_cb(
+        boot_options_view.face_size_options,
+        face_size_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *face_details_page =
+        boot_options_view.pages[BOOT_OPTIONS_FACE_DETAILS];
+    boot_options_view.weather_checkbox =
+        create_boot_checkbox(
+            face_details_page, tr("Show weather"),
+            weather_checkbox_event);
+    lv_obj_set_size(
+        boot_options_view.weather_checkbox, 260, 54);
+    lv_obj_align(
+        boot_options_view.weather_checkbox,
+        LV_ALIGN_TOP_MID, 0, 0);
+
+    boot_options_view.flip_speed_label =
+        lv_label_create(face_details_page);
+    lv_label_set_text(
+        boot_options_view.flip_speed_label,
+        tr("Flip speed"));
+    lv_obj_set_style_text_font(
+        boot_options_view.flip_speed_label,
+        &lv_font_chicago_8, 0);
+    lv_obj_align(
+        boot_options_view.flip_speed_label,
+        LV_ALIGN_TOP_MID, 0, 65);
+
+    boot_options_view.flip_speed_options =
+        lv_buttonmatrix_create(face_details_page);
+    lv_buttonmatrix_set_map(
+        boot_options_view.flip_speed_options,
+        g_flip_speed_map);
+    lv_buttonmatrix_set_button_ctrl_all(
+        boot_options_view.flip_speed_options,
+        LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    lv_buttonmatrix_set_button_ctrl_all(
+        boot_options_view.flip_speed_options,
+        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
+    lv_buttonmatrix_set_one_checked(
+        boot_options_view.flip_speed_options, true);
+    lv_obj_set_size(
+        boot_options_view.flip_speed_options, 260, 42);
+    lv_obj_align(
+        boot_options_view.flip_speed_options,
+        LV_ALIGN_BOTTOM_MID, 0, 0);
+    style_boot_options_matrix(
+        boot_options_view.flip_speed_options);
+    lv_obj_set_style_pad_column(
+        boot_options_view.flip_speed_options, 5, 0);
+    lv_obj_add_event_cb(
+        boot_options_view.flip_speed_options,
+        flip_speed_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
     lv_obj_t *screensaver_page =
         boot_options_view.pages[BOOT_OPTIONS_SCREENSAVER];
     boot_options_view.screensaver_options =
@@ -1132,6 +1262,7 @@ void BootOptionsView::show()
         boot_options_view.remember_selection, 1);
     update_regional_options_ui();
     update_display_options_ui();
+    update_face_customization_options_ui();
     set_checked_button(
         boot_options_view.clock_face_options,
         (uint32_t)g_clock_face);

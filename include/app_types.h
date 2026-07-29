@@ -52,6 +52,41 @@ enum class ClockTheme : uint8_t
     Count
 };
 
+enum class FaceAccent : uint8_t
+{
+    Default,
+    Red,
+    Orange,
+    Green,
+    Blue,
+    Purple,
+    Count
+};
+
+enum class FaceNumeralSize : uint8_t
+{
+    Small,
+    Default,
+    Large,
+    Count
+};
+
+enum class FlipAnimationSpeed : uint8_t
+{
+    Slow,
+    Normal,
+    Fast,
+    Count
+};
+
+struct FaceCustomizationSettings
+{
+    FaceAccent accent = FaceAccent::Default;
+    FaceNumeralSize numeral_size = FaceNumeralSize::Default;
+    bool show_weather = true;
+    FlipAnimationSpeed flip_speed = FlipAnimationSpeed::Normal;
+};
+
 enum class HourFormat : uint8_t
 {
     Hour24,
@@ -123,6 +158,7 @@ struct AppSettings
     UiTemperatureUnit temperature_unit = UI_TEMPERATURE_CELSIUS;
     ClockFace clock_face = ClockFace::Macintosh;
     ClockTheme clock_theme = ClockTheme::Light;
+    FaceCustomizationSettings face_customization;
     TimeFormatSettings time_format;
     ScreensaverMode screensaver_mode = ScreensaverMode::Off;
     uint8_t screensaver_delay_index = 1;

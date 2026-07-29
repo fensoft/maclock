@@ -85,6 +85,28 @@ const faceOptions = computed(() =>
   ["macintosh", "compactDigital", "analog", "flipClock"].map((key) => t(key)),
 );
 const themeOptions = computed(() => ["light", "dark"].map((key) => t(key)));
+const accentSwatches = [
+  "linear-gradient(135deg, #fff 0 50%, #000 50%)",
+  "#c62828",
+  "#b45309",
+  "#15803d",
+  "#1d4ed8",
+  "#7e22ce",
+];
+const accentOptions = computed(() =>
+  ["defaultOption", "red", "orange", "green", "blue", "purple"].map(
+    (key, index) => ({
+      name: t(key),
+      swatch: accentSwatches[index],
+    }),
+  ),
+);
+const numeralSizeOptions = computed(() =>
+  ["small", "defaultOption", "large"].map((key) => t(key)),
+);
+const flipSpeedOptions = computed(() =>
+  ["slow", "normal", "fast"].map((key) => t(key)),
+);
 const hourFormatOptions = computed(() =>
   ["hour24", "hour12"].map((key) => t(key)),
 );
@@ -163,6 +185,10 @@ function editableSnapshot(appId) {
         "language",
         "face",
         "theme",
+        "accent",
+        "fontSize",
+        "weather",
+        "flipSpeed",
         "brightness",
         "hourFormat",
         "leadingZero",
@@ -428,6 +454,7 @@ function saveAppearance() {
       leadingZero: appearance.leadingZero ? 1 : 0,
       seconds: appearance.seconds ? 1 : 0,
       weekday: appearance.weekday ? 1 : 0,
+      weather: appearance.weather ? 1 : 0,
     },
     t("appearanceSaved"),
   );
@@ -953,6 +980,59 @@ onBeforeUnmount(() => {
                 </label>
               </fieldset>
 
+              <fieldset class="accent-box">
+                <legend>{{ t("accentColor") }}</legend>
+                <label
+                  v-for="(accent, index) in accentOptions"
+                  :key="accent.name"
+                  class="accent-option"
+                >
+                  <input
+                    v-model.number="panelState.appearance.accent"
+                    type="radio"
+                    :value="index"
+                  />
+                  <span
+                    class="accent-swatch"
+                    :style="{ background: accent.swatch }"
+                    aria-hidden="true"
+                  ></span>
+                  <span>{{ accent.name }}</span>
+                </label>
+              </fieldset>
+
+              <fieldset class="radio-box">
+                <legend>{{ t("numeralSize") }}</legend>
+                <label
+                  v-for="(name, index) in numeralSizeOptions"
+                  :key="name"
+                  class="classic-radio"
+                >
+                  <input
+                    v-model.number="panelState.appearance.fontSize"
+                    type="radio"
+                    :value="index"
+                  />
+                  <span>{{ name }}</span>
+                </label>
+              </fieldset>
+
+              <fieldset class="radio-box">
+                <legend>{{ t("flipSpeed") }}</legend>
+                <label
+                  v-for="(name, index) in flipSpeedOptions"
+                  :key="name"
+                  class="classic-radio"
+                >
+                  <input
+                    v-model.number="panelState.appearance.flipSpeed"
+                    type="radio"
+                    :value="index"
+                  />
+                  <span>{{ name }}</span>
+                </label>
+              </fieldset>
+
               <fieldset class="radio-box">
                 <legend>{{ t("hourFormat") }}</legend>
                 <label
@@ -991,6 +1071,14 @@ onBeforeUnmount(() => {
                   type="checkbox"
                 />
                 <span>{{ t("showWeekday") }}</span>
+              </label>
+
+              <label class="check-line">
+                <input
+                  v-model="panelState.appearance.weather"
+                  type="checkbox"
+                />
+                <span>{{ t("showWeather") }}</span>
               </label>
 
               <label class="field">
