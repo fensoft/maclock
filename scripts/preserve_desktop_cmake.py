@@ -23,7 +23,7 @@ if desktop_cmake:
     backup_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(cmake_path, backup_path)
 
-    version = os.environ.get("MACLOCK_BUILD_VERSION", "1.0.0")
+    version = os.environ.get("MACLOCK_BUILD_VERSION", "0.0.0")
     version = version.lstrip("v")
     cmake_path.write_text(
         "cmake_minimum_required(VERSION 3.16)\n"

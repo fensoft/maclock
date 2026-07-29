@@ -905,6 +905,117 @@ void BootOptionsView::init(lv_obj_t *screen)
     lv_obj_set_style_text_font(calibration_label, &lv_font_chicago_8, 0);
     lv_obj_align(calibration_label, LV_ALIGN_BOTTOM_MID, 0, 0);
 
+    lv_obj_t *update_page =
+        boot_options_view.pages[BOOT_OPTIONS_UPDATE];
+    boot_options_view.update_status =
+        lv_label_create(update_page);
+    lv_label_set_text(
+        boot_options_view.update_status,
+        tr("Checking for updates..."));
+    lv_label_set_long_mode(
+        boot_options_view.update_status,
+        LV_LABEL_LONG_DOT);
+    lv_obj_set_size(
+        boot_options_view.update_status, 260, 56);
+    lv_obj_set_style_text_font(
+        boot_options_view.update_status,
+        &lv_font_chicago_8, 0);
+    lv_obj_set_style_text_align(
+        boot_options_view.update_status,
+        LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_line_space(
+        boot_options_view.update_status, 3, 0);
+    lv_obj_align(
+        boot_options_view.update_status,
+        LV_ALIGN_TOP_MID, 0, 4);
+
+    boot_options_view.update_progress =
+        lv_bar_create(update_page);
+    lv_bar_set_range(
+        boot_options_view.update_progress, 0, 100);
+    lv_bar_set_value(
+        boot_options_view.update_progress, 0, LV_ANIM_OFF);
+    lv_obj_set_size(
+        boot_options_view.update_progress, 220, 14);
+    lv_obj_align(
+        boot_options_view.update_progress,
+        LV_ALIGN_TOP_MID, 0, 62);
+    lv_obj_set_style_bg_color(
+        boot_options_view.update_progress,
+        lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(
+        boot_options_view.update_progress,
+        LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(
+        boot_options_view.update_progress,
+        lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_border_width(
+        boot_options_view.update_progress,
+        1, LV_PART_MAIN);
+    lv_obj_set_style_radius(
+        boot_options_view.update_progress,
+        0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(
+        boot_options_view.update_progress,
+        2, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(
+        boot_options_view.update_progress,
+        lv_color_black(), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(
+        boot_options_view.update_progress,
+        LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(
+        boot_options_view.update_progress,
+        0, LV_PART_INDICATOR);
+    lv_obj_add_flag(
+        boot_options_view.update_progress,
+        LV_OBJ_FLAG_HIDDEN);
+
+    boot_options_view.update_primary =
+        create_action_button(
+            update_page, tr("Check Now"),
+            boot_update_primary_event);
+    boot_options_view.update_primary_label =
+        lv_obj_get_child(
+            boot_options_view.update_primary, 0);
+    lv_obj_set_size(
+        boot_options_view.update_primary, 84, 40);
+    lv_obj_align(
+        boot_options_view.update_primary,
+        LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    boot_options_view.update_later =
+        create_action_button(
+            update_page, tr("Later"),
+            boot_update_later_event);
+    boot_options_view.update_later_label =
+        lv_obj_get_child(
+            boot_options_view.update_later, 0);
+    lv_obj_set_size(
+        boot_options_view.update_later, 84, 40);
+    lv_obj_align(
+        boot_options_view.update_later,
+        LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_add_flag(
+        boot_options_view.update_later,
+        LV_OBJ_FLAG_HIDDEN);
+
+    boot_options_view.update_ignore =
+        create_action_button(
+            update_page, tr("Ignore"),
+            boot_update_ignore_event);
+    boot_options_view.update_ignore_label =
+        lv_obj_get_child(
+            boot_options_view.update_ignore, 0);
+    lv_obj_set_size(
+        boot_options_view.update_ignore, 84, 40);
+    lv_obj_align(
+        boot_options_view.update_ignore,
+        LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_add_flag(
+        boot_options_view.update_ignore,
+        LV_OBJ_FLAG_HIDDEN);
+
     lv_obj_t *about_page =
         boot_options_view.pages[BOOT_OPTIONS_ABOUT];
 
@@ -1034,6 +1145,7 @@ void BootOptionsView::show()
     update_night_options_ui();
     update_chime_options_ui();
     update_wifi_options_ui();
+    boot_options_view.refreshUpdate();
     boot_options_view.setPage(
         boot_options_view.page_on_show);
     boot_options_view.page_on_show =

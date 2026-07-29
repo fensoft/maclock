@@ -48,7 +48,11 @@ public:
     void begin(Preferences &preferences);
     void tick(
         const WifiModeSnapshot &wifi,
-        bool allow_device_prompt);
+        bool allow_device_prompt,
+        bool allow_network_check);
+    bool needsNetworkCheck(
+        const WifiModeSnapshot &wifi) const;
+    bool networkOperationActive() const;
     UpdateSnapshot snapshot() const;
 
     bool requestCheck();

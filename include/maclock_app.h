@@ -99,8 +99,6 @@ public:
 
 private:
     void syncUpdatePrompt(bool allowed);
-    void closeUpdatePrompt();
-    static void updatePromptEvent(lv_event_t *event);
 
     MaclockHal &hal_;
     SettingsStore settings_store_;
@@ -133,7 +131,7 @@ private:
     uint8_t control_preview_volume_ = 0;
     bool control_preview_pending_ = false;
     bool screensaver_launch_pending_ = false;
-    lv_obj_t *update_prompt_ = nullptr;
+    bool update_network_guard_active_ = false;
 
     unsigned long last_alarm_check_ms_ = 0;
     unsigned long last_encoder_save_ms_ = 0;

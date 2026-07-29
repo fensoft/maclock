@@ -118,17 +118,41 @@ void MaclockApp::tick()
     {
         wifi_service.stopPortal();
     }
+    const WifiModeSnapshot wifi = wifi_service.snapshot();
     if (current_state_ == UI_STATE_WIFI_SETUP)
         control_panel_service.stop();
     else
-        control_panel_service.tick(wifi_service.snapshot());
+        control_panel_service.tick(wifi);
 
     const bool update_prompt_allowed =
         current_state_ == UiState::Normal &&
         !audio_service.running() &&
         !clock_view.screensaver_active;
+    const bool update_page_active =
+        current_state_ == UI_STATE_BOOT_OPTIONS &&
+        boot_options_view.page == BOOT_OPTIONS_UPDATE &&
+        !audio_service.running();
+    const bool update_network_check_allowed =
+        update_prompt_allowed || update_page_active;
+    const bool update_check_pending =
+        update_network_check_allowed &&
+        update_service.needsNetworkCheck(wifi);
+    if (update_check_pending &&
+        !update_network_guard_active_)
+    {
+        beginControlPanelNetworkTransfer();
+        update_network_guard_active_ = true;
+    }
     update_service.tick(
-        wifi_service.snapshot(), update_prompt_allowed);
+        wifi, update_prompt_allowed,
+        update_network_check_allowed);
+    if (update_network_guard_active_ &&
+        !update_service.networkOperationActive() &&
+        !update_service.needsNetworkCheck(wifi))
+    {
+        endControlPanelNetworkTransfer();
+        update_network_guard_active_ = false;
+    }
     syncUpdatePrompt(update_prompt_allowed);
 
     if (control_preview_pending_ &&

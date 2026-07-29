@@ -20,14 +20,26 @@
 #include <Update.h>
 #include <esp_app_desc.h>
 #include <esp_app_format.h>
+#include <esp_heap_caps.h>
 #include <esp_ota_ops.h>
 #include <miniz.h>
-
-#include "github_ca.h"
 #endif
 
 namespace
 {
+#ifndef MACLOCK_LOCAL
+class GithubNetworkClientSecure final
+    : public NetworkClientSecure
+{
+public:
+    void useSystemCertificateBundle()
+    {
+        attach_ssl_certificate_bundle(sslclient.get(), true);
+        _use_ca_bundle = true;
+    }
+};
+#endif
+
 static constexpr char kLatestReleaseUrl[] =
     "https://api.github.com/repos/fensoft/maclock/releases/latest";
 static constexpr char kManifestName[] =
@@ -171,7 +183,7 @@ void copy_text(
 
 bool begin_http(
     HTTPClient &http, NetworkClient &client,
-    const String &url)
+    const String &url, bool follow_redirects = true)
 {
     http.useHTTP10(true);
     http.setConnectTimeout(15000);
@@ -180,23 +192,123 @@ bool begin_http(
         String("Maclock/") + MACLOCK_VERSION +
         " (+https://github.com/fensoft/maclock)");
 #ifndef MACLOCK_LOCAL
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setFollowRedirects(
+        follow_redirects
+            ? HTTPC_STRICT_FOLLOW_REDIRECTS
+            : HTTPC_DISABLE_FOLLOW_REDIRECTS);
+#else
+    (void)follow_redirects;
 #endif
     return http.begin(client, url);
 }
+
+#ifndef MACLOCK_LOCAL
+bool is_http_redirect(int response)
+{
+    return response == HTTP_CODE_MOVED_PERMANENTLY ||
+           response == HTTP_CODE_FOUND ||
+           response == HTTP_CODE_SEE_OTHER ||
+           response == HTTP_CODE_TEMPORARY_REDIRECT ||
+           response == HTTP_CODE_PERMANENT_REDIRECT;
+}
+
+String resolve_redirect_url(
+    const String &current_url, const String &location)
+{
+    if (location.startsWith("https://") ||
+        location.startsWith("http://"))
+    {
+        return location;
+    }
+    if (!location.startsWith("/"))
+        return String();
+    const int scheme_end = current_url.indexOf("://");
+    if (scheme_end < 0)
+        return String();
+    const int path_start =
+        current_url.indexOf('/', scheme_end + 3);
+    if (path_start < 0)
+        return current_url + location;
+    return current_url.substring(0, path_start) + location;
+}
+
+void set_http_connection_error(
+    String &error, const char *prefix, int response,
+    GithubNetworkClientSecure &client)
+{
+    error = String(prefix) + ": " +
+            HTTPClient::errorToString(response);
+    char tls_error[160] = {};
+    client.lastError(tls_error, sizeof(tls_error));
+    if (tls_error[0] && strcmp(tls_error, "UNKNOWN ERROR CODE") != 0)
+        error += String(" (") + tls_error + ")";
+}
+
+bool resolve_download_url(
+    const String &source_url, String &download_url,
+    String &error)
+{
+    String current_url = source_url;
+    for (uint8_t redirect = 0; redirect < 5; ++redirect)
+    {
+        GithubNetworkClientSecure client;
+        client.useSystemCertificateBundle();
+        client.setHandshakeTimeout(30);
+        HTTPClient http;
+        if (!begin_http(http, client, current_url, false))
+        {
+            error = "Could not open the release download";
+            return false;
+        }
+        const int response = http.sendRequest("HEAD");
+        if (is_http_redirect(response))
+        {
+            const String next_url = resolve_redirect_url(
+                current_url, http.getLocation());
+            http.end();
+            client.stop();
+            if (!next_url.length())
+            {
+                error = "The release returned an invalid redirect";
+                return false;
+            }
+            current_url = next_url;
+            vTaskDelay(pdMS_TO_TICKS(1));
+            continue;
+        }
+        if (response != HTTP_CODE_OK)
+        {
+            if (response < 0)
+            {
+                set_http_connection_error(
+                    error, "Release download connection failed",
+                    response, client);
+            }
+            else
+            {
+                error = String("Release download returned HTTP ") +
+                        String(response);
+            }
+            http.end();
+            return false;
+        }
+        http.end();
+        client.stop();
+        download_url = current_url;
+        return true;
+    }
+    error = "The release download redirected too many times";
+    return false;
+}
+#endif
 
 bool fetch_text(
     const String &url, String &payload, String &error)
 {
 #ifdef MACLOCK_LOCAL
     NetworkClient client;
-#else
-    NetworkClientSecure client;
-    client.setCACert(kGithubRootCertificates);
-    client.setHandshakeTimeout(30);
-#endif
     HTTPClient http;
-    if (!begin_http(http, client, url))
+    if (!begin_http(http, client, url, false))
     {
         error = "Could not open the update server";
         return false;
@@ -204,11 +316,8 @@ bool fetch_text(
     const int response = http.GET();
     if (response != HTTP_CODE_OK)
     {
-        if (response == 404)
-            error = "No published Maclock release was found";
-        else
-            error = String("Update server returned HTTP ") +
-                    String(response);
+        error = String("Update server returned HTTP ") +
+                String(response);
         http.end();
         return false;
     }
@@ -220,6 +329,67 @@ bool fetch_text(
         return false;
     }
     return true;
+#else
+    String current_url = url;
+    for (uint8_t redirect = 0; redirect < 5; ++redirect)
+    {
+        GithubNetworkClientSecure client;
+        client.useSystemCertificateBundle();
+        client.setHandshakeTimeout(30);
+        HTTPClient http;
+        if (!begin_http(http, client, current_url, false))
+        {
+            error = "Could not open the update server";
+            return false;
+        }
+        const int response = http.GET();
+        if (is_http_redirect(response))
+        {
+            const String next_url = resolve_redirect_url(
+                current_url, http.getLocation());
+            http.end();
+            client.stop();
+            if (!next_url.length())
+            {
+                error = "The update server returned an invalid redirect";
+                return false;
+            }
+            current_url = next_url;
+            vTaskDelay(pdMS_TO_TICKS(1));
+            continue;
+        }
+        if (response != HTTP_CODE_OK)
+        {
+            if (response == 404)
+            {
+                error = "No published Maclock release was found";
+            }
+            else if (response < 0)
+            {
+                set_http_connection_error(
+                    error, "Update connection failed",
+                    response, client);
+            }
+            else
+            {
+                error = String("Update server returned HTTP ") +
+                        String(response);
+            }
+            http.end();
+            return false;
+        }
+        payload = http.getString();
+        http.end();
+        if (!payload.length() || payload.length() > 1024U * 1024U)
+        {
+            error = "Update metadata is empty or too large";
+            return false;
+        }
+        return true;
+    }
+    error = "The update server redirected too many times";
+    return false;
+#endif
 }
 
 #ifndef MACLOCK_LOCAL
@@ -283,6 +453,7 @@ bool equals_digest(const String &left, const char *right)
            left.equalsIgnoreCase(right);
 }
 
+__attribute__((noinline))
 bool hash_file(const char *path, String &digest)
 {
     fs::File file = LittleFS.open(path, "r");
@@ -444,6 +615,7 @@ private:
     SHA256Builder hash_;
 };
 
+__attribute__((noinline))
 bool copy_stored_entry(
     HashedStream &stream, fs::File &file,
     size_t compressed_size, SHA256Builder &hash,
@@ -466,23 +638,43 @@ bool copy_stored_entry(
     return true;
 }
 
+__attribute__((noinline))
 bool inflate_entry(
     HashedStream &stream, fs::File &file,
     size_t compressed_size, SHA256Builder &hash,
     size_t &written)
 {
-    auto *dictionary =
-        static_cast<uint8_t *>(malloc(TINFL_LZ_DICT_SIZE));
-    if (!dictionary)
+    auto allocate_ota_buffer = [](size_t size) -> void *
+    {
+        void *buffer = heap_caps_malloc(
+            size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        return buffer ? buffer : malloc(size);
+    };
+    auto *dictionary = static_cast<uint8_t *>(
+        allocate_ota_buffer(TINFL_LZ_DICT_SIZE));
+    auto *input = static_cast<uint8_t *>(
+        allocate_ota_buffer(4096));
+    auto *decompressor = static_cast<tinfl_decompressor *>(
+        allocate_ota_buffer(sizeof(tinfl_decompressor)));
+    if (!dictionary || !input || !decompressor)
+    {
+        free(decompressor);
+        free(input);
+        free(dictionary);
         return false;
-    uint8_t input[4096];
+    }
+    const auto release_buffers = [&]()
+    {
+        free(decompressor);
+        free(input);
+        free(dictionary);
+    };
     size_t input_offset = 0;
     size_t input_available = 0;
     size_t compressed_remaining = compressed_size;
     size_t output_offset = 0;
     written = 0;
-    tinfl_decompressor decompressor;
-    tinfl_init(&decompressor);
+    tinfl_init(decompressor);
     tinfl_status status = TINFL_STATUS_NEEDS_MORE_INPUT;
 
     while (status != TINFL_STATUS_DONE)
@@ -491,14 +683,14 @@ bool inflate_entry(
         {
             if (!compressed_remaining)
             {
-                free(dictionary);
+                release_buffers();
                 return false;
             }
             input_available =
-                min(compressed_remaining, sizeof(input));
+                min(compressed_remaining, size_t(4096));
             if (!stream.readExact(input, input_available))
             {
-                free(dictionary);
+                release_buffers();
                 return false;
             }
             compressed_remaining -= input_available;
@@ -510,7 +702,7 @@ bool inflate_entry(
         const mz_uint32 flags =
             compressed_remaining ? TINFL_FLAG_HAS_MORE_INPUT : 0;
         status = tinfl_decompress(
-            &decompressor, input + input_offset, &consumed,
+            decompressor, input + input_offset, &consumed,
             dictionary, dictionary + output_offset, &produced,
             flags);
         input_offset += consumed;
@@ -522,7 +714,7 @@ bool inflate_entry(
                     dictionary + output_offset, produced) !=
                 produced)
             {
-                free(dictionary);
+                release_buffers();
                 return false;
             }
             hash.add(dictionary + output_offset, produced);
@@ -536,14 +728,14 @@ bool inflate_entry(
             (status == TINFL_STATUS_NEEDS_MORE_INPUT &&
              !input_available && !compressed_remaining))
         {
-            free(dictionary);
+            release_buffers();
             return false;
         }
     }
 
     const bool exact =
         !input_available && !compressed_remaining;
-    free(dictionary);
+    release_buffers();
     return exact;
 }
 #endif
@@ -632,8 +824,8 @@ bool fetch_latest_release(
 #ifdef MACLOCK_LOCAL
     NetworkClient client;
 #else
-    NetworkClientSecure client;
-    client.setCACert(kGithubRootCertificates);
+    GithubNetworkClientSecure client;
+    client.useSystemCertificateBundle();
     client.setHandshakeTimeout(30);
 #endif
     HTTPClient http;
@@ -658,10 +850,27 @@ bool fetch_latest_release(
     }
     if (response != HTTP_CODE_OK)
     {
-        error = response == 404
-                    ? "No published Maclock release was found"
-                    : String("Update server returned HTTP ") +
-                          String(response);
+        if (response == 404)
+        {
+            error = "No published Maclock release was found";
+        }
+        else if (response < 0)
+        {
+            error = String("Update connection failed: ") +
+                    HTTPClient::errorToString(response);
+#ifndef MACLOCK_LOCAL
+            char tls_error[160] = {};
+            client.lastError(tls_error, sizeof(tls_error));
+            if (tls_error[0])
+                error += String(" (") + tls_error + ")";
+#endif
+        }
+        else
+        {
+            error =
+                String("Update server returned HTTP ") +
+                String(response);
+        }
         http.end();
         return false;
     }
@@ -771,8 +980,15 @@ bool perform_check(UpdateService::State &state)
         return false;
     }
 
+    char current_version[
+        sizeof(state.snapshot.current_version)] = {};
+    portENTER_CRITICAL(&state.mux);
+    copy_text(
+        current_version, sizeof(current_version),
+        state.snapshot.current_version);
+    portEXIT_CRITICAL(&state.mux);
     const bool available =
-        compare_versions(MACLOCK_VERSION, version.c_str()) < 0;
+        compare_versions(current_version, version.c_str()) < 0;
     portENTER_CRITICAL(&state.mux);
     state.manifest_url = manifest_url;
     state.firmware_url = firmware_url;
@@ -905,11 +1121,15 @@ bool install_assets(
     state.snapshot.changed_assets = changed_before_download;
     portEXIT_CRITICAL(&state.mux);
 
-    NetworkClientSecure client;
-    client.setCACert(kGithubRootCertificates);
+    String download_url;
+    if (!resolve_download_url(
+            state.assets_url, download_url, error))
+        return false;
+    GithubNetworkClientSecure client;
+    client.useSystemCertificateBundle();
     client.setHandshakeTimeout(30);
     HTTPClient http;
-    if (!begin_http(http, client, state.assets_url))
+    if (!begin_http(http, client, download_url, false))
     {
         error = "Could not open the asset download";
         return false;
@@ -917,8 +1137,17 @@ bool install_assets(
     const int response = http.GET();
     if (response != HTTP_CODE_OK)
     {
-        error = String("Asset download returned HTTP ") +
-                String(response);
+        if (response < 0)
+        {
+            set_http_connection_error(
+                error, "Asset download connection failed",
+                response, client);
+        }
+        else
+        {
+            error = String("Asset download returned HTTP ") +
+                    String(response);
+        }
         http.end();
         return false;
     }
@@ -1258,18 +1487,37 @@ bool install_firmware(
     const size_t expected_size = firmware["size"] | 0U;
     if (!validate_ota_partitions(expected_size, error))
         return false;
-    NetworkClientSecure client;
-    client.setCACert(kGithubRootCertificates);
+    String download_url;
+    if (!resolve_download_url(
+            state.firmware_url, download_url, error))
+        return false;
+    GithubNetworkClientSecure client;
+    client.useSystemCertificateBundle();
     client.setHandshakeTimeout(30);
     HTTPClient http;
-    if (!begin_http(http, client, state.firmware_url))
+    if (!begin_http(http, client, download_url, false))
     {
         error = "Could not open the firmware download";
         return false;
     }
     const int response = http.GET();
-    if (response != HTTP_CODE_OK ||
-        http.getSize() != static_cast<int>(expected_size))
+    if (response != HTTP_CODE_OK)
+    {
+        if (response < 0)
+        {
+            set_http_connection_error(
+                error, "Firmware download connection failed",
+                response, client);
+        }
+        else
+        {
+            error = String("Firmware download returned HTTP ") +
+                    String(response);
+        }
+        http.end();
+        return false;
+    }
+    if (http.getSize() != static_cast<int>(expected_size))
     {
         error = "The firmware download size is invalid";
         http.end();
@@ -1489,6 +1737,9 @@ void update_worker(void *context)
 bool start_worker(
     UpdateService::State &state, WorkerAction action)
 {
+    static constexpr uint32_t kWorkerStackSize =
+        16U * 1024U;
+
     portENTER_CRITICAL(&state.mux);
     if (state.worker || state.snapshot.busy)
     {
@@ -1496,12 +1747,18 @@ bool start_worker(
         return false;
     }
     state.requested_action = action;
+    state.worker = nullptr;
     const BaseType_t created = xTaskCreatePinnedToCore(
-        update_worker, "MaclockUpdate", 32768, &state,
-        1, &state.worker, 0);
-    if (created != pdPASS)
-        state.worker = nullptr;
+        update_worker, "MaclockUpdate", kWorkerStackSize,
+        &state, 1, &state.worker, 0);
     portEXIT_CRITICAL(&state.mux);
+
+    if (created != pdPASS)
+    {
+        set_error(
+            state,
+            "Not enough internal memory to check for updates");
+    }
     return created == pdPASS;
 }
 } // namespace
@@ -1554,7 +1811,9 @@ void UpdateService::begin(Preferences &preferences)
 }
 
 void UpdateService::tick(
-    const WifiModeSnapshot &wifi, bool allow_device_prompt)
+    const WifiModeSnapshot &wifi,
+    bool allow_device_prompt,
+    bool allow_network_check)
 {
     if (!state_)
         return;
@@ -1574,10 +1833,7 @@ void UpdateService::tick(
 #endif
 
     const uint32_t now = millis();
-    if (wifi.enabled && wifi.connected && !wifi.portal_active &&
-        (state_->check_requested ||
-         (!state_->first_check_complete ||
-          now - state_->last_check_ms >= kCheckIntervalMs)))
+    if (allow_network_check && needsNetworkCheck(wifi))
     {
         if (start_worker(*state_, WorkerAction::Check))
         {
@@ -1611,6 +1867,38 @@ void UpdateService::tick(
         state_->snapshot.prompt_pending = true;
     }
     portEXIT_CRITICAL(&state_->mux);
+}
+
+bool UpdateService::needsNetworkCheck(
+    const WifiModeSnapshot &wifi) const
+{
+    if (!state_ || !wifi.enabled || !wifi.connected ||
+        wifi.portal_active)
+    {
+        return false;
+    }
+
+    const uint32_t now = millis();
+    portENTER_CRITICAL(&state_->mux);
+    const bool needed =
+        !state_->worker && !state_->snapshot.busy &&
+        (state_->check_requested ||
+         !state_->first_check_complete ||
+         now - state_->last_check_ms >= kCheckIntervalMs);
+    portEXIT_CRITICAL(&state_->mux);
+    return needed;
+}
+
+bool UpdateService::networkOperationActive() const
+{
+    if (!state_)
+        return false;
+
+    portENTER_CRITICAL(&state_->mux);
+    const bool active =
+        state_->worker || state_->snapshot.busy;
+    portEXIT_CRITICAL(&state_->mux);
+    return active;
 }
 
 UpdateSnapshot UpdateService::snapshot() const

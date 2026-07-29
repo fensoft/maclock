@@ -1,7 +1,7 @@
 #pragma once
 
 #ifndef MACLOCK_VERSION
-#define MACLOCK_VERSION "1.0.0"
+#define MACLOCK_VERSION "0.0.0"
 #endif
 
 #define MACLOCK_BOARD_ID "lolin_s3"

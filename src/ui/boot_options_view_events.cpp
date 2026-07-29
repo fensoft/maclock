@@ -302,6 +302,163 @@ static void update_wifi_options_ui()
     lv_label_set_text(boot_options_view.wifi_status, status);
 }
 
+void BootOptionsView::refreshUpdate()
+{
+    if (!boot_options_view.update_status)
+        return;
+
+    const UpdateSnapshot update = update_service.snapshot();
+    const bool show_progress =
+        update.stage == UpdateStage::DownloadingAssets ||
+        update.stage == UpdateStage::InstallingAssets ||
+        update.stage == UpdateStage::DownloadingFirmware ||
+        update.stage == UpdateStage::UploadingFirmware;
+    uint8_t overall_progress = update.progress;
+    if (update.stage == UpdateStage::DownloadingAssets ||
+        update.stage == UpdateStage::InstallingAssets)
+    {
+        overall_progress =
+            static_cast<uint8_t>(update.progress / 2);
+    }
+    else if (update.stage == UpdateStage::DownloadingFirmware)
+    {
+        overall_progress = static_cast<uint8_t>(
+            50 + update.progress / 2);
+    }
+    char status[256];
+    char current_version[80];
+    char latest_version[80];
+    snprintf(
+        current_version, sizeof(current_version),
+        tr("Current version: %s"),
+        update.current_version);
+    snprintf(
+        latest_version, sizeof(latest_version),
+        tr("Latest version: %s"),
+        update.latest_version[0]
+            ? update.latest_version
+            : "-");
+    switch (update.stage)
+    {
+    case UpdateStage::Checking:
+        snprintf(
+            status, sizeof(status), "%s\n%s",
+            tr("Checking for updates..."),
+            current_version);
+        break;
+    case UpdateStage::UpToDate:
+        snprintf(
+            status, sizeof(status),
+            "%s\n%s",
+            tr("Maclock is up to date."),
+            current_version);
+        break;
+    case UpdateStage::Available:
+        snprintf(
+            status, sizeof(status),
+            "%s\n%s\n%s",
+            current_version, latest_version,
+            tr("Update is ready."));
+        break;
+    case UpdateStage::DownloadingAssets:
+    case UpdateStage::InstallingAssets:
+    case UpdateStage::DownloadingFirmware:
+    case UpdateStage::UploadingFirmware:
+        snprintf(
+            status, sizeof(status),
+            "%s", tr("Installing update..."));
+        break;
+    case UpdateStage::ReadyToReboot:
+        snprintf(
+            status, sizeof(status), "%s\n%s",
+            tr("Update is ready."),
+            latest_version);
+        break;
+    case UpdateStage::Error:
+        snprintf(
+            status, sizeof(status), "%s\n%s\n%s",
+            tr("Update failed."), current_version,
+            update.message);
+        break;
+    case UpdateStage::Unsupported:
+        snprintf(
+            status, sizeof(status), "%s",
+            tr("Update unavailable."));
+        break;
+    case UpdateStage::Idle:
+    default:
+        snprintf(
+            status, sizeof(status), "%s",
+            current_version);
+        break;
+    }
+    lv_label_set_text(
+        boot_options_view.update_status, status);
+    lv_bar_set_value(
+        boot_options_view.update_progress,
+        overall_progress, LV_ANIM_OFF);
+    if (show_progress)
+        lv_obj_clear_flag(
+            boot_options_view.update_progress,
+            LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_add_flag(
+            boot_options_view.update_progress,
+            LV_OBJ_FLAG_HIDDEN);
+
+    const bool busy = update.busy;
+    const bool available =
+        update.update_available &&
+        update.stage != UpdateStage::ReadyToReboot;
+    const bool ready =
+        update.stage == UpdateStage::ReadyToReboot;
+    lv_label_set_text(
+        boot_options_view.update_primary_label,
+        ready
+            ? tr("Reboot")
+            : (available ? tr("Update") : tr("Check Now")));
+    lv_label_set_text(
+        boot_options_view.update_later_label,
+        tr("Later"));
+    lv_label_set_text(
+        boot_options_view.update_ignore_label,
+        tr("Ignore"));
+
+    if (busy)
+        lv_obj_add_state(
+            boot_options_view.update_primary,
+            LV_STATE_DISABLED);
+    else
+        lv_obj_remove_state(
+            boot_options_view.update_primary,
+            LV_STATE_DISABLED);
+
+    if (available)
+    {
+        lv_obj_align(
+            boot_options_view.update_primary,
+            LV_ALIGN_BOTTOM_LEFT, 0, 0);
+        lv_obj_clear_flag(
+            boot_options_view.update_later,
+            LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(
+            boot_options_view.update_ignore,
+            LV_OBJ_FLAG_HIDDEN);
+    }
+    else
+    {
+        lv_obj_align(
+            boot_options_view.update_primary,
+            LV_ALIGN_BOTTOM_MID, 0, 0);
+        lv_obj_add_flag(
+            boot_options_view.update_later,
+            LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(
+            boot_options_view.update_ignore,
+            LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void language_event(lv_event_t *event)
 {
     lv_obj_t *item = (lv_obj_t *)lv_event_get_target(event);
@@ -639,6 +796,38 @@ static void boot_wifi_setup_event(lv_event_t *event)
     request_state(UI_STATE_WIFI_SETUP);
 }
 
+static void boot_update_primary_event(lv_event_t *event)
+{
+    (void)event;
+    const UpdateSnapshot update = update_service.snapshot();
+    if (update.busy)
+        return;
+
+    if (update.stage == UpdateStage::ReadyToReboot)
+        active_app->rebootAfterControlUpdate();
+    else if (update.update_available)
+        active_app->requestControlUpdateInstall();
+    else
+        active_app->requestControlUpdateCheck();
+    boot_options_view.refreshUpdate();
+}
+
+static void boot_update_later_event(lv_event_t *event)
+{
+    (void)event;
+    boot_options_view.standalone_update_prompt = false;
+    update_service.dismiss(false);
+    request_state(UI_STATE_NORMAL);
+}
+
+static void boot_update_ignore_event(lv_event_t *event)
+{
+    (void)event;
+    boot_options_view.standalone_update_prompt = false;
+    update_service.dismiss(true);
+    request_state(UI_STATE_NORMAL);
+}
+
 static void wifi_setup_back_event(lv_event_t *event)
 {
     (void)event;
@@ -880,13 +1069,20 @@ static void boot_datetime_plus_event(lv_event_t *event)
 
 void BootOptionsView::tick(uint32_t now)
 {
-    if (boot_options_view.page != BOOT_OPTIONS_DATETIME)
-        return;
-    if (!boot_options_view.datetime_last_refresh_ms ||
-        now - boot_options_view.datetime_last_refresh_ms >= 250)
+    if (boot_options_view.page == BOOT_OPTIONS_DATETIME &&
+        (!boot_options_view.datetime_last_refresh_ms ||
+         now - boot_options_view.datetime_last_refresh_ms >= 250))
     {
         boot_options_view.datetime_last_refresh_ms = now;
         boot_options_view.refreshDateTime();
+    }
+    else if (
+        boot_options_view.page == BOOT_OPTIONS_UPDATE &&
+        (!boot_options_view.update_last_refresh_ms ||
+         now - boot_options_view.update_last_refresh_ms >= 250))
+    {
+        boot_options_view.update_last_refresh_ms = now;
+        boot_options_view.refreshUpdate();
     }
 }
 
@@ -894,6 +1090,8 @@ void BootOptionsView::setPage(BootOptionsPage page)
 {
     if (page >= BOOT_OPTIONS_PAGE_COUNT)
         return;
+    if (page != BOOT_OPTIONS_UPDATE)
+        boot_options_view.standalone_update_prompt = false;
 
     const char *page_names[BOOT_OPTIONS_PAGE_COUNT] = {
         tr("Configuration"), tr("Language"),
@@ -902,7 +1100,7 @@ void BootOptionsView::setPage(BootOptionsPage page)
         tr("Night Schedule"), tr("Night Screen"), tr("Chime"),
         tr("Chime Sound"), tr("Chime Volume"), tr("Quiet Hours"),
         tr("Preferences"), tr("Start"), tr("Wi-Fi"),
-        tr("Tools"), tr("About")};
+        tr("Tools"), tr("Software Update"), tr("About")};
     const char *section_names[BOOT_OPTIONS_SECTION_COUNT] = {
         tr("General"), tr("Display"), tr("Sound"), tr("System")};
     boot_options_view.page = page;
@@ -911,10 +1109,38 @@ void BootOptionsView::setPage(BootOptionsPage page)
             boot_options_view.pages[i], LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(
         boot_options_view.pages[page], LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_height(
+        boot_options_view.pages[BOOT_OPTIONS_UPDATE], 130);
+    lv_obj_clear_flag(
+        boot_options_view.exit, LV_OBJ_FLAG_HIDDEN);
     if (page == BOOT_OPTIONS_DATETIME)
     {
         boot_options_view.datetime_last_refresh_ms = 0;
         boot_options_view.refreshDateTime();
+    }
+    else if (page == BOOT_OPTIONS_UPDATE)
+    {
+        boot_options_view.update_last_refresh_ms = 0;
+        boot_options_view.refreshUpdate();
+        if (boot_options_view.standalone_update_prompt)
+        {
+            lv_obj_set_height(
+                boot_options_view.pages[BOOT_OPTIONS_UPDATE],
+                168);
+            lv_label_set_text(
+                boot_options_view.title,
+                tr("Software Update"));
+            lv_obj_add_flag(
+                boot_options_view.previous,
+                LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(
+                boot_options_view.exit,
+                LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(
+                boot_options_view.next,
+                LV_OBJ_FLAG_HIDDEN);
+            return;
+        }
     }
 
     if (page == BOOT_OPTIONS_HOME)

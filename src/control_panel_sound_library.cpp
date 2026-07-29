@@ -92,7 +92,15 @@ bool is_downloaded_sound(const char *path)
 bool ensure_downloaded_sound_directory()
 {
     if (LittleFS.exists(kDownloadedSoundDirectory))
-        return true;
+    {
+        fs::File directory =
+            LittleFS.open(kDownloadedSoundDirectory);
+        const bool is_directory =
+            directory && directory.isDirectory();
+        if (directory)
+            directory.close();
+        return is_directory;
+    }
     return LittleFS.mkdir(kDownloadedSoundDirectory);
 }
 
@@ -673,6 +681,12 @@ bool download_import(
     const String &url, const String &suggested_name,
     String &saved_path, String &error)
 {
+    if (!ensure_downloaded_sound_directory())
+    {
+        error = "Could not create the downloaded sounds folder";
+        return false;
+    }
+
     NetworkClient client;
 #ifndef MACLOCK_LOCAL
     NetworkClientSecure secure_client;
