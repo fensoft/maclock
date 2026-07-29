@@ -80,6 +80,8 @@ public:
     void hideAll();
     void updateMenuTitles();
     void updateBootMessage();
+    void applyMacintoshAppearance(bool macos8);
+    void releaseMacOS8Assets();
 
     lv_obj_t *background;
     lv_obj_t *corners;
@@ -117,6 +119,13 @@ public:
     lv_draw_buf_t *alarm_indicator_buf;
     lv_draw_buf_t *plugin_buf;
     lv_draw_buf_t *plugin_missing_buf;
+    lv_draw_buf_t *macos8_background_buf;
+    lv_draw_buf_t *macos8_corners_buf;
+    lv_draw_buf_t *macos8_menu_buf;
+    lv_draw_buf_t *macos8_floppy_buf;
+    lv_draw_buf_t *macos8_clock_buf;
+    lv_draw_buf_t *macos8_alarm_buf;
+    bool macos8_assets_loaded;
 };
 
 class CalibrationView
@@ -299,8 +308,16 @@ static constexpr ClockFace CLOCK_FACE_FLIP =
     ClockFace::Flip;
 static constexpr ClockFace CLOCK_FACE_ODOMETER =
     ClockFace::Odometer;
+static constexpr ClockFace CLOCK_FACE_MACOS8 =
+    ClockFace::MacOS8;
 static constexpr uint8_t CLOCK_FACE_COUNT =
     static_cast<uint8_t>(ClockFace::Count);
+
+static bool is_macintosh_desktop_face(ClockFace face)
+{
+    return face == CLOCK_FACE_MACINTOSH ||
+           face == CLOCK_FACE_MACOS8;
+}
 
 static constexpr ClockTheme CLOCK_THEME_LIGHT =
     ClockTheme::Light;
@@ -647,7 +664,7 @@ static const char *g_brightness_map[4] = {};
 static const char *g_remember_map[3] = {};
 static const char *g_date_format_map[4] = {
     "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", ""};
-static const char *g_clock_face_map[9] = {};
+static const char *g_clock_face_map[10] = {};
 static const char *g_face_accent_map[9] = {};
 static const char *g_face_size_map[4] = {};
 static const char *g_flip_speed_map[4] = {};

@@ -232,6 +232,7 @@ static void run_emulator()
     wifi_service.pause();
     audio_service.suspendTask();
     input_service.suspendTask();
+    ui_shell.releaseMacOS8Assets();
 
     minivmac();
 

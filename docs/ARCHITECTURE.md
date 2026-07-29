@@ -328,10 +328,12 @@ and writes each **-**/**+** adjustment immediately.
 The Regional page persists date order, 12/24-hour, and temperature-unit
 choices. The adjacent Display page persists leading-zero, optional localized
 three-letter weekdays, seconds, and light/dark theme. The shared
-date formatter supplies Macintosh, Compact, Analog, and Flip, switching those
+date formatter supplies Macintosh, Mac OS 8, Compact, Analog, Flip, and
+Odometer, switching those
 date labels from the 32-pixel font to a 24-pixel 1-bpp Chicago font while the
 weekday is visible. `ClockView` applies 12/24-hour formatting to Macintosh,
-Compact Digital, and Flip; seconds apply to all three digital faces, while
+Mac OS 8, Compact Digital, Flip, and Odometer; seconds apply to the digital
+faces, while
 leading zero remains Compact/Flip-specific, with up to six independently
 animated Flip cards.
 Holding Clock and Alarm together for two seconds remains an alternate

@@ -93,7 +93,14 @@ const activeAppTitle = computed(() =>
   activeAppEntry.value ? t(activeAppEntry.value.titleKey) : "",
 );
 const faceOptions = computed(() =>
-  ["macintosh", "compactDigital", "analog", "flipClock", "odometerClock"].map((key) => t(key)),
+  [
+    "macintosh",
+    "compactDigital",
+    "analog",
+    "flipClock",
+    "odometerClock",
+    "macOS8",
+  ].map((key) => t(key)),
 );
 const themeOptions = computed(() => ["light", "dark"].map((key) => t(key)));
 const accentSwatches = [

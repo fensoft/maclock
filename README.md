@@ -178,8 +178,11 @@ returns to the normal clock:
   the weekday is visible. Hiding seconds also removes the Analog second hand.
 - **Face Style** chooses a contrast-safe Default, red, orange, green, blue, or
   purple highlight and Small, Default, or Large clock numerals.
-- **Face Details** controls weather visibility on the Macintosh and Compact
-  faces plus Slow, Normal, or Fast Flip animation speed.
+- **Clock Face** includes the original monochrome Macintosh desktop and a
+  separate full-color **Mac OS 8** desktop built from the dedicated
+  `macos8_*.png` artwork in `data/`.
+- **Face Details** controls weather visibility on the Macintosh, Mac OS 8,
+  and Compact faces plus Slow, Normal, or Fast Flip animation speed.
 - **About** shows the fensoft logo, author, GitHub address, and a scannable
   project QR code.
 - **Sections** returns to the configuration hub from any settings page.

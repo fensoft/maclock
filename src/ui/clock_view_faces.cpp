@@ -401,15 +401,23 @@ void ClockView::show(const ClockRenderSnapshot &snapshot)
 {
     ui_shell.hideAll();
     clock_view.screensaver_active = false;
+    const bool macos8 = g_clock_face == CLOCK_FACE_MACOS8;
+    ui_shell.applyMacintoshAppearance(macos8);
 
-    if (g_clock_face == CLOCK_FACE_MACINTOSH)
+    if (is_macintosh_desktop_face(g_clock_face))
     {
         lv_obj_clear_flag(ui_shell.background, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(ui_shell.white_bar, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(ui_shell.black_line, LV_OBJ_FLAG_HIDDEN);
+        if (!macos8)
+        {
+            lv_obj_clear_flag(
+                ui_shell.white_bar, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(
+                ui_shell.black_line, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(
+                ui_shell.menu_right, LV_OBJ_FLAG_HIDDEN);
+        }
         lv_obj_clear_flag(ui_shell.menu, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(ui_shell.menu_titles, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(ui_shell.menu_right, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(ui_shell.clock, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(ui_shell.clock_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(ui_shell.time, LV_OBJ_FLAG_HIDDEN);
@@ -473,7 +481,7 @@ void ClockView::update(const ClockRenderSnapshot &snapshot)
         clock_view.odometer_date, date_font, 0);
 
     clock_view.updateMacintoshLabels(snapshot);
-    if (g_clock_face == CLOCK_FACE_MACINTOSH)
+    if (is_macintosh_desktop_face(g_clock_face))
     {
         if (snapshot.timer_active)
             lv_label_set_text(

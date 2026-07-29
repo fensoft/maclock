@@ -507,7 +507,7 @@ void MaclockApp::tick()
 
         if (!clock_view.last_update_ms || now - clock_view.last_update_ms >= 100)
         {
-            if (g_clock_face == CLOCK_FACE_MACINTOSH &&
+            if (is_macintosh_desktop_face(g_clock_face) &&
                 inputs.floppy)
                 lv_obj_clear_flag(ui_shell.icon, LV_OBJ_FLAG_HIDDEN);
             else

@@ -138,6 +138,8 @@ void ClockView::updateMacintoshLabels(
 
     const WifiModeSnapshot &online = snapshot.online;
     const WeatherReading &sensor = snapshot.sensor;
+    const bool macos8 =
+        g_clock_face == CLOCK_FACE_MACOS8;
     const bool sensor_valid = sensor.valid;
     const float temperature = sensor.temperature;
     const float gauge_value = sensor.gauge_value;
@@ -148,13 +150,25 @@ void ClockView::updateMacintoshLabels(
         switch (sensor.condition)
         {
         case WeatherCondition::Rainy:
-            lv_image_set_src(ui_shell.gauge_icon, "S:/rainy.png");
+            lv_image_set_src(
+                ui_shell.gauge_icon,
+                g_clock_face == CLOCK_FACE_MACOS8
+                    ? "S:/macos8_rainy.png"
+                    : "S:/rainy.png");
             break;
         case WeatherCondition::Sunny:
-            lv_image_set_src(ui_shell.gauge_icon, "S:/sunny.png");
+            lv_image_set_src(
+                ui_shell.gauge_icon,
+                g_clock_face == CLOCK_FACE_MACOS8
+                    ? "S:/macos8_sunny.png"
+                    : "S:/sunny.png");
             break;
         default:
-            lv_image_set_src(ui_shell.gauge_icon, "S:/cloudy.png");
+            lv_image_set_src(
+                ui_shell.gauge_icon,
+                g_clock_face == CLOCK_FACE_MACOS8
+                    ? "S:/macos8_cloudy.png"
+                    : "S:/cloudy.png");
             break;
         }
     }
@@ -191,22 +205,36 @@ void ClockView::updateMacintoshLabels(
             ui_shell.temp, &lv_font_chicago_8, 0);
         lv_obj_set_style_text_letter_space(ui_shell.temp, 0, 0);
         lv_label_set_long_mode(ui_shell.temp, LV_LABEL_LONG_CLIP);
-        lv_obj_set_width(ui_shell.temp, 236);
+        lv_obj_set_width(ui_shell.temp, macos8 ? 224 : 236);
         lv_obj_set_style_text_align(
             ui_shell.temp, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(
-            ui_shell.temp, LV_ALIGN_BOTTOM_LEFT, 0, -3);
+            ui_shell.temp, LV_ALIGN_BOTTOM_LEFT,
+            macos8 ? 8 : 0, macos8 ? -7 : -3);
         lv_obj_align(
-            ui_shell.gauge_icon, LV_ALIGN_BOTTOM_RIGHT, -12, -3);
+            ui_shell.gauge_icon, LV_ALIGN_BOTTOM_RIGHT,
+            macos8 ? -8 : -12, macos8 ? -7 : -3);
 
         if (online.weather_code <= 1)
-            lv_image_set_src(ui_shell.gauge_icon, "S:/sunny.png");
+            lv_image_set_src(
+                ui_shell.gauge_icon,
+                g_clock_face == CLOCK_FACE_MACOS8
+                    ? "S:/macos8_sunny.png"
+                    : "S:/sunny.png");
         else if (online.weather_code <= 3 ||
                  online.weather_code == 45 ||
                  online.weather_code == 48)
-            lv_image_set_src(ui_shell.gauge_icon, "S:/cloudy.png");
+            lv_image_set_src(
+                ui_shell.gauge_icon,
+                g_clock_face == CLOCK_FACE_MACOS8
+                    ? "S:/macos8_cloudy.png"
+                    : "S:/cloudy.png");
         else
-            lv_image_set_src(ui_shell.gauge_icon, "S:/rainy.png");
+            lv_image_set_src(
+                ui_shell.gauge_icon,
+                g_clock_face == CLOCK_FACE_MACOS8
+                    ? "S:/macos8_rainy.png"
+                    : "S:/rainy.png");
         lv_obj_add_flag(ui_shell.gauge_line, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(ui_shell.gauge_box, LV_OBJ_FLAG_HIDDEN);
         return;
@@ -224,9 +252,22 @@ void ClockView::updateMacintoshLabels(
     lv_obj_set_width(ui_shell.temp, 220);
     lv_obj_set_style_text_align(
         ui_shell.temp, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_align(ui_shell.temp, LV_ALIGN_TOP_LEFT, 12, 118);
-    lv_obj_align(
-        ui_shell.gauge_icon, LV_ALIGN_TOP_RIGHT, -12, 111);
+    if (macos8)
+    {
+        lv_obj_align(
+            ui_shell.temp, LV_ALIGN_BOTTOM_LEFT, 8, -7);
+        lv_obj_align(
+            ui_shell.gauge_icon,
+            LV_ALIGN_BOTTOM_RIGHT, -8, -7);
+    }
+    else
+    {
+        lv_obj_align(
+            ui_shell.temp, LV_ALIGN_TOP_LEFT, 12, 118);
+        lv_obj_align(
+            ui_shell.gauge_icon,
+            LV_ALIGN_TOP_RIGHT, -12, 111);
+    }
 
     if (!sensor_valid)
     {
@@ -236,15 +277,24 @@ void ClockView::updateMacintoshLabels(
         return;
     }
 
-    lv_obj_clear_flag(ui_shell.gauge_line, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(ui_shell.gauge_box, LV_OBJ_FLAG_HIDDEN);
-
     char tbuf[12];
     snprintf(
         tbuf, sizeof(tbuf), "%02.1f°%c",
         display_temperature(temperature),
         display_temperature_unit());
     lv_label_set_text(ui_shell.temp, tbuf);
+
+    if (macos8)
+    {
+        lv_obj_add_flag(
+            ui_shell.gauge_line, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(
+            ui_shell.gauge_box, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    lv_obj_clear_flag(ui_shell.gauge_line, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(ui_shell.gauge_box, LV_OBJ_FLAG_HIDDEN);
 
     if (gauge_width == 0)
     {
@@ -877,6 +927,11 @@ static void update_flip_card(
 void ClockView::applyTheme()
 {
     const bool dark = g_clock_theme == CLOCK_THEME_DARK;
+    if (ui_shell.background)
+    {
+        ui_shell.applyMacintoshAppearance(
+            g_clock_face == CLOCK_FACE_MACOS8);
+    }
     const lv_color_t background =
         dark ? lv_color_black() : lv_color_white();
     const lv_color_t foreground =
@@ -1040,9 +1095,14 @@ void ClockView::applyFaceCustomization()
         g_clock_theme == CLOCK_THEME_DARK;
     const lv_color_t face_foreground =
         dark ? lv_color_white() : lv_color_black();
+    const bool macos8 =
+        g_clock_face == CLOCK_FACE_MACOS8;
     lv_obj_set_style_text_color(
         ui_shell.time,
-        configured_accent_color(false, lv_color_black()), 0);
+        configured_accent_color(
+            macos8 ? false : dark,
+            macos8 ? lv_color_black() : face_foreground),
+        0);
     lv_obj_set_style_text_color(
         clock_view.compact_time,
         configured_accent_color(dark, face_foreground), 0);

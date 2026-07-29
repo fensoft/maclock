@@ -43,6 +43,7 @@ enum class ClockFace : uint8_t
     Analog,
     Flip,
     Odometer,
+    MacOS8,
     Count
 };
 

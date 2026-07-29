@@ -402,6 +402,171 @@ static void set_image_src(lv_obj_t *img, lv_draw_buf_t *buf, const char *path)
         lv_image_set_src(img, path);
 }
 
+void UiShell::releaseMacOS8Assets()
+{
+    if (ui_shell.background)
+    {
+        set_image_src(
+            ui_shell.background, ui_shell.background_buf,
+            "S:/background.png");
+        set_image_src(
+            ui_shell.corners, ui_shell.corners_buf,
+            "S:/corners.png");
+        set_image_src(
+            ui_shell.menu, ui_shell.menu_buf, "S:/menu.png");
+        set_image_src(
+            ui_shell.menu_right, ui_shell.menu_right_buf,
+            "S:/menu_right.png");
+        set_image_src(
+            ui_shell.icon, ui_shell.icon_buf, "S:/icon.png");
+        set_image_src(
+            ui_shell.clock, ui_shell.clock_buf, "S:/empty.png");
+        set_image_src(
+            ui_shell.alarm_indicator,
+            ui_shell.alarm_indicator_buf,
+            "S:/alarm_indicator.png");
+        lv_image_set_src(
+            ui_shell.gauge_icon, "S:/cloudy.png");
+        lv_obj_align(
+            ui_shell.icon, LV_ALIGN_TOP_RIGHT, -10, 30);
+        lv_obj_center(ui_shell.clock);
+    }
+
+    lv_draw_buf_t **buffers[] = {
+        &ui_shell.macos8_background_buf,
+        &ui_shell.macos8_corners_buf,
+        &ui_shell.macos8_menu_buf,
+        &ui_shell.macos8_floppy_buf,
+        &ui_shell.macos8_clock_buf,
+        &ui_shell.macos8_alarm_buf,
+    };
+    for (lv_draw_buf_t **buffer : buffers)
+    {
+        if (*buffer)
+        {
+            lv_draw_buf_destroy(*buffer);
+            *buffer = nullptr;
+        }
+    }
+    ui_shell.macos8_assets_loaded = false;
+}
+
+void UiShell::applyMacintoshAppearance(bool macos8)
+{
+    if (!macos8)
+    {
+        ui_shell.releaseMacOS8Assets();
+        lv_obj_set_style_bg_color(
+            ui_shell.white_bar, lv_color_white(), 0);
+        lv_obj_set_style_bg_color(
+            ui_shell.black_line, lv_color_black(), 0);
+        lv_obj_set_style_bg_color(
+            ui_shell.menu_titles, lv_color_white(), 0);
+        lv_obj_set_style_bg_opa(
+            ui_shell.menu_titles, LV_OPA_COVER, 0);
+        lv_obj_set_style_text_color(
+            ui_shell.menu_titles, lv_color_black(), 0);
+        lv_obj_set_style_bg_color(
+            ui_shell.clock_label, lv_color_white(), 0);
+        lv_obj_set_style_text_color(
+            ui_shell.clock_label, lv_color_black(), 0);
+        for (lv_obj_t *label : {
+                 ui_shell.time, ui_shell.time_meridiem,
+                 ui_shell.date, ui_shell.temp})
+        {
+            lv_obj_set_style_text_color(label, lv_color_black(), 0);
+        }
+        lv_obj_set_style_bg_color(
+            ui_shell.gauge_line, lv_color_black(), 0);
+        lv_obj_set_style_border_color(
+            ui_shell.gauge_box, lv_color_black(), 0);
+        lv_obj_set_style_bg_color(
+            ui_shell.gauge_box, lv_color_white(), 0);
+        return;
+    }
+
+    if (!ui_shell.macos8_assets_loaded)
+    {
+        ui_shell.releaseMacOS8Assets();
+        #define LOAD_MACOS8_ASSET(field, name)                   \
+            ui_shell.field = load_png_once("S:/macos8_" name ".png")
+        LOAD_MACOS8_ASSET(macos8_background_buf, "background");
+        LOAD_MACOS8_ASSET(macos8_corners_buf, "corners");
+        LOAD_MACOS8_ASSET(macos8_menu_buf, "menu");
+        LOAD_MACOS8_ASSET(macos8_floppy_buf, "floppy");
+        LOAD_MACOS8_ASSET(macos8_clock_buf, "empty");
+        LOAD_MACOS8_ASSET(macos8_alarm_buf, "alarm");
+#undef LOAD_MACOS8_ASSET
+
+        ui_shell.macos8_assets_loaded =
+            ui_shell.macos8_background_buf &&
+            ui_shell.macos8_corners_buf &&
+            ui_shell.macos8_menu_buf &&
+            ui_shell.macos8_floppy_buf &&
+            ui_shell.macos8_clock_buf &&
+            ui_shell.macos8_alarm_buf;
+        if (!ui_shell.macos8_assets_loaded)
+        {
+            Serial.println(
+                "[UI] Mac OS 8 assets unavailable; "
+                "using Macintosh appearance");
+            ui_shell.applyMacintoshAppearance(false);
+            return;
+        }
+    }
+
+    set_image_src(
+        ui_shell.background, ui_shell.macos8_background_buf,
+        "S:/macos8_background.png");
+    set_image_src(
+        ui_shell.corners, ui_shell.macos8_corners_buf,
+        "S:/macos8_corners.png");
+    set_image_src(
+        ui_shell.menu, ui_shell.macos8_menu_buf,
+        "S:/macos8_menu.png");
+    set_image_src(
+        ui_shell.icon, ui_shell.macos8_floppy_buf,
+        "S:/macos8_floppy.png");
+    set_image_src(
+        ui_shell.clock, ui_shell.macos8_clock_buf,
+        "S:/macos8_empty.png");
+    set_image_src(
+        ui_shell.alarm_indicator, ui_shell.macos8_alarm_buf,
+        "S:/macos8_alarm.png");
+    lv_image_set_src(
+        ui_shell.gauge_icon, "S:/macos8_cloudy.png");
+    lv_obj_align(
+        ui_shell.icon, LV_ALIGN_TOP_RIGHT, -10, 30);
+    lv_obj_center(ui_shell.clock);
+
+    const lv_color_t chrome = lv_color_hex(0xDDDDDD);
+    const lv_color_t foreground = lv_color_black();
+    const lv_color_t content = lv_color_white();
+    const lv_color_t shadow = lv_color_hex(0x777777);
+    lv_obj_set_style_bg_color(ui_shell.white_bar, chrome, 0);
+    lv_obj_set_style_bg_color(ui_shell.black_line, shadow, 0);
+    lv_obj_set_style_bg_color(ui_shell.menu_titles, chrome, 0);
+    lv_obj_set_style_bg_opa(
+        ui_shell.menu_titles, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_text_color(
+        ui_shell.menu_titles, foreground, 0);
+    lv_obj_set_style_bg_color(ui_shell.clock_label, chrome, 0);
+    lv_obj_set_style_text_color(
+        ui_shell.clock_label, foreground, 0);
+    for (lv_obj_t *label : {
+             ui_shell.time, ui_shell.time_meridiem,
+             ui_shell.date, ui_shell.temp})
+    {
+        lv_obj_set_style_text_color(label, foreground, 0);
+    }
+    lv_obj_set_style_bg_color(
+        ui_shell.gauge_line, foreground, 0);
+    lv_obj_set_style_border_color(
+        ui_shell.gauge_box, foreground, 0);
+    lv_obj_set_style_bg_color(
+        ui_shell.gauge_box, content, 0);
+}
+
 static bool littlefs_exists(const char *path)
 {
     return LittleFS.exists(path);
