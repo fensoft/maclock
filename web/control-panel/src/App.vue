@@ -10,10 +10,12 @@ import {
 
 import {
   deleteSound,
+  exportConfiguration,
   fetchState,
   fetchStatus,
   importSoundUrl,
   postForm,
+  restoreConfiguration,
   searchMyInstants as searchMyInstantsApi,
   uploadSound,
   uploadFirmware,
@@ -39,6 +41,7 @@ const launcherApps = [
   { id: "chime", titleKey: "hourlyChime", icon: "chime" },
   { id: "sounds", titleKey: "soundManager", icon: "sound" },
   { id: "update", titleKey: "softwareUpdate", icon: "update" },
+  { id: "backup", titleKey: "configurationBackup", icon: "backup" },
 ];
 
 const panelState = ref(null);
@@ -56,12 +59,15 @@ const activeWindowRef = ref(null);
 const keepEditingRef = ref(null);
 const soundFileInput = ref(null);
 const firmwareFileInput = ref(null);
+const backupFileInput = ref(null);
 const soundDragActive = ref(false);
 const soundImportUrl = ref("");
 const myInstantsQuery = ref("");
 const myInstantsResults = ref([]);
 const myInstantsSearched = ref(false);
 const deleteSoundTarget = ref(null);
+const restoreConfirmation = ref(false);
+const pendingBackupFile = ref(null);
 let statusPoll = 0;
 let noticeTimeout = 0;
 let myInstantsAudio = null;
@@ -69,6 +75,12 @@ let myInstantsAudio = null;
 const sounds = computed(() => panelState.value?.sounds || []);
 const downloadedSounds = computed(() =>
   sounds.value.filter((sound) => sound.downloaded),
+);
+const downloadedSoundBytes = computed(() =>
+  downloadedSounds.value.reduce(
+    (total, sound) => total + (Number(sound.size) || 0),
+    0,
+  ),
 );
 const currentLanguage = computed(
   () => Number(panelState.value?.appearance?.language) || 0,
@@ -245,6 +257,7 @@ function editableSnapshot(appId) {
         "floppyVolume",
       ]);
     case "update":
+    case "backup":
       return null;
     default:
       return null;
@@ -382,6 +395,8 @@ function handleGlobalKeydown(event) {
   event.preventDefault();
   if (deleteSoundTarget.value) {
     deleteSoundTarget.value = null;
+  } else if (restoreConfirmation.value) {
+    cancelConfigurationRestore();
   } else if (closeConfirmation.value) {
     keepEditing();
   } else if (activeApp.value) {
@@ -393,7 +408,8 @@ function handleGlobalPointerDown(event) {
   if (
     !activeApp.value ||
     closeConfirmation.value ||
-    deleteSoundTarget.value
+    deleteSoundTarget.value ||
+    restoreConfirmation.value
   ) {
     return;
   }
@@ -814,6 +830,98 @@ async function rebootForUpdate() {
     t("rebooting"),
     { refresh: false },
   );
+}
+
+async function downloadConfigurationBackup() {
+  if (busy.value) return;
+  busy.value = "configuration-export";
+  try {
+    const blob = await exportConfiguration();
+    const now = new Date();
+    const twoDigits = (value) => String(value).padStart(2, "0");
+    const timestamp = [
+      now.getFullYear(),
+      twoDigits(now.getMonth() + 1),
+      twoDigits(now.getDate()),
+    ].join("-") +
+      "_" +
+      [
+        twoDigits(now.getHours()),
+        twoDigits(now.getMinutes()),
+        twoDigits(now.getSeconds()),
+      ].join("-");
+    const url = blob
+      ? URL.createObjectURL(blob)
+      : "/api/configuration/export";
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `maclock-backup-${timestamp}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    if (blob) {
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    showNotice(t("backupDownloaded"));
+  } catch {
+    showNotice(t("backupExportError"), "error");
+  } finally {
+    busy.value = "";
+  }
+}
+
+function chooseConfigurationBackup(event) {
+  const file = event.target.files?.[0];
+  if (!file || busy.value) return;
+  if (!/\.zip$/i.test(file.name || "")) {
+    showNotice(t("backupZipOnly"), "error");
+    event.target.value = "";
+    return;
+  }
+  pendingBackupFile.value = file;
+  restoreConfirmation.value = true;
+}
+
+function cancelConfigurationRestore() {
+  restoreConfirmation.value = false;
+  pendingBackupFile.value = null;
+  if (backupFileInput.value) {
+    backupFileInput.value.value = "";
+  }
+}
+
+async function confirmConfigurationRestore() {
+  const file = pendingBackupFile.value;
+  if (!file || busy.value) return;
+  busy.value = "configuration-import";
+  try {
+    const result = await restoreConfiguration(file);
+    restoreConfirmation.value = false;
+    pendingBackupFile.value = null;
+    if (!result.networkChanged) {
+      await loadState({ quiet: true });
+    }
+    const warnings = Array.isArray(result.warnings)
+      ? result.warnings.join(" ")
+      : "";
+    showNotice(
+      [
+        result.networkChanged
+          ? t("backupRestoredReconnect")
+          : t("backupRestored"),
+        warnings,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+  } catch {
+    showNotice(t("backupRestoreError"), "error");
+  } finally {
+    busy.value = "";
+    if (backupFileInput.value) {
+      backupFileInput.value.value = "";
+    }
+  }
 }
 
 onMounted(async () => {
@@ -1681,6 +1789,72 @@ onBeforeUnmount(() => {
           </MacWindow>
 
           <MacWindow
+            v-if="activeApp === 'backup'"
+            id="backup"
+            ref="activeWindowRef"
+            :title="activeAppTitle"
+            closable
+            :close-label="
+              t('closeWindow', { title: activeAppTitle })
+            "
+            @close="closeActiveApp()"
+          >
+            <section class="panel-form backup-panel">
+              <div class="backup-disk-stack" aria-hidden="true">
+                <span></span>
+                <span></span>
+              </div>
+
+              <div>
+                <h2>{{ t("backupTitle") }}</h2>
+                <p class="help-text">{{ t("backupDescription") }}</p>
+                <ul class="backup-contents">
+                  <li>{{ t("backupIncludesSettings") }}</li>
+                  <li>{{ t("backupIncludesSounds") }}</li>
+                  <li>{{ t("backupIncludesFloppies") }}</li>
+                  <li>{{ t("backupIncludesRom") }}</li>
+                  <li>{{ t("backupExcludesPassword") }}</li>
+                </ul>
+              </div>
+
+              <section class="backup-action">
+                <h2>{{ t("exportBackup") }}</h2>
+                <p class="help-text">{{ t("exportBackupHelp") }}</p>
+                <MacButton
+                  default-action
+                  :disabled="!!busy"
+                  @click="downloadConfigurationBackup"
+                >
+                  {{
+                    busy === "configuration-export"
+                      ? t("preparingBackup")
+                      : t("downloadBackup")
+                  }}
+                </MacButton>
+              </section>
+
+              <section class="backup-action">
+                <h2>{{ t("restoreBackup") }}</h2>
+                <p class="help-text">{{ t("restoreBackupHelp") }}</p>
+                <MacButton
+                  secondary
+                  :disabled="!!busy"
+                  @click="backupFileInput?.click()"
+                >
+                  {{ t("chooseBackup") }}
+                </MacButton>
+                <input
+                  ref="backupFileInput"
+                  class="visually-hidden"
+                  type="file"
+                  accept=".zip,application/zip"
+                  @change="chooseConfigurationBackup"
+                />
+              </section>
+            </section>
+          </MacWindow>
+
+          <MacWindow
             v-if="activeApp === 'update'"
             id="update"
             ref="activeWindowRef"
@@ -1950,7 +2124,11 @@ onBeforeUnmount(() => {
                   <div class="sound-browser-heading">
                     <h3>{{ t("installedSounds") }}</h3>
                     <span>{{
-                      t("soundCount", { count: downloadedSounds.length })
+                      t("soundStorage", {
+                        count: downloadedSounds.length,
+                        used: formatSoundSize(downloadedSoundBytes),
+                        free: formatSoundSize(panelState.storage?.free),
+                      })
                     }}</span>
                   </div>
                   <ul v-if="downloadedSounds.length" class="sound-file-list">
@@ -2186,6 +2364,56 @@ onBeforeUnmount(() => {
               @click="keepEditing"
             >
               {{ t("keepEditing") }}
+            </MacButton>
+          </div>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="dialog">
+      <div
+        v-if="restoreConfirmation"
+        class="dialog-shade"
+        @click.self="cancelConfigurationRestore"
+      >
+        <section
+          class="classic-confirm"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="restore-backup-title"
+          aria-describedby="restore-backup-message"
+        >
+          <div class="confirm-icon" aria-hidden="true">!</div>
+          <div>
+            <h2 id="restore-backup-title">{{ t("restoreConfirmTitle") }}</h2>
+            <p id="restore-backup-message">
+              {{
+                t("restoreConfirmMessage", {
+                  name: pendingBackupFile?.name || "",
+                })
+              }}
+            </p>
+            <p>{{ t("restoreConfirmNetwork") }}</p>
+          </div>
+          <div class="confirm-actions">
+            <MacButton
+              secondary
+              :disabled="!!busy"
+              @click="cancelConfigurationRestore"
+            >
+              {{ t("cancel") }}
+            </MacButton>
+            <MacButton
+              danger
+              default-action
+              :disabled="!!busy"
+              @click="confirmConfigurationRestore"
+            >
+              {{
+                busy === "configuration-import"
+                  ? t("restoringBackup")
+                  : t("restoreBackup")
+              }}
             </MacButton>
           </div>
         </section>

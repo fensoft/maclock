@@ -238,6 +238,8 @@ std::filesystem::path deletion_marker(
 
 bool is_deleted(const std::filesystem::path &relative)
 {
+    if (relative.empty() || relative == ".")
+        return false;
     return std::filesystem::exists(
         deletion_marker(relative));
 }
@@ -651,6 +653,50 @@ bool LittleFSFS::begin(bool)
     std::filesystem::create_directories(overlay_root());
     return std::filesystem::exists(source_root()) ||
            std::filesystem::exists(overlay_root());
+}
+
+size_t LittleFSFS::totalBytes() const
+{
+    return 0x9F0000U;
+}
+
+size_t LittleFSFS::usedBytes() const
+{
+    std::set<std::filesystem::path> files;
+    for (const auto &root : {source_root(), overlay_root()})
+    {
+        std::error_code error;
+        if (!std::filesystem::is_directory(root, error))
+            continue;
+        for (const auto &entry :
+             std::filesystem::recursive_directory_iterator(
+                 root, error))
+        {
+            if (error)
+                break;
+            const auto relative =
+                entry.path().lexically_relative(root);
+            if (relative.empty() ||
+                *relative.begin() == ".deleted" ||
+                !entry.is_regular_file(error) ||
+                is_deleted(relative))
+            {
+                continue;
+            }
+            files.insert(relative);
+        }
+    }
+
+    size_t total = 0;
+    for (const auto &relative : files)
+    {
+        std::error_code error;
+        const auto size = std::filesystem::file_size(
+            resolve_read(relative), error);
+        if (!error)
+            total += static_cast<size_t>(size);
+    }
+    return total;
 }
 
 bool LittleFSFS::exists(const char *path) const

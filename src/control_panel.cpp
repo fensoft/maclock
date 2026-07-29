@@ -2,10 +2,12 @@
 
 #include <ArduinoJson.h>
 #include <ESPmDNS.h>
+#include <LittleFS.h>
 #include <WebServer.h>
 
 #include "audio_volume.h"
 #include "brightness.h"
+#include "configuration_archive.h"
 #include "control_panel_page.h"
 #include "control_panel_sound_library.h"
 
@@ -19,6 +21,7 @@ struct ControlPanelService::State
     bool update_upload_started = false;
     bool update_upload_finished = false;
     String update_upload_error;
+    ConfigurationArchive configuration_archive;
     ControlPanelSoundLibrary sound_library;
 };
 
@@ -34,6 +37,8 @@ ControlPanelService *active_control_panel = nullptr;
 #define g_mdns_running (active_control_panel->state().mdns_running)
 #define g_sound_library \
     (active_control_panel->state().sound_library)
+#define g_configuration_archive \
+    (active_control_panel->state().configuration_archive)
 #define g_update_upload_started \
     (active_control_panel->state().update_upload_started)
 #define g_update_upload_finished \
@@ -296,6 +301,16 @@ static void send_state()
 
     JsonArray sounds = document["sounds"].to<JsonArray>();
     g_sound_library.appendSnapshot(sounds, snapshot);
+    const size_t filesystem_total = LittleFS.totalBytes();
+    const size_t filesystem_used = LittleFS.usedBytes();
+    JsonObject storage =
+        document["storage"].to<JsonObject>();
+    storage["total"] = filesystem_total;
+    storage["used"] = filesystem_used;
+    storage["free"] =
+        filesystem_total > filesystem_used
+            ? filesystem_total - filesystem_used
+            : 0;
     append_update_json(
         document["update"].to<JsonObject>(), snapshot.update);
 
@@ -866,6 +881,22 @@ static void configure_routes()
         "/api/update/firmware", HTTP_POST,
         finish_firmware_upload, receive_firmware_upload);
     g_server.on(
+        "/api/configuration/export", HTTP_GET,
+        []()
+        {
+            g_configuration_archive.sendExport(g_server);
+        });
+    g_server.on(
+        "/api/configuration/import", HTTP_POST,
+        []()
+        {
+            g_configuration_archive.finishUpload(g_server);
+        },
+        []()
+        {
+            g_configuration_archive.receiveUpload(g_server);
+        });
+    g_server.on(
         "/api/sound/upload", HTTP_POST,
         []()
         {
@@ -931,6 +962,7 @@ void ControlPanelService::begin(ControlPanelEventSink &events)
         state_ = new State();
     active_control_panel = this;
     g_events = &events;
+    g_configuration_archive.begin(events);
     configure_routes();
 }
 

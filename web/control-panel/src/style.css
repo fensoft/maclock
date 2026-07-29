@@ -902,6 +902,88 @@ input[type="radio"]:checked::after {
   position: relative;
 }
 
+.backup-panel {
+  display: grid;
+  grid-template-columns: 94px minmax(0, 1fr);
+  gap: 16px 20px;
+  align-items: start;
+}
+
+.backup-panel h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.backup-disk-stack {
+  position: relative;
+  width: 72px;
+  height: 78px;
+  margin: 4px auto;
+}
+
+.backup-disk-stack span {
+  position: absolute;
+  width: 58px;
+  height: 66px;
+  border: 2px solid #000;
+  border-radius: 3px;
+  background: #ddd;
+  box-shadow: inset -5px -5px 0 #999;
+}
+
+.backup-disk-stack span:first-child {
+  top: 0;
+  left: 12px;
+}
+
+.backup-disk-stack span:last-child {
+  top: 9px;
+  left: 1px;
+  background: #9cf;
+}
+
+.backup-disk-stack span::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 10px;
+  width: 34px;
+  height: 22px;
+  border: 2px solid #000;
+  background: #fff;
+}
+
+.backup-disk-stack span::after {
+  content: "";
+  position: absolute;
+  bottom: 5px;
+  left: 12px;
+  width: 30px;
+  height: 18px;
+  border: 2px solid #000;
+  background: #fff;
+}
+
+.backup-contents {
+  margin: 9px 0 0;
+  padding-left: 18px;
+}
+
+.backup-contents li {
+  margin: 4px 0;
+}
+
+.backup-action {
+  grid-column: 1 / -1;
+  padding: 12px;
+  border: 2px solid #000;
+  background: #eee;
+}
+
+.backup-action .help-text {
+  margin: 0 0 10px;
+}
+
 .update-computer {
   width: 76px;
   height: 66px;
@@ -1670,6 +1752,14 @@ hr {
   main {
     width: calc(100% - 16px);
     margin-top: 12px;
+  }
+
+  .backup-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .backup-action {
+    grid-column: auto;
   }
 
   .mac-window {

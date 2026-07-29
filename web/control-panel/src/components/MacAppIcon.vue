@@ -67,6 +67,14 @@ function handlePointerUp(event) {
           <path d="M7 1h2v2h2v1h1v2h1v5h2v2H1v-2h2V6h1V4h1V3h2zM6 14h4v1H6z" />
           <path d="M6 4h4v1h1v6H5V5h1z" fill="#fff" />
         </g>
+        <g v-else-if="icon === 'backup'">
+          <path d="M2 1h12v14H2z" fill="#fff" stroke="#000" />
+          <path d="M4 2h7v5H4z" fill="#9cf" stroke="#000" />
+          <path d="M5 3h4v3H5z" fill="#fff" />
+          <path d="M4 9h8v5H4z" fill="#fd9" stroke="#000" />
+          <path d="M6 10h4v3H6z" fill="#fff" stroke="#000" />
+          <path d="M11 2h1v4h-1z" />
+        </g>
         <g v-else-if="icon === 'update'">
           <path d="M7 1h2v2h2v1h1v1h1v2h2l-3 4-3-4h2V6h-1V5H9V4H7V3H5V2h2z" />
           <path d="M3 5h2v1H4v1H3v5h1v1h8v-1h1v-1h2v2h-1v1h-2v1H4v-1H2v-2H1V7h1V6h1z" />

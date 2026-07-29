@@ -106,6 +106,7 @@ target_link_libraries(maclock-imgui PUBLIC SDL3::SDL3-static)
 set(MACLOCK_APPLICATION_SOURCES
     src/alarm_ui.cpp
     src/audio_service.cpp
+    src/configuration_archive.cpp
     src/control_panel.cpp
     src/control_panel_sound_library.cpp
     src/datetime_ui.cpp

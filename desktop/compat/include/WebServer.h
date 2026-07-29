@@ -5,6 +5,10 @@
 #include <functional>
 #include <memory>
 
+#ifndef CONTENT_LENGTH_UNKNOWN
+#define CONTENT_LENGTH_UNKNOWN ((size_t)-1)
+#endif
+
 enum HTTPMethod
 {
     HTTP_ANY,
@@ -52,6 +56,9 @@ public:
     bool hasArg(const char *name) const;
     String arg(const char *name) const;
     HTTPUpload &upload();
+    void setContentLength(size_t length);
+    void sendContent(const String &content);
+    void sendContent(const char *content, size_t length);
     void sendHeader(
         const String &name, const String &value,
         bool first = false);

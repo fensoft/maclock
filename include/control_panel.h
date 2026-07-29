@@ -6,6 +6,7 @@
 #include "alarm_ui.h"
 #include "app_types.h"
 #include "sound_selector.h"
+#include "touch.h"
 #include "update_service.h"
 #include "wifi_mode.h"
 
@@ -72,12 +73,35 @@ struct ControlPanelSnapshot
     UpdateSnapshot update;
 };
 
+struct ControlPanelConfiguration
+{
+    AppSettings settings;
+    uint8_t brightness = 6;
+    char startup_sound[SOUND_SELECTOR_PATH_MAX] =
+        "/startup.mp3";
+    uint8_t startup_volume = 80;
+    char floppy_sound[SOUND_SELECTOR_PATH_MAX] =
+        "/floppy.mp3";
+    uint8_t floppy_volume = 60;
+    char chime_sound[SOUND_SELECTOR_PATH_MAX] =
+        "/quack.mp3";
+    ControlPanelAlarm alarms[kControlPanelAlarmCount];
+    ControlPanelTimer timer;
+    WifiBackupSettings wifi;
+    TouchCalibration touch;
+};
+
 class ControlPanelEventSink
 {
 public:
     virtual ~ControlPanelEventSink() = default;
 
     virtual ControlPanelSnapshot controlPanelSnapshot() = 0;
+    virtual ControlPanelConfiguration
+        controlPanelConfiguration() = 0;
+    virtual bool applyControlConfiguration(
+        const ControlPanelConfiguration &configuration,
+        bool &network_changed) = 0;
     virtual bool applyControlAppearance(
         UiLanguage language,
         ClockFace face, ClockTheme theme, uint8_t brightness,

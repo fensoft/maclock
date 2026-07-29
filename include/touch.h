@@ -11,6 +11,15 @@
 extern int touch_last_x;
 extern int touch_last_y;
 
+struct TouchCalibration
+{
+    bool valid = false;
+    uint16_t min_x = 0;
+    uint16_t max_x = 0;
+    uint16_t min_y = 0;
+    uint16_t max_y = 0;
+};
+
 void touch_init(unsigned short int w, unsigned short int h, unsigned char r);
 bool touch_touched(void);
 bool touch_consume_press_edge(void);
@@ -20,3 +29,5 @@ void touch_set_calibration(uint16_t minx, uint16_t maxx, uint16_t miny, uint16_t
 void touch_eeprom_begin();
 bool touch_load_calibration();
 void touch_save_calibration();
+TouchCalibration touch_calibration();
+bool touch_restore_calibration(const TouchCalibration &calibration);

@@ -111,6 +111,146 @@ ControlPanelSnapshot MaclockApp::controlPanelSnapshot()
     return snapshot;
 }
 
+ControlPanelConfiguration
+MaclockApp::controlPanelConfiguration()
+{
+    const ControlPanelSnapshot snapshot =
+        controlPanelSnapshot();
+    ControlPanelConfiguration configuration;
+    configuration.settings = snapshot.settings;
+    configuration.brightness = snapshot.brightness;
+    strlcpy(
+        configuration.startup_sound,
+        snapshot.startup_sound,
+        sizeof(configuration.startup_sound));
+    configuration.startup_volume =
+        snapshot.startup_volume;
+    strlcpy(
+        configuration.floppy_sound,
+        snapshot.floppy_sound,
+        sizeof(configuration.floppy_sound));
+    configuration.floppy_volume =
+        snapshot.floppy_volume;
+    strlcpy(
+        configuration.chime_sound,
+        snapshot.chime_sound,
+        sizeof(configuration.chime_sound));
+    memcpy(
+        configuration.alarms, snapshot.alarms,
+        sizeof(configuration.alarms));
+    configuration.timer = snapshot.timer;
+    configuration.timer.active = false;
+    configuration.timer.remaining_seconds = 0;
+    configuration.wifi = wifi_service.backupSettings();
+    configuration.touch = touch_calibration();
+    return configuration;
+}
+
+bool MaclockApp::applyControlConfiguration(
+    const ControlPanelConfiguration &configuration,
+    bool &network_changed)
+{
+    network_changed = false;
+    if (configuration.settings.language >=
+            UI_LANGUAGE_COUNT ||
+        configuration.settings.date_format >=
+            UI_DATE_FORMAT_COUNT ||
+        configuration.settings.temperature_unit >=
+            UI_TEMPERATURE_UNIT_COUNT ||
+        static_cast<uint8_t>(
+            configuration.settings.boot_brightness) >
+            static_cast<uint8_t>(
+                BootBrightness::Highest) ||
+        configuration.brightness > kBrightnessMax)
+    {
+        return false;
+    }
+
+    if (!applyControlAppearance(
+            configuration.settings.language,
+            configuration.settings.clock_face,
+            configuration.settings.clock_theme,
+            configuration.brightness,
+            configuration.settings.face_customization,
+            configuration.settings.time_format) ||
+        !applyControlScreensaver(
+            configuration.settings.screensaver_mode,
+            configuration.settings.screensaver_delay_index,
+            false) ||
+        !applyControlNightMode(
+            configuration.settings.night_mode) ||
+        !applyControlChime(
+            configuration.settings.chime,
+            configuration.chime_sound) ||
+        !applyControlSystemSounds(
+            configuration.startup_sound,
+            configuration.startup_volume,
+            configuration.floppy_sound,
+            configuration.floppy_volume) ||
+        !timer_service.configure(
+            configuration.timer.minutes,
+            configuration.timer.sound,
+            configuration.timer.volume))
+    {
+        return false;
+    }
+
+    app_settings.date_format =
+        configuration.settings.date_format;
+    app_settings.temperature_unit =
+        configuration.settings.temperature_unit;
+    app_settings.boot_brightness =
+        configuration.settings.boot_brightness;
+    app_settings.boot_floppy_emulator =
+        configuration.settings.boot_floppy_emulator;
+    settings_store.saveDateFormat(
+        app_settings.date_format);
+    settings_store.saveTemperatureUnit(
+        app_settings.temperature_unit);
+    settings_store.saveBootBrightness(
+        app_settings.boot_brightness);
+    settings_store.saveBootMode(
+        app_settings.boot_floppy_emulator);
+    datetime_editor.setDateFormat(app_settings.date_format);
+    set_checked_button(
+        boot_options_view.brightness_options,
+        static_cast<uint8_t>(
+            app_settings.boot_brightness));
+    update_regional_options_ui();
+
+    alarm_service.dismiss();
+    for (size_t index = 0;
+         index < kControlPanelAlarmCount; ++index)
+    {
+        if (!applyControlAlarm(
+                index, configuration.alarms[index]))
+        {
+            return false;
+        }
+    }
+
+    if (!touch_restore_calibration(configuration.touch) ||
+        !wifi_service.restoreSettings(
+            configuration.wifi, network_changed))
+    {
+        return false;
+    }
+
+    update_wifi_options_ui();
+    if (current_state_ == UiState::AlarmEditor)
+    {
+        alarm_view.enter(rtc_now());
+        alarm_view.showEditor();
+    }
+    if (current_state_ == UiState::TimerEditor)
+    {
+        timer_view.enter(millis());
+        timer_view.show(millis());
+    }
+    lv_timer_handler();
+    return true;
+}
+
 bool MaclockApp::applyControlAppearance(
     UiLanguage language,
     ClockFace face, ClockTheme theme, uint8_t brightness,

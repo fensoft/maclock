@@ -34,12 +34,9 @@ struct TouchCalibData
     uint16_t maxy;
 };
 
-void touch_init(unsigned short int w, unsigned short int h, unsigned char r)
+static void touch_reset_calibration()
 {
-    width = w;
-    height = h;
-    rotation = r;
-    switch (r)
+    switch (rotation)
     {
     case ROTATION_NORMAL:
     case ROTATION_INVERTED:
@@ -58,6 +55,14 @@ void touch_init(unsigned short int w, unsigned short int h, unsigned char r)
     default:
         break;
     }
+}
+
+void touch_init(unsigned short int w, unsigned short int h, unsigned char r)
+{
+    width = w;
+    height = h;
+    rotation = r;
+    touch_reset_calibration();
     ts.begin();
     ts.setRotation(r);
 }
@@ -139,4 +144,48 @@ void touch_save_calibration()
     data.maxy = max_y;
     EEPROM.put(0, data);
     EEPROM.commit();
+}
+
+TouchCalibration touch_calibration()
+{
+    TouchCalibration calibration;
+    TouchCalibData data = {};
+    EEPROM.get(0, data);
+    calibration.valid =
+        data.magic == kCalibMagic &&
+        data.minx < data.maxx &&
+        data.miny < data.maxy;
+    if (calibration.valid)
+    {
+        calibration.min_x = data.minx;
+        calibration.max_x = data.maxx;
+        calibration.min_y = data.miny;
+        calibration.max_y = data.maxy;
+    }
+    return calibration;
+}
+
+bool touch_restore_calibration(
+    const TouchCalibration &calibration)
+{
+    if (calibration.valid &&
+        (calibration.min_x >= calibration.max_x ||
+         calibration.min_y >= calibration.max_y))
+    {
+        return false;
+    }
+
+    if (calibration.valid)
+    {
+        touch_set_calibration(
+            calibration.min_x, calibration.max_x,
+            calibration.min_y, calibration.max_y);
+        touch_save_calibration();
+        return true;
+    }
+
+    touch_reset_calibration();
+    TouchCalibData data = {};
+    EEPROM.put(0, data);
+    return EEPROM.commit();
 }

@@ -168,6 +168,7 @@ const translations = [
     myInstantsPreviewError: "This sound could not be previewed",
     installedSounds: "Installed sounds",
     soundCount: "{count} files",
+    soundStorage: "{count} files · {used} MP3 · {free} free",
     builtIn: "Built in",
     inUse: "In use",
     previewNamedSound: "Preview {name}",
@@ -362,6 +363,7 @@ const translations = [
     myInstantsPreviewError: "Impossible d’écouter ce son",
     installedSounds: "Sons installés",
     soundCount: "{count} fichiers",
+    soundStorage: "{count} fichiers · {used} MP3 · {free} libres",
     builtIn: "Intégré",
     inUse: "Utilisé",
     previewNamedSound: "Écouter {name}",
@@ -557,6 +559,7 @@ const translations = [
     myInstantsPreviewError: "No se pudo escuchar este sonido",
     installedSounds: "Sonidos instalados",
     soundCount: "{count} archivos",
+    soundStorage: "{count} archivos · {used} MP3 · {free} libres",
     builtIn: "Integrado",
     inUse: "En uso",
     previewNamedSound: "Escuchar {name}",
@@ -752,6 +755,7 @@ const translations = [
     myInstantsPreviewError: "Dieser Ton konnte nicht abgespielt werden",
     installedSounds: "Installierte Töne",
     soundCount: "{count} Dateien",
+    soundStorage: "{count} Dateien · {used} MP3 · {free} frei",
     builtIn: "Integriert",
     inUse: "In Verwendung",
     previewNamedSound: "{name} anhören",
@@ -947,6 +951,7 @@ const translations = [
     myInstantsPreviewError: "Impossibile ascoltare questo suono",
     installedSounds: "Suoni installati",
     soundCount: "{count} file",
+    soundStorage: "{count} file · {used} MP3 · {free} liberi",
     builtIn: "Integrato",
     inUse: "In uso",
     previewNamedSound: "Ascolta {name}",
@@ -1168,15 +1173,187 @@ const updateTranslations = [
   },
 ];
 
+const backupTranslations = [
+  {
+    configurationBackup: "Configuration Backup",
+    backupTitle: "Back up this Maclock",
+    backupDescription:
+      "Create one ZIP archive that can rebuild this Maclock configuration.",
+    backupIncludesSettings: "All alarms and persistent settings",
+    backupIncludesSounds: "Every file in the downloaded sounds folder",
+    backupIncludesFloppies: "All disk1.dsk–disk9.dsk floppy images",
+    backupIncludesRom: "The installed vMac.ROM Macintosh ROM",
+    backupExcludesPassword: "The Wi-Fi password is excluded",
+    exportBackup: "Export",
+    exportBackupHelp:
+      "The ZIP is streamed directly to your browser without creating an archive on Maclock.",
+    downloadBackup: "Download Backup",
+    preparingBackup: "Preparing…",
+    restoreBackup: "Restore",
+    restoreBackupHelp:
+      "Choose a Maclock ZIP backup. Its contents are streamed into staging files and checked before installation.",
+    chooseBackup: "Choose ZIP…",
+    backupDownloaded: "Backup downloaded",
+    backupExportError: "The backup could not be exported",
+    backupZipOnly: "Choose a Maclock ZIP backup",
+    restoreConfirmTitle: "Replace this Maclock configuration?",
+    restoreConfirmMessage:
+      "Restoring “{name}” replaces settings, downloaded sounds, floppy disks, and the Macintosh ROM.",
+    restoreConfirmNetwork:
+      "If Wi-Fi settings change, this page may disconnect after the restore response.",
+    restoringBackup: "Restoring…",
+    backupRestored: "Backup restored",
+    backupRestoredReconnect:
+      "Backup restored. Reopen maclock.local on the restored network.",
+    backupRestoreError: "The backup could not be restored",
+  },
+  {
+    configurationBackup: "Sauvegarde de configuration",
+    backupTitle: "Sauvegarder ce Maclock",
+    backupDescription:
+      "Créez une archive ZIP unique capable de reconstruire la configuration de ce Maclock.",
+    backupIncludesSettings: "Toutes les alarmes et préférences persistantes",
+    backupIncludesSounds: "Tous les fichiers du dossier des sons téléchargés",
+    backupIncludesFloppies: "Toutes les disquettes disk1.dsk–disk9.dsk",
+    backupIncludesRom: "La ROM Macintosh vMac.ROM installée",
+    backupExcludesPassword: "Le mot de passe Wi-Fi est exclu",
+    exportBackup: "Exporter",
+    exportBackupHelp:
+      "Le ZIP est envoyé directement au navigateur sans créer d’archive sur Maclock.",
+    downloadBackup: "Télécharger la sauvegarde",
+    preparingBackup: "Préparation…",
+    restoreBackup: "Restaurer",
+    restoreBackupHelp:
+      "Choisissez une sauvegarde ZIP Maclock. Son contenu est extrait en flux puis vérifié avant installation.",
+    chooseBackup: "Choisir un ZIP…",
+    backupDownloaded: "Sauvegarde téléchargée",
+    backupExportError: "Impossible d’exporter la sauvegarde",
+    backupZipOnly: "Choisissez une sauvegarde ZIP Maclock",
+    restoreConfirmTitle: "Remplacer la configuration de ce Maclock ?",
+    restoreConfirmMessage:
+      "La restauration de « {name} » remplace les réglages, les sons téléchargés, les disquettes et la ROM Macintosh.",
+    restoreConfirmNetwork:
+      "Si le Wi-Fi change, cette page peut se déconnecter après la réponse.",
+    restoringBackup: "Restauration…",
+    backupRestored: "Sauvegarde restaurée",
+    backupRestoredReconnect:
+      "Sauvegarde restaurée. Rouvrez maclock.local sur le réseau restauré.",
+    backupRestoreError: "Impossible de restaurer la sauvegarde",
+  },
+  {
+    configurationBackup: "Copia de configuración",
+    backupTitle: "Crear copia de este Maclock",
+    backupDescription:
+      "Crea un único ZIP capaz de reconstruir la configuración de este Maclock.",
+    backupIncludesSettings: "Todas las alarmas y preferencias persistentes",
+    backupIncludesSounds: "Todos los archivos de sonidos descargados",
+    backupIncludesFloppies: "Todos los disquetes disk1.dsk–disk9.dsk",
+    backupIncludesRom: "La ROM Macintosh vMac.ROM instalada",
+    backupExcludesPassword: "Se excluye la contraseña Wi-Fi",
+    exportBackup: "Exportar",
+    exportBackupHelp:
+      "El ZIP se transmite al navegador sin crear un archivo en Maclock.",
+    downloadBackup: "Descargar copia",
+    preparingBackup: "Preparando…",
+    restoreBackup: "Restaurar",
+    restoreBackupHelp:
+      "Elige una copia ZIP de Maclock. Su contenido se extrae por flujo y se comprueba antes de instalarlo.",
+    chooseBackup: "Elegir ZIP…",
+    backupDownloaded: "Copia descargada",
+    backupExportError: "No se pudo exportar la copia",
+    backupZipOnly: "Elige una copia ZIP de Maclock",
+    restoreConfirmTitle: "¿Reemplazar la configuración de este Maclock?",
+    restoreConfirmMessage:
+      "Restaurar «{name}» reemplaza ajustes, sonidos descargados, disquetes y la ROM Macintosh.",
+    restoreConfirmNetwork:
+      "Si cambia el Wi-Fi, esta página puede desconectarse tras la respuesta.",
+    restoringBackup: "Restaurando…",
+    backupRestored: "Copia restaurada",
+    backupRestoredReconnect:
+      "Copia restaurada. Abre maclock.local en la red restaurada.",
+    backupRestoreError: "No se pudo restaurar la copia",
+  },
+  {
+    configurationBackup: "Konfigurationssicherung",
+    backupTitle: "Diesen Maclock sichern",
+    backupDescription:
+      "Eine ZIP-Datei erstellen, die die Konfiguration dieses Maclock wiederherstellen kann.",
+    backupIncludesSettings: "Alle Alarme und dauerhaften Einstellungen",
+    backupIncludesSounds: "Alle Dateien im Ordner für geladene Töne",
+    backupIncludesFloppies: "Alle disk1.dsk–disk9.dsk-Disketten",
+    backupIncludesRom: "Das installierte Macintosh-ROM vMac.ROM",
+    backupExcludesPassword: "Das WLAN-Passwort ist ausgeschlossen",
+    exportBackup: "Exportieren",
+    exportBackupHelp:
+      "Das ZIP wird direkt zum Browser gestreamt, ohne ein Archiv auf Maclock anzulegen.",
+    downloadBackup: "Sicherung laden",
+    preparingBackup: "Vorbereitung…",
+    restoreBackup: "Wiederherstellen",
+    restoreBackupHelp:
+      "Eine Maclock-ZIP-Sicherung wählen. Ihr Inhalt wird gestreamt, bereitgestellt und vor der Installation geprüft.",
+    chooseBackup: "ZIP auswählen…",
+    backupDownloaded: "Sicherung heruntergeladen",
+    backupExportError: "Sicherung konnte nicht exportiert werden",
+    backupZipOnly: "Eine Maclock-ZIP-Sicherung auswählen",
+    restoreConfirmTitle: "Diese Maclock-Konfiguration ersetzen?",
+    restoreConfirmMessage:
+      "„{name}“ ersetzt Einstellungen, geladene Töne, Disketten und das Macintosh-ROM.",
+    restoreConfirmNetwork:
+      "Bei geänderten WLAN-Daten kann diese Seite nach der Antwort getrennt werden.",
+    restoringBackup: "Wiederherstellung…",
+    backupRestored: "Sicherung wiederhergestellt",
+    backupRestoredReconnect:
+      "Sicherung wiederhergestellt. maclock.local im wiederhergestellten Netz erneut öffnen.",
+    backupRestoreError: "Sicherung konnte nicht wiederhergestellt werden",
+  },
+  {
+    configurationBackup: "Backup configurazione",
+    backupTitle: "Esegui il backup di questo Maclock",
+    backupDescription:
+      "Crea un unico ZIP capace di ricostruire la configurazione di questo Maclock.",
+    backupIncludesSettings: "Tutte le sveglie e le impostazioni persistenti",
+    backupIncludesSounds: "Tutti i file nella cartella dei suoni scaricati",
+    backupIncludesFloppies: "Tutti i floppy disk1.dsk–disk9.dsk",
+    backupIncludesRom: "La ROM Macintosh vMac.ROM installata",
+    backupExcludesPassword: "La password Wi-Fi è esclusa",
+    exportBackup: "Esporta",
+    exportBackupHelp:
+      "Lo ZIP viene trasmesso direttamente al browser senza creare un archivio su Maclock.",
+    downloadBackup: "Scarica backup",
+    preparingBackup: "Preparazione…",
+    restoreBackup: "Ripristina",
+    restoreBackupHelp:
+      "Scegli un backup ZIP Maclock. Il contenuto viene estratto in streaming e verificato prima dell’installazione.",
+    chooseBackup: "Scegli ZIP…",
+    backupDownloaded: "Backup scaricato",
+    backupExportError: "Impossibile esportare il backup",
+    backupZipOnly: "Scegli un backup ZIP Maclock",
+    restoreConfirmTitle: "Sostituire la configurazione di questo Maclock?",
+    restoreConfirmMessage:
+      "Il ripristino di «{name}» sostituisce impostazioni, suoni scaricati, floppy e la ROM Macintosh.",
+    restoreConfirmNetwork:
+      "Se il Wi-Fi cambia, questa pagina può disconnettersi dopo la risposta.",
+    restoringBackup: "Ripristino…",
+    backupRestored: "Backup ripristinato",
+    backupRestoredReconnect:
+      "Backup ripristinato. Riapri maclock.local sulla rete ripristinata.",
+    backupRestoreError: "Impossibile ripristinare il backup",
+  },
+];
+
 export function translate(language, key, replacements = {}) {
   const table = translations[language] || translations[0];
   const updateTable =
     updateTranslations[language] || updateTranslations[0];
+  const backupTable =
+    backupTranslations[language] || backupTranslations[0];
   let text =
     table[key] ??
     updateTable[key] ??
+    backupTable[key] ??
     translations[0][key] ??
     updateTranslations[0][key] ??
+    backupTranslations[0][key] ??
     key;
   if (typeof text !== "string") return text;
   Object.entries(replacements).forEach(([name, value]) => {

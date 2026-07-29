@@ -70,6 +70,15 @@ public:
         return substring(from, value_.size());
     }
 
+    bool startsWith(const char *prefix) const
+    {
+        if (!prefix)
+            return false;
+        const size_t prefix_length = std::strlen(prefix);
+        return prefix_length <= value_.size() &&
+               value_.compare(0, prefix_length, prefix) == 0;
+    }
+
     int lastIndexOf(const char *value) const
     {
         const size_t position =

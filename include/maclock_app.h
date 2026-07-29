@@ -39,6 +39,11 @@ public:
     void dismissTimer() override;
 
     ControlPanelSnapshot controlPanelSnapshot() override;
+    ControlPanelConfiguration
+        controlPanelConfiguration() override;
+    bool applyControlConfiguration(
+        const ControlPanelConfiguration &configuration,
+        bool &network_changed) override;
     bool applyControlAppearance(
         UiLanguage language,
         ClockFace face, ClockTheme theme, uint8_t brightness,

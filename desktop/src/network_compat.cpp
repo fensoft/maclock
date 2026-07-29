@@ -597,6 +597,22 @@ HTTPUpload &WebServer::upload()
     return state_->active_upload;
 }
 
+void WebServer::setContentLength(size_t)
+{
+}
+
+void WebServer::sendContent(const String &content)
+{
+    sendContent(content.c_str(), content.length());
+}
+
+void WebServer::sendContent(
+    const char *content, size_t length)
+{
+    if (state_->active && content && length)
+        state_->active->body.append(content, length);
+}
+
 void WebServer::sendHeader(
     const String &name, const String &value, bool)
 {

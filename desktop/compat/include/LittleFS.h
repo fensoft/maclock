@@ -12,6 +12,8 @@ public:
     bool rename(const char *from, const char *to);
     bool mkdir(const char *path);
     bool rmdir(const char *path);
+    size_t totalBytes() const;
+    size_t usedBytes() const;
 };
 
 extern LittleFSFS LittleFS;

@@ -74,6 +74,9 @@ struct WifiService::State
     DetectedNetwork detected_networks[kMaxDetectedNetworks] = {};
     size_t detected_network_count = 0;
     bool network_scan_succeeded = false;
+    WifiBackupSettings pending_restore = {};
+    volatile bool restore_pending = false;
+    uint32_t restore_due_ms = 0;
 };
 
 namespace
@@ -108,6 +111,12 @@ WifiService *active_wifi_service = nullptr;
     (active_wifi_service->state().detected_network_count)
 #define g_network_scan_succeeded \
     (active_wifi_service->state().network_scan_succeeded)
+#define g_pending_restore \
+    (active_wifi_service->state().pending_restore)
+#define g_restore_pending \
+    (active_wifi_service->state().restore_pending)
+#define g_restore_due_ms \
+    (active_wifi_service->state().restore_due_ms)
 
 static void lock_state()
 {
@@ -157,6 +166,44 @@ static WifiSettings settings_snapshot()
     const WifiSettings settings = g_settings;
     unlock_state();
     return settings;
+}
+
+static void apply_backup_settings(
+    const WifiBackupSettings &backup)
+{
+    lock_state();
+    g_settings.enabled = backup.enabled;
+    g_settings.coordinates_valid =
+        backup.coordinates_valid;
+    copy_text(g_settings.ssid, backup.ssid);
+    copy_text(g_settings.city, backup.city);
+    copy_text(g_settings.country, backup.country);
+    g_settings.latitude = backup.latitude;
+    g_settings.longitude = backup.longitude;
+    g_settings.utc_offset_seconds =
+        backup.utc_offset_seconds;
+
+    g_snapshot.enabled = backup.enabled;
+    g_snapshot.configured =
+        backup.ssid[0] != '\0' &&
+        backup.city[0] != '\0';
+    g_snapshot.connected = false;
+    g_snapshot.forecast_valid = false;
+    copy_text(g_snapshot.ssid, backup.ssid);
+    copy_text(g_snapshot.city, backup.city);
+    copy_text(g_snapshot.country, backup.country);
+    copy_text(g_snapshot.location, backup.location);
+    copy_text(g_snapshot.timezone, backup.timezone);
+    copy_text(
+        g_snapshot.status,
+        backup.enabled
+            ? (g_snapshot.configured
+                   ? "Restored settings - reconnecting"
+                   : "Setup is required")
+            : "Wi-Fi is disabled");
+    unlock_state();
+    g_last_forecast_ms = 0;
+    g_last_ntp_ms = 0;
 }
 
 static void disconnect_wifi()
@@ -606,6 +653,18 @@ static void wifi_task(void *parameter)
 
     for (;;)
     {
+        if (g_restore_pending &&
+            static_cast<int32_t>(
+                millis() - g_restore_due_ms) >= 0)
+        {
+            const WifiBackupSettings restored =
+                g_pending_restore;
+            g_restore_pending = false;
+            apply_backup_settings(restored);
+            disconnect_wifi();
+            next_connection_attempt = 0;
+        }
+
         if (g_pause_requested || g_portal_active)
         {
             disconnect_wifi();
@@ -1166,6 +1225,94 @@ WifiModeSnapshot WifiService::snapshot()
         snapshot.rssi = 0;
     }
     return snapshot;
+}
+
+WifiBackupSettings WifiService::backupSettings()
+{
+    active_wifi_service = this;
+    WifiBackupSettings backup;
+    lock_state();
+    backup.enabled = g_settings.enabled;
+    backup.coordinates_valid =
+        g_settings.coordinates_valid;
+    copy_text(backup.ssid, g_settings.ssid);
+    copy_text(backup.city, g_settings.city);
+    copy_text(backup.country, g_settings.country);
+    backup.latitude = g_settings.latitude;
+    backup.longitude = g_settings.longitude;
+    backup.utc_offset_seconds =
+        g_settings.utc_offset_seconds;
+    copy_text(backup.location, g_snapshot.location);
+    copy_text(backup.timezone, g_snapshot.timezone);
+    unlock_state();
+    return backup;
+}
+
+bool WifiService::restoreSettings(
+    const WifiBackupSettings &settings,
+    bool &network_changed)
+{
+    active_wifi_service = this;
+    String country = settings.country;
+    if (strlen(settings.ssid) > 32 ||
+        strlen(settings.city) > 48 ||
+        strlen(settings.location) > 48 ||
+        strlen(settings.timezone) > 40 ||
+        !normalize_country_code(country) ||
+        settings.latitude < -90.0 ||
+        settings.latitude > 90.0 ||
+        settings.longitude < -180.0 ||
+        settings.longitude > 180.0)
+    {
+        return false;
+    }
+
+    const WifiSettings current = settings_snapshot();
+    network_changed =
+        current.enabled != settings.enabled ||
+        strcmp(current.ssid, settings.ssid) != 0;
+
+    if (g_preferences)
+    {
+        g_preferences->putBool(
+            "wifi_on", settings.enabled);
+        g_preferences->putString(
+            "wifi_ssid", settings.ssid);
+        g_preferences->putString(
+            "wifi_city", settings.city);
+        g_preferences->putString(
+            "wifi_country", country);
+        g_preferences->putBool(
+            "wifi_coord", settings.coordinates_valid);
+        g_preferences->putDouble(
+            "wifi_lat", settings.latitude);
+        g_preferences->putDouble(
+            "wifi_lon", settings.longitude);
+        g_preferences->putString(
+            "wifi_loc", settings.location);
+        g_preferences->putString(
+            "wifi_tz", settings.timezone);
+        g_preferences->putInt(
+            "wifi_offset", settings.utc_offset_seconds);
+    }
+
+    WifiBackupSettings normalized = settings;
+    copy_text(normalized.country, country);
+    if (network_changed)
+    {
+        g_pending_restore = normalized;
+        g_restore_due_ms = millis() + 2000;
+        g_restore_pending = true;
+    }
+    else
+    {
+        apply_backup_settings(normalized);
+        lock_state();
+        g_snapshot.connected =
+            WiFi.status() == WL_CONNECTED;
+        unlock_state();
+    }
+    return true;
 }
 
 void WifiService::startPortal()

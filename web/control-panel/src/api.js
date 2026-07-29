@@ -126,6 +126,11 @@ const demoState = {
     { path: "/quack.mp3", name: "Quack", size: 24576, builtIn: true, downloaded: false },
     { path: "/startup.mp3", name: "Startup", size: 48128, builtIn: true, downloaded: false },
   ],
+  storage: {
+    total: 10420224,
+    used: 4521984,
+    free: 5898240,
+  },
 };
 
 let demoTimerEndsAt = 0;
@@ -492,6 +497,45 @@ export async function uploadFirmware(file) {
   const body = new FormData();
   body.append("file", file, file.name);
   const response = await fetch("/api/update/firmware", {
+    method: "POST",
+    body,
+  });
+  return parseResponse(response);
+}
+
+export async function exportConfiguration() {
+  if (import.meta.env.DEV) {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    return new Blob(
+      [
+        JSON.stringify(
+          {
+            format: "maclock-configuration-demo",
+            note: "The firmware produces a streamed ZIP archive.",
+          },
+          null,
+          2,
+        ),
+      ],
+      { type: "application/zip" },
+    );
+  }
+  return null;
+}
+
+export async function restoreConfiguration(file) {
+  if (import.meta.env.DEV) {
+    await new Promise((resolve) => setTimeout(resolve, 650));
+    return {
+      ok: true,
+      message: "Demo backup restored",
+      warnings: [],
+      networkChanged: false,
+    };
+  }
+  const body = new FormData();
+  body.append("file", file, file.name);
+  const response = await fetch("/api/configuration/import", {
     method: "POST",
     body,
   });
