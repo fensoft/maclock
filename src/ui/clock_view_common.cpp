@@ -530,6 +530,11 @@ static void reset_flip_card_animation(
     state.animating = false;
 }
 
+static void reset_odometer_digit_animation(
+    OdometerDigitAnimation &state);
+static void update_odometer_digit(
+    OdometerDigitAnimation &state, const char *value);
+
 void ClockView::applyTimeFormatLayout()
 {
     const bool show_seconds = g_time_format.show_seconds;
@@ -589,6 +594,29 @@ void ClockView::applyTimeFormatLayout()
             card_width - 5);
     }
 
+    static constexpr int16_t odometer_four_positions[4] = {
+        54, 99, 144, 189};
+    for (size_t i = 0; i < kOdometerDigitCount; ++i)
+    {
+        reset_odometer_digit_animation(
+            clock_view.odometer_animations[i]);
+        if (i >= visible_digits)
+        {
+            lv_obj_add_flag(
+                clock_view.odometer_animations[i].window,
+                LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        lv_obj_clear_flag(
+            clock_view.odometer_animations[i].window,
+            LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_x(
+            clock_view.odometer_animations[i].window,
+            show_seconds
+                ? 9 + static_cast<int16_t>(i) * 45
+                : odometer_four_positions[i]);
+    }
+
     const int16_t colon_width = show_seconds ? 10 : 16;
     const int16_t colon_positions[2] = {
         static_cast<int16_t>(show_seconds ? 101 : 144),
@@ -642,6 +670,131 @@ void ClockView::applyTimeFormatLayout()
     set_object_visible(
         clock_view.analog_second_hand,
         g_time_format.show_seconds);
+}
+
+static void odometer_y_animation(
+    void *object, int32_t value)
+{
+    lv_obj_set_y((lv_obj_t *)object, value);
+}
+
+static uint32_t odometer_animation_duration()
+{
+    switch (g_face_customization.flip_speed)
+    {
+    case FlipAnimationSpeed::Slow:
+        return 500;
+    case FlipAnimationSpeed::Fast:
+        return 160;
+    case FlipAnimationSpeed::Normal:
+    case FlipAnimationSpeed::Count:
+        return 280;
+    }
+    return 280;
+}
+
+static void odometer_roll_completed(lv_anim_t *animation)
+{
+    OdometerDigitAnimation *state =
+        (OdometerDigitAnimation *)
+            lv_anim_get_user_data(animation);
+    if (state == nullptr)
+        return;
+    lv_anim_delete(
+        state->current_label, odometer_y_animation);
+    strlcpy(
+        state->displayed, state->pending,
+        sizeof(state->displayed));
+    lv_label_set_text(
+        state->current_label, state->displayed);
+    lv_label_set_text(
+        state->next_label, state->displayed);
+    lv_obj_set_y(state->current_label, 8);
+    lv_obj_set_y(state->next_label, 80);
+    lv_obj_move_foreground(state->next_label);
+    state->animating = false;
+}
+
+static void reset_odometer_digit_animation(
+    OdometerDigitAnimation &state)
+{
+    lv_anim_delete(
+        state.current_label, odometer_y_animation);
+    lv_anim_delete(
+        state.next_label, odometer_y_animation);
+    lv_obj_set_y(state.current_label, 8);
+    lv_obj_set_y(state.next_label, 80);
+    state.initialized = false;
+    state.animating = false;
+}
+
+static void update_odometer_digit(
+    OdometerDigitAnimation &state, const char *value)
+{
+    if (!state.initialized)
+    {
+        strlcpy(
+            state.displayed, value,
+            sizeof(state.displayed));
+        strlcpy(
+            state.pending, value,
+            sizeof(state.pending));
+        lv_label_set_text(state.current_label, value);
+        state.initialized = true;
+        return;
+    }
+    if (state.animating)
+    {
+        if (strcmp(value, state.pending) == 0)
+            return;
+        lv_anim_delete(
+            state.current_label, odometer_y_animation);
+        lv_anim_delete(
+            state.next_label, odometer_y_animation);
+        strlcpy(
+            state.displayed, state.pending,
+            sizeof(state.displayed));
+        lv_label_set_text(
+            state.current_label, state.displayed);
+        lv_obj_set_y(state.current_label, 8);
+        lv_obj_set_y(state.next_label, 80);
+        state.animating = false;
+    }
+    if (strcmp(value, state.displayed) == 0)
+        return;
+
+    strlcpy(
+        state.pending, value, sizeof(state.pending));
+    lv_label_set_text(state.next_label, value);
+    lv_obj_set_y(state.current_label, 8);
+    lv_obj_set_y(state.next_label, 80);
+    lv_obj_move_foreground(state.next_label);
+    state.animating = true;
+
+    lv_anim_t outgoing;
+    lv_anim_init(&outgoing);
+    lv_anim_set_var(&outgoing, state.current_label);
+    lv_anim_set_exec_cb(&outgoing, odometer_y_animation);
+    lv_anim_set_values(&outgoing, 8, -64);
+    lv_anim_set_duration(
+        &outgoing, odometer_animation_duration());
+    lv_anim_set_path_cb(
+        &outgoing, lv_anim_path_ease_in_out);
+    lv_anim_start(&outgoing);
+
+    lv_anim_t incoming;
+    lv_anim_init(&incoming);
+    lv_anim_set_var(&incoming, state.next_label);
+    lv_anim_set_exec_cb(&incoming, odometer_y_animation);
+    lv_anim_set_values(&incoming, 80, 8);
+    lv_anim_set_duration(
+        &incoming, odometer_animation_duration());
+    lv_anim_set_path_cb(
+        &incoming, lv_anim_path_ease_in_out);
+    lv_anim_set_user_data(&incoming, &state);
+    lv_anim_set_completed_cb(
+        &incoming, odometer_roll_completed);
+    lv_anim_start(&incoming);
 }
 
 static void update_flip_card(
@@ -783,6 +936,20 @@ void ClockView::applyTheme()
     lv_obj_set_style_text_color(
         clock_view.flip_date, foreground, 0);
 
+    lv_obj_set_style_bg_color(
+        clock_view.odometer,
+        dark ? lv_color_hex(0x080808)
+             : lv_color_hex(0xd8d4c8), 0);
+    lv_obj_set_style_text_color(
+        clock_view.odometer_title,
+        dark ? lv_color_white() : lv_color_black(), 0);
+    lv_obj_set_style_text_color(
+        clock_view.odometer_meridiem,
+        dark ? lv_color_white() : lv_color_black(), 0);
+    lv_obj_set_style_text_color(
+        clock_view.odometer_date,
+        dark ? lv_color_white() : lv_color_black(), 0);
+
     for (FlipCardAnimation &card :
          clock_view.flip_animations)
     {
@@ -802,6 +969,15 @@ void ClockView::applyTheme()
              {card.top_label, card.bottom_label,
               card.top_flap_label,
               card.bottom_flap_label})
+            lv_obj_set_style_text_color(
+                label, lv_color_white(), 0);
+    }
+
+    for (OdometerDigitAnimation &digit :
+         clock_view.odometer_animations)
+    {
+        for (lv_obj_t *label :
+            {digit.current_label, digit.next_label})
             lv_obj_set_style_text_color(
                 label, lv_color_white(), 0);
     }
@@ -851,6 +1027,14 @@ void ClockView::applyFaceCustomization()
         position_flip_labels(card, time_font);
         reset_flip_card_animation(card);
     }
+    for (OdometerDigitAnimation &digit :
+         clock_view.odometer_animations)
+    {
+        for (lv_obj_t *label :
+             {digit.current_label, digit.next_label})
+            lv_obj_set_style_text_font(label, time_font, 0);
+        reset_odometer_digit_animation(digit);
+    }
 
     const bool dark =
         g_clock_theme == CLOCK_THEME_DARK;
@@ -878,6 +1062,14 @@ void ClockView::applyFaceCustomization()
              {card.top_label, card.bottom_label,
               card.top_flap_label,
               card.bottom_flap_label})
+            lv_obj_set_style_text_color(
+                label, flip_digit_accent, 0);
+    }
+    for (OdometerDigitAnimation &digit :
+         clock_view.odometer_animations)
+    {
+        for (lv_obj_t *label :
+             {digit.current_label, digit.next_label})
             lv_obj_set_style_text_color(
                 label, flip_digit_accent, 0);
     }

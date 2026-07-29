@@ -72,6 +72,7 @@ static const Translation g_translations[] = {
     {"Compact", "Compact", "Compacto", "Kompakt", "Compatto"},
     {"Analog", "Analogique", "Analógico", "Analog", "Analogico"},
     {"Flip", "À volets", "Flip", "Klappzahlen", "A palette"},
+    {"Odometer", "Compteur", "Cuentakilómetros", "Kilometerzähler", "Contachilometri"},
     {"Face Style", "Style", "Estilo", "Stil", "Stile"},
     {"Face Details", "Détails", "Detalles", "Details", "Dettagli"},
     {"Accent", "Accent", "Acento", "Akzent", "Accento"},

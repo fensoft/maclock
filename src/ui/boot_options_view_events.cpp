@@ -194,7 +194,9 @@ static void update_boot_translation_maps()
     g_clock_face_map[2] = "\n";
     g_clock_face_map[3] = tr("Analog");
     g_clock_face_map[4] = tr("Flip");
-    g_clock_face_map[5] = "";
+    g_clock_face_map[5] = "\n";
+    g_clock_face_map[6] = tr("Odometer");
+    g_clock_face_map[7] = "";
     g_face_accent_map[0] = tr("Default");
     g_face_accent_map[1] = tr("Red");
     g_face_accent_map[2] = tr("Orange");

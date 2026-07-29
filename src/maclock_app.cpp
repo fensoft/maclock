@@ -297,6 +297,8 @@ static constexpr ClockFace CLOCK_FACE_ANALOG =
     ClockFace::Analog;
 static constexpr ClockFace CLOCK_FACE_FLIP =
     ClockFace::Flip;
+static constexpr ClockFace CLOCK_FACE_ODOMETER =
+    ClockFace::Odometer;
 static constexpr uint8_t CLOCK_FACE_COUNT =
     static_cast<uint8_t>(ClockFace::Count);
 
@@ -319,6 +321,7 @@ static constexpr size_t kScreensaverMatrixColumnCount = 12;
 static constexpr size_t kScreensaverPipeSegmentCount = 32;
 static constexpr size_t kScreensaverFlyingClockCount = 5;
 static constexpr size_t kFlipDigitCount = 6;
+static constexpr size_t kOdometerDigitCount = 6;
 
 struct FlipCardAnimation
 {
@@ -335,6 +338,17 @@ struct FlipCardAnimation
     lv_obj_t *bottom_flap_label;
     char displayed[3];
     char pending[3];
+    bool initialized;
+    bool animating;
+};
+
+struct OdometerDigitAnimation
+{
+    lv_obj_t *window;
+    lv_obj_t *current_label;
+    lv_obj_t *next_label;
+    char displayed[2];
+    char pending[2];
     bool initialized;
     bool animating;
 };
@@ -407,6 +421,13 @@ public:
     lv_obj_t *flip_meridiem;
     lv_obj_t *flip_date;
     FlipCardAnimation flip_animations[kFlipDigitCount];
+    lv_obj_t *odometer;
+    lv_obj_t *odometer_panel;
+    lv_obj_t *odometer_title;
+    lv_obj_t *odometer_meridiem;
+    lv_obj_t *odometer_date;
+    OdometerDigitAnimation
+        odometer_animations[kOdometerDigitCount];
     lv_obj_t *screensaver;
     lv_obj_t *screensaver_star_layer;
     lv_obj_t *screensaver_stars[kScreensaverStarCount];
@@ -626,7 +647,7 @@ static const char *g_brightness_map[4] = {};
 static const char *g_remember_map[3] = {};
 static const char *g_date_format_map[4] = {
     "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", ""};
-static const char *g_clock_face_map[7] = {};
+static const char *g_clock_face_map[9] = {};
 static const char *g_face_accent_map[9] = {};
 static const char *g_face_size_map[4] = {};
 static const char *g_flip_speed_map[4] = {};

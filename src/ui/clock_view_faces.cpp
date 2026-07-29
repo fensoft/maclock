@@ -289,6 +289,108 @@ void ClockView::init(lv_obj_t *screen)
         clock_view.flip_date,
         LV_ALIGN_BOTTOM_MID, 0, -16);
 
+    clock_view.odometer =
+        create_clock_face_root(screen, lv_color_black());
+    clock_view.odometer_title =
+        create_clock_face_label(
+            clock_view.odometer,
+            &lv_font_chicago_8, lv_color_white());
+    lv_label_set_text(
+        clock_view.odometer_title, tr("Odometer"));
+    lv_obj_align(
+        clock_view.odometer_title,
+        LV_ALIGN_TOP_MID, 0, 14);
+
+    clock_view.odometer_panel =
+        lv_obj_create(clock_view.odometer);
+    lv_obj_remove_flag(
+        clock_view.odometer_panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(clock_view.odometer_panel, 292, 94);
+    lv_obj_align(
+        clock_view.odometer_panel,
+        LV_ALIGN_TOP_MID, 0, 43);
+    lv_obj_set_style_bg_color(
+        clock_view.odometer_panel,
+        lv_color_hex(0x242424), 0);
+    lv_obj_set_style_bg_opa(
+        clock_view.odometer_panel, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(
+        clock_view.odometer_panel,
+        lv_color_hex(0x777777), 0);
+    lv_obj_set_style_border_width(
+        clock_view.odometer_panel, 3, 0);
+    lv_obj_set_style_radius(
+        clock_view.odometer_panel, 8, 0);
+    lv_obj_set_style_pad_all(
+        clock_view.odometer_panel, 0, 0);
+
+    for (size_t i = 0; i < kOdometerDigitCount; ++i)
+    {
+        OdometerDigitAnimation &animation =
+            clock_view.odometer_animations[i];
+        animation.window =
+            lv_obj_create(clock_view.odometer_panel);
+        lv_obj_remove_flag(
+            animation.window, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_size(animation.window, 40, 72);
+        lv_obj_set_pos(
+            animation.window,
+            9 + static_cast<int16_t>(i) * 45, 8);
+        lv_obj_set_style_bg_color(
+            animation.window, lv_color_hex(0x080808), 0);
+        lv_obj_set_style_bg_opa(
+            animation.window, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(
+            animation.window, lv_color_hex(0x555555), 0);
+        lv_obj_set_style_border_width(
+            animation.window, 1, 0);
+        lv_obj_set_style_radius(animation.window, 3, 0);
+        lv_obj_set_style_pad_all(animation.window, 0, 0);
+
+        animation.current_label =
+            create_clock_face_label(
+                animation.window,
+                &lv_font_chicago_48, lv_color_white());
+        animation.next_label =
+            create_clock_face_label(
+                animation.window,
+                &lv_font_chicago_48, lv_color_white());
+        for (lv_obj_t *label :
+             {animation.current_label,
+              animation.next_label})
+        {
+            lv_obj_set_width(label, 40);
+            lv_obj_set_style_text_align(
+                label, LV_TEXT_ALIGN_CENTER, 0);
+            lv_label_set_text(label, "0");
+        }
+        lv_obj_set_pos(animation.current_label, 0, 8);
+        lv_obj_set_pos(animation.next_label, 0, 80);
+    }
+
+    clock_view.odometer_meridiem =
+        create_clock_face_label(
+            clock_view.odometer,
+            &lv_font_chicago_8, lv_color_white());
+    lv_label_set_text(clock_view.odometer_meridiem, "AM");
+    lv_obj_align(
+        clock_view.odometer_meridiem,
+        LV_ALIGN_TOP_RIGHT, -10, 143);
+    lv_obj_add_flag(
+        clock_view.odometer_meridiem,
+        LV_OBJ_FLAG_HIDDEN);
+
+    clock_view.odometer_date =
+        create_clock_face_label(
+            clock_view.odometer,
+            &lv_font_chicago_24, lv_color_white());
+    lv_label_set_text(
+        clock_view.odometer_date, "00/00/0000");
+    lv_obj_set_width(clock_view.odometer_date, 280);
+    lv_obj_align(
+        clock_view.odometer_date,
+        LV_ALIGN_BOTTOM_MID, 0, -18);
+
     clock_view.initScreensavers(screen);
 
     clock_view.applyTimeFormatLayout();
@@ -335,7 +437,7 @@ void ClockView::show(const ClockRenderSnapshot &snapshot)
         face = clock_view.compact;
     else if (g_clock_face == CLOCK_FACE_ANALOG)
         face = clock_view.analog;
-    else
+    else if (g_clock_face == CLOCK_FACE_FLIP)
     {
         face = clock_view.flip;
         for (FlipCardAnimation &animation :
@@ -343,6 +445,13 @@ void ClockView::show(const ClockRenderSnapshot &snapshot)
         {
             reset_flip_card_animation(animation);
         }
+    }
+    else
+    {
+        face = clock_view.odometer;
+        for (OdometerDigitAnimation &animation :
+             clock_view.odometer_animations)
+            reset_odometer_digit_animation(animation);
     }
     lv_obj_clear_flag(face, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(face);
@@ -360,6 +469,8 @@ void ClockView::update(const ClockRenderSnapshot &snapshot)
         clock_view.analog_date, date_font, 0);
     lv_obj_set_style_text_font(
         clock_view.flip_date, date_font, 0);
+    lv_obj_set_style_text_font(
+        clock_view.odometer_date, date_font, 0);
 
     clock_view.updateMacintoshLabels(snapshot);
     if (g_clock_face == CLOCK_FACE_MACINTOSH)
@@ -433,7 +544,7 @@ void ClockView::update(const ClockRenderSnapshot &snapshot)
         lv_label_set_text(
             clock_view.analog_date, footer);
     }
-    else
+    else if (g_clock_face == CLOCK_FACE_FLIP)
     {
         const uint8_t hour =
             configured_display_hour(current.hour());
@@ -481,6 +592,41 @@ void ClockView::update(const ClockRenderSnapshot &snapshot)
         }
         lv_label_set_text(
             clock_view.flip_date, footer);
+    }
+    else
+    {
+        const uint8_t hour =
+            configured_display_hour(current.hour());
+        snprintf(
+            time_text, sizeof(time_text), "%02u%02u%02u",
+            hour, current.minute(), current.second());
+        if (!g_time_format.leading_zero && hour < 10)
+            time_text[0] = ' ';
+        const size_t visible_digits =
+            g_time_format.show_seconds ? 6 : 4;
+        for (size_t i = 0; i < visible_digits; ++i)
+        {
+            const char digit[2] = {time_text[i], '\0'};
+            update_odometer_digit(
+                clock_view.odometer_animations[i], digit);
+        }
+        if (g_time_format.hour_format == HourFormat::Hour12)
+        {
+            lv_label_set_text(
+                clock_view.odometer_meridiem,
+                configured_meridiem(current.hour()));
+            lv_obj_clear_flag(
+                clock_view.odometer_meridiem,
+                LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_add_flag(
+                clock_view.odometer_meridiem,
+                LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_label_set_text(
+            clock_view.odometer_date, footer);
     }
 }
 

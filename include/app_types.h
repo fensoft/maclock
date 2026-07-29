@@ -42,6 +42,7 @@ enum class ClockFace : uint8_t
     Compact,
     Analog,
     Flip,
+    Odometer,
     Count
 };
 
