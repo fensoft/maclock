@@ -14,6 +14,7 @@ void MaclockApp::begin()
     audio_service.begin();
     alarm_service.begin(settings_store.preferences());
     wifi_service.begin(settings_store.preferences());
+    mqtt_service.begin(settings_store.preferences(), *this);
     if (hal_.isLocal())
         wifi_service.startTask();
     const String saved_chime_path = settings_store.loadChimePath(
@@ -120,9 +121,21 @@ void MaclockApp::tick()
     }
     const WifiModeSnapshot wifi = wifi_service.snapshot();
     if (current_state_ == UI_STATE_WIFI_SETUP)
+    {
         control_panel_service.stop();
+        mqtt_service.stop(false);
+    }
     else
+    {
         control_panel_service.tick(wifi);
+        const bool mqtt_display_allowed =
+            current_state_ != UI_STATE_ALARM_RINGING &&
+            current_state_ != UI_STATE_TIMER_FINISHED &&
+            current_state_ != UI_STATE_EMULATOR;
+        mqtt_service.tick(wifi, mqtt_display_allowed, now);
+    }
+    if (mqtt_service.displayActive())
+        full_brightness_until_ms_ = now + 2000;
 
     const bool update_prompt_allowed =
         current_state_ == UiState::Normal &&

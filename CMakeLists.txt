@@ -129,6 +129,7 @@ set(MACLOCK_APPLICATION_SOURCES
     src/minivmac_ArduinoAPI.cpp
     src/minivmac_OSGLUE.c
     src/mouse.cpp
+    src/mqtt_service.cpp
     src/rtc_service.cpp
     src/selector_list_style.cpp
     src/settings_store.cpp

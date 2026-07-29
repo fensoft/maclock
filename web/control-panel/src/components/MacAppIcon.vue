@@ -43,6 +43,12 @@ function handlePointerUp(event) {
           <path d="M6 3h4v1h1v4h-1v2H9v2H7v-2H6V8H5V4h1z" fill="#fff" />
           <path d="M7 5h2v2H7z" />
         </g>
+        <g v-else-if="icon === 'mqtt'">
+          <path d="M7 9h2v5H7zM5 14h6v1H5zM6 7h4v3H6z" />
+          <path d="M4 5h2v1H5v3H4zm6 0h2v4h-1V6h-1z" />
+          <path d="M2 3h2v1H3v6H2zm10 0h2v7h-1V4h-1z" />
+          <path d="M1 1h2v1H2v10H1zm12 0h2v11h-1V2h-1z" />
+        </g>
         <g v-else-if="icon === 'screensaver'">
           <rect x="1" y="2" width="14" height="11" fill="#fff" stroke="#000" />
           <rect x="2" y="3" width="12" height="9" />

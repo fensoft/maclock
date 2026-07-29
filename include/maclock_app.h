@@ -15,6 +15,7 @@
 #include "i2c_bus.h"
 #include "input_service.h"
 #include "maclock_hal.h"
+#include "mqtt_service.h"
 #include "rtc_service.h"
 #include "settings_store.h"
 #include "timer_ui.h"
@@ -24,7 +25,8 @@
 
 class MaclockApp final
     : public AppEventSink,
-      public ControlPanelEventSink
+      public ControlPanelEventSink,
+      public MqttEventSink
 {
 public:
     explicit MaclockApp(MaclockHal &hal);
@@ -81,6 +83,23 @@ public:
     bool finishControlFirmwareUpload() override;
     void abortControlFirmwareUpload() override;
     bool rebootAfterControlUpdate() override;
+    bool applyControlMqtt(
+        const MqttSettings &settings,
+        const char *new_password,
+        bool clear_password) override;
+    bool playMqttSound(
+        const char *path, uint8_t volume) override;
+    void setMqttBacklight(uint8_t level) override;
+    void stopMqttSound() override;
+    bool controlMqttTimer(bool start) override;
+    bool setMqttScreensaver(
+        uint8_t mode, bool launch) override;
+    bool setMqttClockFace(uint8_t face) override;
+    void rebootMqttDevice() override;
+    bool mqttTimerActive() const override;
+
+    void showMqttMessage(const MqttMessage &message) override;
+    void hideMqttMessage() override;
 
     // Internal accessors used only by LVGL and emulator compatibility thunks.
     SettingsStore &settingsStore() { return settings_store_; }
@@ -95,6 +114,7 @@ public:
     {
         return control_panel_service_;
     }
+    MqttService &mqtt() { return mqtt_service_; }
     UpdateService &updates() { return update_service_; }
     AlarmService &alarms() { return alarm_service_; }
     AlarmView &alarmView() { return alarm_view_; }
@@ -117,6 +137,7 @@ private:
     AudioService audio_service_;
     WifiService wifi_service_;
     ControlPanelService control_panel_service_;
+    MqttService mqtt_service_;
     UpdateService update_service_;
     AlarmService alarm_service_;
     AlarmView alarm_view_;

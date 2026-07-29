@@ -271,6 +271,7 @@ The responsive control panel can:
   volume;
 - configure night-mode dimming and screen-off hours;
 - configure hourly/quarter-hour chimes and quiet hours;
+- configure an MQTT broker and Home Assistant discovery;
 - choose persistent startup and floppy sounds and their volumes;
 - upload or import MP3 files into protected `/downloaded/` storage, preview
   built-in and downloaded sounds, and remove downloaded sounds explicitly;
@@ -287,6 +288,56 @@ control panels. Its editable source is in `web/control-panel/`; the generated
 build, `scripts/build_control_panel.py` checks a source fingerprint and
 automatically runs the Vue build when the embedded header is stale. The final
 single-file HTML document is gzip-compressed before it is placed in firmware.
+
+### MQTT And Home Assistant
+
+Open the **MQTT** control panel to set a broker host or IP address, port
+(default `1883`), and optional username and password. MQTT uses an unencrypted
+local connection. Leaving the password field blank preserves the stored
+password; the firmware never returns it through the web API. Use the explicit
+checkbox to clear it.
+
+Each Maclock derives a stable ID from its ESP32 chip ID and publishes retained
+Home Assistant device discovery to:
+
+```text
+homeassistant/device/maclock_<chip-id>/config
+```
+
+Discovery creates a status sensor plus **Beacon** and **Notification** notify
+entities. Their command topics are:
+
+```text
+maclock/<chip-id>/beacon/set
+maclock/<chip-id>/notification/set
+```
+
+Beacon messages disappear and acknowledge automatically after their required
+timeout:
+
+```json
+{"id":"doorbell-42","title":"Front door","message":"Someone is outside","timeout":15}
+```
+
+Notifications remain until **OK** is touched:
+
+```json
+{"id":"washer-42","title":"Laundry","message":"The washing is finished"}
+```
+
+The discovered Home Assistant entities automatically wrap message text in the
+required JSON, generate a unique ID, and use a 15-second Beacon timeout. Publish
+the flat JSON shown above directly when a custom ID, title, or timeout is
+needed. IDs prevent duplicate delivery. Maclock displays one message and
+retains only the newest pending message. A ringing alarm or finished timer
+temporarily hides and pauses the MQTT message, then restores it after
+dismissal.
+
+Availability and status are retained below `maclock/<chip-id>/`. The status
+sensor exposes the display state, current and pending IDs, and the final
+acknowledged, auto-acknowledged, rejected, or superseded outcome. Maclock
+publishes an offline last will and republishes discovery when Home Assistant
+announces that it has restarted.
 
 For web-only development, run:
 

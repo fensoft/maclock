@@ -21,6 +21,23 @@ const demoState = {
     resolved: "Paris, FR",
     timezone: "Europe/Paris",
   },
+  mqtt: {
+    enabled: false,
+    host: "",
+    port: 1883,
+    username: "",
+    passwordSet: false,
+    connected: false,
+    status: "Disabled",
+    deviceId: "maclock_simulator",
+    topicBase: "maclock/simulator",
+    displayState: "idle",
+    currentId: "",
+    pendingId: "",
+    lastId: "",
+    lastResult: "",
+    lastError: "",
+  },
   screensaver: {
     mode: 1,
     delay: 1,
@@ -272,6 +289,25 @@ function applyDemo(path, values) {
         .join(", "),
       timezone: "Updating…",
     });
+  } else if (path === "/api/mqtt") {
+    Object.assign(demoState.mqtt, {
+      enabled: number("enabled") !== 0,
+      host: String(values.host || "").trim(),
+      port: number("port"),
+      username: String(values.username || "").trim(),
+    });
+    if (number("clearPassword") !== 0) {
+      demoState.mqtt.passwordSet = false;
+    } else if (values.password) {
+      demoState.mqtt.passwordSet = true;
+    }
+    demoState.mqtt.connected =
+      demoState.mqtt.enabled && Boolean(demoState.mqtt.host);
+    demoState.mqtt.status = demoState.mqtt.connected
+      ? "Connected (demo)"
+      : demoState.mqtt.enabled
+        ? "Disconnected"
+        : "Disabled";
   } else if (path === "/api/screensaver") {
     Object.assign(demoState.screensaver, {
       mode: number("mode"),
@@ -375,6 +411,7 @@ export async function fetchStatus() {
     },
     upcomingAlarm: clone(demoState.upcomingAlarm),
     update: clone(demoState.update),
+    mqtt: clone(demoState.mqtt),
   };
 }
 

@@ -5,6 +5,7 @@
 
 #include "alarm_ui.h"
 #include "app_types.h"
+#include "mqtt_service.h"
 #include "sound_selector.h"
 #include "touch.h"
 #include "update_service.h"
@@ -71,6 +72,7 @@ struct ControlPanelSnapshot
     ControlPanelTimer timer;
     ControlPanelLocation location;
     UpdateSnapshot update;
+    MqttSnapshot mqtt;
 };
 
 struct ControlPanelConfiguration
@@ -137,6 +139,10 @@ public:
     virtual bool finishControlFirmwareUpload() = 0;
     virtual void abortControlFirmwareUpload() = 0;
     virtual bool rebootAfterControlUpdate() = 0;
+    virtual bool applyControlMqtt(
+        const MqttSettings &settings,
+        const char *new_password,
+        bool clear_password) = 0;
 };
 
 class ControlPanelService

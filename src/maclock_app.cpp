@@ -38,6 +38,7 @@
 #include "input_service.h"
 #include "audio_service.h"
 #include "control_panel.h"
+#include "mqtt_service.h"
 #include "settings_store.h"
 #include "fensoft_logo.h"
 
@@ -62,6 +63,7 @@ static MaclockApp *active_app = nullptr;
 #define audio_service (active_app->audio())
 #define wifi_service (active_app->wifi())
 #define control_panel_service (active_app->controlPanel())
+#define mqtt_service (active_app->mqtt())
 #define update_service (active_app->updates())
 #define alarm_service (active_app->alarms())
 #define alarm_view (active_app->alarmView())
@@ -492,6 +494,19 @@ public:
     unsigned long last_update_ms = 0;
 };
 
+class MqttNotificationView
+{
+public:
+    void init(lv_obj_t *screen);
+    void show(const MqttMessage &message);
+    void hide();
+
+    lv_obj_t *panel = nullptr;
+    lv_obj_t *title = nullptr;
+    lv_obj_t *message = nullptr;
+    lv_obj_t *ok_button = nullptr;
+};
+
 static constexpr BootBrightness BOOT_BRIGHTNESS_LATEST =
     BootBrightness::Latest;
 static constexpr BootBrightness BOOT_BRIGHTNESS_LOWEST =
@@ -562,6 +577,7 @@ static BootOptionsView boot_options_view = {};
 static ClockView clock_view = {};
 static DiagnosticsView diagnostics_view = {};
 static WifiSetupView wifi_setup_view = {};
+static MqttNotificationView mqtt_notification_view = {};
 #define app_events (*active_app)
 static lv_obj_t *g_cursor = nullptr;
 static lv_timer_t *g_cursor_timer = nullptr;
@@ -979,5 +995,6 @@ static void maybe_start_chime(const DateTime &current)
 #include "ui/clock_view_faces.cpp"
 #include "ui/clock_view_screensavers.cpp"
 #include "ui/ui_assets.cpp"
+#include "ui/mqtt_notification_view.cpp"
 #include "ui/maclock_state_machine.cpp"
 #include "ui/control_panel_bindings.cpp"

@@ -165,6 +165,37 @@ static void append_update_json(
     update["message"] = snapshot.message;
 }
 
+static void append_mqtt_json(
+    JsonObject mqtt, const MqttSnapshot &snapshot)
+{
+    mqtt["enabled"] = snapshot.settings.enabled;
+    mqtt["host"] = snapshot.settings.host;
+    mqtt["port"] = snapshot.settings.port;
+    mqtt["username"] = snapshot.settings.username;
+    mqtt["passwordSet"] = snapshot.password_set;
+    mqtt["connected"] = snapshot.connected;
+    mqtt["status"] = snapshot.status;
+    mqtt["deviceId"] = snapshot.device_id;
+    mqtt["topicBase"] = snapshot.topic_base;
+    mqtt["displayState"] = snapshot.display_state;
+    mqtt["currentId"] = snapshot.current_id;
+    mqtt["pendingId"] = snapshot.pending_id;
+    mqtt["lastId"] = snapshot.last_id;
+    mqtt["lastResult"] = snapshot.last_result;
+    mqtt["lastError"] = snapshot.last_error;
+    mqtt["sound"] = snapshot.sound;
+    mqtt["soundVolume"] = snapshot.sound_volume;
+    mqtt["backlight"] = snapshot.backlight;
+    mqtt["doNotDisturb"] = snapshot.do_not_disturb;
+    mqtt["timerActive"] = snapshot.timer_active;
+    mqtt["screensaver"] = snapshot.screensaver;
+    mqtt["clockFace"] = snapshot.clock_face;
+    mqtt["wifiRssi"] = snapshot.wifi_rssi;
+    mqtt["firmwareVersion"] = snapshot.firmware_version;
+    mqtt["temperatureValid"] = snapshot.temperature_valid;
+    mqtt["temperature"] = snapshot.temperature;
+}
+
 static void send_control_page()
 {
     g_server.sendHeader(
@@ -313,6 +344,8 @@ static void send_state()
             : 0;
     append_update_json(
         document["update"].to<JsonObject>(), snapshot.update);
+    append_mqtt_json(
+        document["mqtt"].to<JsonObject>(), snapshot.mqtt);
 
     send_json(document);
 }
@@ -350,6 +383,8 @@ static void send_status()
     upcoming["label"] = snapshot.upcoming_alarm.label;
     append_update_json(
         document["update"].to<JsonObject>(), snapshot.update);
+    append_mqtt_json(
+        document["mqtt"].to<JsonObject>(), snapshot.mqtt);
     send_json(document);
 }
 
@@ -639,6 +674,48 @@ static void apply_location()
         applied ? 200 : 500);
 }
 
+static void apply_mqtt()
+{
+    uint32_t enabled = 0;
+    uint32_t port = 0;
+    uint32_t clear_password = 0;
+    String host = g_server.arg("host");
+    String username = g_server.arg("username");
+    String password = g_server.arg("password");
+    host.trim();
+    username.trim();
+
+    if (!read_uint("enabled", 0, 1, enabled) ||
+        !read_uint("port", 1, 65535, port) ||
+        !read_uint("clearPassword", 0, 1, clear_password) ||
+        host.length() > kMqttHostMaxLength ||
+        username.length() > kMqttUsernameMaxLength ||
+        password.length() > kMqttPasswordMaxLength ||
+        (enabled != 0 && !host.length()))
+    {
+        send_result(false, "Invalid MQTT settings", 400);
+        return;
+    }
+
+    MqttSettings settings;
+    settings.enabled = enabled != 0;
+    settings.port = static_cast<uint16_t>(port);
+    strlcpy(settings.host, host.c_str(), sizeof(settings.host));
+    strlcpy(
+        settings.username, username.c_str(),
+        sizeof(settings.username));
+    const char *new_password =
+        password.length() ? password.c_str() : nullptr;
+    const bool applied = g_events &&
+        g_events->applyControlMqtt(
+            settings, new_password, clear_password != 0);
+    send_result(
+        applied,
+        applied ? "MQTT settings saved"
+                : "MQTT settings were not saved",
+        applied ? 200 : 500);
+}
+
 static void apply_alarm()
 {
     uint32_t index = 0;
@@ -859,6 +936,7 @@ static void configure_routes()
         "/api/update/status", HTTP_GET, send_update_status);
     g_server.on("/api/appearance", HTTP_POST, apply_appearance);
     g_server.on("/api/location", HTTP_POST, apply_location);
+    g_server.on("/api/mqtt", HTTP_POST, apply_mqtt);
     g_server.on(
         "/api/screensaver",
         HTTP_POST,

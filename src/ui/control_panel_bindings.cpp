@@ -108,6 +108,7 @@ ControlPanelSnapshot MaclockApp::controlPanelSnapshot()
         wifi.timezone,
         sizeof(snapshot.location.timezone));
     snapshot.update = update_service.snapshot();
+    snapshot.mqtt = mqtt_service.snapshot();
     return snapshot;
 }
 
@@ -313,7 +314,6 @@ bool MaclockApp::applyControlAppearance(
             make_clock_snapshot(millis());
         clock_view.show(snapshot);
         clock_view.update(snapshot);
-        lv_timer_handler();
     }
     return true;
 }
@@ -581,6 +581,107 @@ void MaclockApp::abortControlFirmwareUpload()
 bool MaclockApp::rebootAfterControlUpdate()
 {
     return update_service.reboot();
+}
+
+bool MaclockApp::applyControlMqtt(
+    const MqttSettings &settings,
+    const char *new_password,
+    bool clear_password)
+{
+    return mqtt_service.configure(
+        settings, new_password, clear_password);
+}
+
+bool MaclockApp::playMqttSound(
+    const char *path, uint8_t volume)
+{
+    audio_service.stop();
+    return audio_service.play(path, volume);
+}
+
+void MaclockApp::setMqttBacklight(uint8_t level)
+{
+    if (level > kBrightnessMax)
+        return;
+    settings_store.saveBrightness(level);
+    input_service.setEncoderPosition(level);
+    g_last_saved_encoder = level;
+    last_encoder_save_ms_ = millis();
+    analogWrite(TFT_BL_VAR, brightness_to_pwm(level));
+}
+
+void MaclockApp::stopMqttSound()
+{
+    audio_service.stop();
+}
+
+bool MaclockApp::controlMqttTimer(bool start)
+{
+    if (start)
+        timer_service.start(timer_service.selectedMinutes());
+    else
+        timer_service.cancel();
+    return true;
+}
+
+bool MaclockApp::setMqttScreensaver(
+    uint8_t mode, bool launch)
+{
+    if (mode >= static_cast<uint8_t>(ScreensaverMode::Count))
+        return false;
+    return applyControlScreensaver(
+        static_cast<ScreensaverMode>(mode),
+        app_settings.screensaver_delay_index,
+        launch);
+}
+
+bool MaclockApp::setMqttClockFace(uint8_t face)
+{
+    if (face >= static_cast<uint8_t>(ClockFace::Count))
+        return false;
+    return applyControlAppearance(
+        app_settings.language,
+        static_cast<ClockFace>(face),
+        app_settings.clock_theme,
+        static_cast<uint8_t>(
+            constrain(
+                input_service.encoderPosition(),
+                0, kBrightnessMax)),
+        app_settings.face_customization,
+        app_settings.time_format);
+}
+
+void MaclockApp::rebootMqttDevice()
+{
+#ifndef MACLOCK_LOCAL
+    delay(100);
+    ESP.restart();
+#endif
+}
+
+bool MaclockApp::mqttTimerActive() const
+{
+    return timer_service.active();
+}
+
+void MaclockApp::showMqttMessage(const MqttMessage &message)
+{
+    if (current_state_ == UI_STATE_NORMAL &&
+        clock_view.screensaver_active)
+    {
+        clock_view.screensaver_active = false;
+        const ClockRenderSnapshot snapshot =
+            make_clock_snapshot(millis());
+        clock_view.show(snapshot);
+        clock_view.update(snapshot);
+    }
+    full_brightness_until_ms_ = millis() + 2000;
+    mqtt_notification_view.show(message);
+}
+
+void MaclockApp::hideMqttMessage()
+{
+    mqtt_notification_view.hide();
 }
 
 #endif

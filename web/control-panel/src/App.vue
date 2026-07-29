@@ -34,6 +34,7 @@ const volumeOptions = volumeLevels.map((volume) => `${volume}%`);
 const launcherApps = [
   { id: "appearance", titleKey: "appearance", icon: "appearance" },
   { id: "location", titleKey: "location", icon: "location" },
+  { id: "mqtt", titleKey: "mqtt", icon: "mqtt" },
   { id: "screensaver", titleKey: "screensaver", icon: "screensaver" },
   { id: "timer", titleKey: "timer", icon: "timer" },
   { id: "alarms", titleKey: "alarmClock", icon: "alarm" },
@@ -376,6 +377,10 @@ async function loadState({ quiet = false } = {}) {
   if (!quiet) loading.value = true;
   try {
     panelState.value = await fetchState();
+    if (panelState.value.mqtt) {
+      panelState.value.mqtt.password = "";
+      panelState.value.mqtt.clearPassword = false;
+    }
     timerRemaining.value = panelState.value.timer.remaining || 0;
     captureActiveAppBaseline();
   } catch (error) {
@@ -435,6 +440,25 @@ function saveLocation() {
     },
     t("locationSaved"),
   );
+}
+
+function saveMqtt() {
+  const mqtt = panelState.value.mqtt;
+  runAction(
+    "mqtt",
+    "/api/mqtt",
+    {
+      enabled: mqtt.enabled ? 1 : 0,
+      host: mqtt.host,
+      port: mqtt.port,
+      username: mqtt.username,
+      password: mqtt.password || "",
+      clearPassword: mqtt.clearPassword ? 1 : 0,
+    },
+    t("mqttSaved"),
+  );
+  mqtt.password = "";
+  mqtt.clearPassword = false;
 }
 
 function screensaverAction(action) {
@@ -783,6 +807,22 @@ async function pollStatus() {
     }
     if (status.update) {
       panelState.value.update = status.update;
+    }
+    if (status.mqtt) {
+      [
+        "connected",
+        "status",
+        "deviceId",
+        "topicBase",
+        "displayState",
+        "currentId",
+        "pendingId",
+        "lastId",
+        "lastResult",
+        "lastError",
+      ].forEach((field) => {
+        panelState.value.mqtt[field] = status.mqtt[field];
+      });
     }
   } catch {
     // Keep the last known timer state during a transient Wi-Fi interruption.
@@ -1745,6 +1785,107 @@ onBeforeUnmount(() => {
                 </label>
               </div>
 
+            </form>
+          </MacWindow>
+
+          <MacWindow
+            v-if="activeApp === 'mqtt'"
+            id="mqtt"
+            ref="activeWindowRef"
+            :title="activeAppTitle"
+            closable
+            :close-label="
+              t('closeWindow', { title: activeAppTitle })
+            "
+            @close="closeActiveApp()"
+          >
+            <form class="panel-form" @submit.prevent="saveMqtt">
+              <label class="check-line">
+                <input
+                  v-model="panelState.mqtt.enabled"
+                  type="checkbox"
+                />
+                <span>{{ t("mqttEnabled") }}</span>
+              </label>
+
+              <label class="field">
+                <span>{{ t("mqttBroker") }}</span>
+                <input
+                  v-model.trim="panelState.mqtt.host"
+                  type="text"
+                  maxlength="64"
+                  placeholder="192.168.1.10"
+                  :required="panelState.mqtt.enabled"
+                />
+              </label>
+
+              <div class="two-column">
+                <label class="field">
+                  <span>{{ t("mqttPort") }}</span>
+                  <input
+                    v-model.number="panelState.mqtt.port"
+                    type="number"
+                    min="1"
+                    max="65535"
+                    required
+                  />
+                </label>
+                <label class="field">
+                  <span>{{ t("mqttUsername") }}</span>
+                  <input
+                    v-model.trim="panelState.mqtt.username"
+                    type="text"
+                    maxlength="64"
+                    autocomplete="username"
+                  />
+                </label>
+              </div>
+
+              <label class="field">
+                <span>{{ t("mqttPassword") }}</span>
+                <input
+                  v-model="panelState.mqtt.password"
+                  type="password"
+                  maxlength="64"
+                  autocomplete="new-password"
+                />
+                <small class="help-text">
+                  {{ t("mqttPasswordHelp") }}
+                </small>
+              </label>
+
+              <label class="check-line">
+                <input
+                  v-model="panelState.mqtt.clearPassword"
+                  type="checkbox"
+                />
+                <span>{{ t("mqttClearPassword") }}</span>
+              </label>
+
+              <dl class="location-summary">
+                <div>
+                  <dt>{{ t("mqttConnection") }}</dt>
+                  <dd>{{ panelState.mqtt.status }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t("mqttTopicBase") }}</dt>
+                  <dd>{{ panelState.mqtt.topicBase }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t("mqttDisplayState") }}</dt>
+                  <dd>{{ panelState.mqtt.displayState }}</dd>
+                </div>
+              </dl>
+
+              <div class="button-row">
+                <MacButton
+                  default-action
+                  type="submit"
+                  :disabled="!!busy"
+                >
+                  {{ t("saveMqtt") }}
+                </MacButton>
+              </div>
             </form>
           </MacWindow>
 

@@ -219,6 +219,7 @@ void UiShell::init()
     boot_options_view.init(scr);
     diagnostics_view.init(scr);
     wifi_setup_view.init(scr);
+    mqtt_notification_view.init(scr);
 
     ui_shell.hideAll();
 }
@@ -227,6 +228,7 @@ static void run_emulator()
 {
     audio_service.stop();
     control_panel_service.stop();
+    mqtt_service.stop(false);
     wifi_service.pause();
     audio_service.suspendTask();
     input_service.suspendTask();

@@ -1341,19 +1341,106 @@ const backupTranslations = [
   },
 ];
 
+const mqttTranslations = [
+  {
+    mqtt: "MQTT",
+    mqttEnabled: "Enable MQTT and Home Assistant discovery",
+    mqttBroker: "Broker host or IP address",
+    mqttPort: "Port",
+    mqttUsername: "Username",
+    mqttPassword: "Password",
+    mqttPasswordHelp:
+      "Leave blank to keep the saved password. The password is never displayed.",
+    mqttClearPassword: "Clear saved password",
+    mqttConnection: "Connection",
+    mqttTopicBase: "Topic base",
+    mqttDisplayState: "Display state",
+    mqttSaved: "MQTT settings saved",
+    saveMqtt: "Save MQTT",
+  },
+  {
+    mqtt: "MQTT",
+    mqttEnabled: "Activer MQTT et la découverte Home Assistant",
+    mqttBroker: "Hôte ou adresse IP du broker",
+    mqttPort: "Port",
+    mqttUsername: "Nom d’utilisateur",
+    mqttPassword: "Mot de passe",
+    mqttPasswordHelp:
+      "Laissez vide pour conserver le mot de passe enregistré. Il n’est jamais affiché.",
+    mqttClearPassword: "Effacer le mot de passe enregistré",
+    mqttConnection: "Connexion",
+    mqttTopicBase: "Base des sujets",
+    mqttDisplayState: "État de l’affichage",
+    mqttSaved: "Paramètres MQTT enregistrés",
+    saveMqtt: "Enregistrer MQTT",
+  },
+  {
+    mqtt: "MQTT",
+    mqttEnabled: "Activar MQTT y descubrimiento de Home Assistant",
+    mqttBroker: "Host o dirección IP del broker",
+    mqttPort: "Puerto",
+    mqttUsername: "Usuario",
+    mqttPassword: "Contraseña",
+    mqttPasswordHelp:
+      "Déjela vacía para conservar la contraseña guardada. Nunca se muestra.",
+    mqttClearPassword: "Borrar la contraseña guardada",
+    mqttConnection: "Conexión",
+    mqttTopicBase: "Base de temas",
+    mqttDisplayState: "Estado de pantalla",
+    mqttSaved: "Configuración MQTT guardada",
+    saveMqtt: "Guardar MQTT",
+  },
+  {
+    mqtt: "MQTT",
+    mqttEnabled: "MQTT und Home-Assistant-Erkennung aktivieren",
+    mqttBroker: "Broker-Host oder IP-Adresse",
+    mqttPort: "Port",
+    mqttUsername: "Benutzername",
+    mqttPassword: "Passwort",
+    mqttPasswordHelp:
+      "Leer lassen, um das gespeicherte Passwort beizubehalten. Es wird nie angezeigt.",
+    mqttClearPassword: "Gespeichertes Passwort löschen",
+    mqttConnection: "Verbindung",
+    mqttTopicBase: "Topic-Basis",
+    mqttDisplayState: "Anzeigestatus",
+    mqttSaved: "MQTT-Einstellungen gespeichert",
+    saveMqtt: "MQTT speichern",
+  },
+  {
+    mqtt: "MQTT",
+    mqttEnabled: "Attiva MQTT e rilevamento Home Assistant",
+    mqttBroker: "Host o indirizzo IP del broker",
+    mqttPort: "Porta",
+    mqttUsername: "Nome utente",
+    mqttPassword: "Password",
+    mqttPasswordHelp:
+      "Lascia vuoto per mantenere la password salvata. Non viene mai mostrata.",
+    mqttClearPassword: "Cancella la password salvata",
+    mqttConnection: "Connessione",
+    mqttTopicBase: "Base degli argomenti",
+    mqttDisplayState: "Stato del display",
+    mqttSaved: "Impostazioni MQTT salvate",
+    saveMqtt: "Salva MQTT",
+  },
+];
+
 export function translate(language, key, replacements = {}) {
   const table = translations[language] || translations[0];
   const updateTable =
     updateTranslations[language] || updateTranslations[0];
   const backupTable =
     backupTranslations[language] || backupTranslations[0];
+  const mqttTable =
+    mqttTranslations[language] || mqttTranslations[0];
   let text =
     table[key] ??
     updateTable[key] ??
     backupTable[key] ??
+    mqttTable[key] ??
     translations[0][key] ??
     updateTranslations[0][key] ??
     backupTranslations[0][key] ??
+    mqttTranslations[0][key] ??
     key;
   if (typeof text !== "string") return text;
   Object.entries(replacements).forEach(([name, value]) => {
