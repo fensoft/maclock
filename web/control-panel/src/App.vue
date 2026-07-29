@@ -52,11 +52,8 @@ const timerRemaining = ref(0);
 const selectedApp = ref(null);
 const activeApp = ref(null);
 const activeAppBaseline = ref(null);
-const closeConfirmation = ref(false);
-const pendingTransition = ref(null);
 const launcherRef = ref(null);
 const activeWindowRef = ref(null);
-const keepEditingRef = ref(null);
 const soundFileInput = ref(null);
 const firmwareFileInput = ref(null);
 const backupFileInput = ref(null);
@@ -70,6 +67,7 @@ const restoreConfirmation = ref(false);
 const pendingBackupFile = ref(null);
 let statusPoll = 0;
 let noticeTimeout = 0;
+let autoSaveTimeout = 0;
 let myInstantsAudio = null;
 
 const sounds = computed(() => panelState.value?.sounds || []);
@@ -264,34 +262,10 @@ function editableSnapshot(appId) {
   }
 }
 
-const activeAppDirty = computed(() => {
-  if (!activeApp.value || !activeAppBaseline.value) return false;
-  return (
-    JSON.stringify(editableSnapshot(activeApp.value)) !==
-    JSON.stringify(activeAppBaseline.value)
-  );
-});
-
 function captureActiveAppBaseline() {
   activeAppBaseline.value = activeApp.value
     ? cloneValue(editableSnapshot(activeApp.value))
     : null;
-}
-
-function restoreActiveAppBaseline() {
-  if (!activeApp.value || !activeAppBaseline.value) return;
-  const restored = cloneValue(activeAppBaseline.value);
-  switch (activeApp.value) {
-    case "alarms":
-      panelState.value.alarms = restored;
-      break;
-    case "sounds":
-      Object.assign(panelState.value.systemSounds, restored);
-      break;
-    default:
-      Object.assign(panelState.value[activeApp.value], restored);
-      break;
-  }
 }
 
 async function focusActiveWindow() {
@@ -317,8 +291,6 @@ function commitAppTransition({
 }) {
   activeApp.value = target;
   selectedApp.value = selection;
-  pendingTransition.value = null;
-  closeConfirmation.value = false;
   captureActiveAppBaseline();
   if (target) {
     focusActiveWindow();
@@ -327,7 +299,7 @@ function commitAppTransition({
   }
 }
 
-async function requestAppTransition(transition) {
+function requestAppTransition(transition) {
   if (busy.value) return;
   if (transition.target === activeApp.value) {
     selectedApp.value = transition.selection;
@@ -336,13 +308,6 @@ async function requestAppTransition(transition) {
     } else if (transition.focusHome) {
       focusLauncher();
     }
-    return;
-  }
-  if (activeApp.value && activeAppDirty.value) {
-    pendingTransition.value = transition;
-    closeConfirmation.value = true;
-    await nextTick();
-    keepEditingRef.value?.focus();
     return;
   }
   commitAppTransition(transition);
@@ -373,23 +338,6 @@ function closeActiveApp(clearSelection = false) {
   });
 }
 
-function keepEditing() {
-  closeConfirmation.value = false;
-  pendingTransition.value = null;
-  selectedApp.value = activeApp.value;
-  focusActiveWindow();
-}
-
-function discardChanges() {
-  restoreActiveAppBaseline();
-  const transition = pendingTransition.value || {
-    target: null,
-    selection: activeApp.value,
-    focusHome: true,
-  };
-  commitAppTransition(transition);
-}
-
 function handleGlobalKeydown(event) {
   if (event.key !== "Escape") return;
   event.preventDefault();
@@ -397,8 +345,6 @@ function handleGlobalKeydown(event) {
     deleteSoundTarget.value = null;
   } else if (restoreConfirmation.value) {
     cancelConfigurationRestore();
-  } else if (closeConfirmation.value) {
-    keepEditing();
   } else if (activeApp.value) {
     closeActiveApp();
   }
@@ -407,7 +353,6 @@ function handleGlobalKeydown(event) {
 function handleGlobalPointerDown(event) {
   if (
     !activeApp.value ||
-    closeConfirmation.value ||
     deleteSoundTarget.value ||
     restoreConfirmation.value
   ) {
@@ -518,7 +463,7 @@ function toggleAlarmWeekday(alarm, index) {
 
 function saveAlarm(index) {
   const alarm = panelState.value.alarms[index];
-  runAction(
+  return runAction(
     `alarm-${index}`,
     "/api/alarm",
     {
@@ -595,6 +540,80 @@ function saveSystemSounds() {
     t("soundsSaved"),
   );
 }
+
+async function autoSaveApp(appId, baseline) {
+  if (!appId || !panelState.value) return;
+  if (busy.value) {
+    scheduleAutoSave(appId, baseline);
+    return;
+  }
+  const snapshot = editableSnapshot(appId);
+  if (
+    !snapshot ||
+    JSON.stringify(snapshot) === JSON.stringify(baseline)
+  ) {
+    return;
+  }
+  switch (appId) {
+    case "appearance":
+      saveAppearance();
+      break;
+    case "location":
+      saveLocation();
+      break;
+    case "screensaver":
+      screensaverAction("save");
+      break;
+    case "timer":
+      timerAction("save");
+      break;
+    case "alarms":
+      for (const [index, alarm] of panelState.value.alarms.entries()) {
+        if (
+          JSON.stringify(alarm) !==
+          JSON.stringify(baseline?.[index])
+        ) {
+          await saveAlarm(index);
+        }
+      }
+      break;
+    case "night":
+      saveNightMode();
+      break;
+    case "chime":
+      saveChime();
+      break;
+    case "sounds":
+      saveSystemSounds();
+      break;
+  }
+}
+
+function scheduleAutoSave(
+  appId = activeApp.value,
+  baseline = cloneValue(activeAppBaseline.value),
+) {
+  window.clearTimeout(autoSaveTimeout);
+  autoSaveTimeout = window.setTimeout(
+    () => autoSaveApp(appId, baseline),
+    500,
+  );
+}
+
+watch(
+  () => (activeApp.value ? editableSnapshot(activeApp.value) : null),
+  (snapshot) => {
+    if (
+      !snapshot ||
+      !activeAppBaseline.value ||
+      JSON.stringify(snapshot) === JSON.stringify(activeAppBaseline.value)
+    ) {
+      return;
+    }
+    scheduleAutoSave();
+  },
+  { deep: true },
+);
 
 function previewSound(sound, volume, levelScale = false) {
   const previewVolume = levelScale
@@ -947,6 +966,7 @@ onBeforeUnmount(() => {
   stopMyInstantsPreview();
   window.clearInterval(statusPoll);
   window.clearTimeout(noticeTimeout);
+  window.clearTimeout(autoSaveTimeout);
   window.removeEventListener("keydown", handleGlobalKeydown);
   window.removeEventListener("pointerdown", handleGlobalPointerDown, true);
 });
@@ -1045,7 +1065,7 @@ onBeforeUnmount(() => {
             "
             @close="closeActiveApp()"
           >
-            <form class="panel-form" @submit.prevent="saveAppearance">
+            <form class="panel-form" @submit.prevent>
               <label class="field">
                 <span>{{ t("language") }}</span>
                 <select v-model.number="panelState.appearance.language">
@@ -1202,15 +1222,6 @@ onBeforeUnmount(() => {
                 />
               </label>
 
-              <div class="button-row">
-                <MacButton
-                  default-action
-                  type="submit"
-                  :disabled="!!busy"
-                >
-                  {{ t("apply") }}
-                </MacButton>
-              </div>
             </form>
           </MacWindow>
 
@@ -1225,7 +1236,7 @@ onBeforeUnmount(() => {
             "
             @close="closeActiveApp()"
           >
-            <form class="panel-form" @submit.prevent="saveLocation">
+            <form class="panel-form" @submit.prevent>
               <div class="two-column location-fields">
                 <label class="field">
                   <span>{{ t("city") }}</span>
@@ -1271,15 +1282,6 @@ onBeforeUnmount(() => {
                 </div>
               </dl>
 
-              <div class="button-row">
-                <MacButton
-                  default-action
-                  type="submit"
-                  :disabled="!!busy"
-                >
-                  {{ t("apply") }}
-                </MacButton>
-              </div>
             </form>
           </MacWindow>
 
@@ -1296,7 +1298,7 @@ onBeforeUnmount(() => {
           >
             <form
               class="panel-form"
-              @submit.prevent="screensaverAction('save')"
+              @submit.prevent
             >
               <div
                 class="saver-status"
@@ -1342,14 +1344,7 @@ onBeforeUnmount(() => {
 
               <p class="help-text">{{ t("screensaverHelp") }}</p>
 
-              <div class="button-row button-row--split">
-                <MacButton
-                  secondary
-                  type="submit"
-                  :disabled="!!busy"
-                >
-                  {{ t("save") }}
-                </MacButton>
+              <div class="button-row">
                 <MacButton
                   default-action
                   :disabled="
@@ -1446,14 +1441,6 @@ onBeforeUnmount(() => {
                   {{ t("cancel") }}
                 </MacButton>
                 <MacButton
-                  v-else
-                  secondary
-                  :disabled="!!busy"
-                  @click="timerAction('save')"
-                >
-                  {{ t("save") }}
-                </MacButton>
-                <MacButton
                   default-action
                   type="submit"
                   :disabled="!!busy"
@@ -1486,7 +1473,7 @@ onBeforeUnmount(() => {
                 v-for="(alarm, alarmIndex) in panelState.alarms"
                 :key="alarmIndex"
                 class="alarm-card"
-                @submit.prevent="saveAlarm(alarmIndex)"
+                @submit.prevent
               >
                 <div class="alarm-heading">
                   <strong>{{ t("alarm") }} {{ alarmIndex + 1 }}</strong>
@@ -1604,15 +1591,6 @@ onBeforeUnmount(() => {
                   </label>
                 </div>
 
-                <div class="button-row">
-                  <MacButton
-                    default-action
-                    type="submit"
-                    :disabled="!!busy"
-                  >
-                    {{ t("save") }}
-                  </MacButton>
-                </div>
               </form>
             </div>
           </MacWindow>
@@ -1628,7 +1606,7 @@ onBeforeUnmount(() => {
             "
             @close="closeActiveApp()"
           >
-            <form class="panel-form" @submit.prevent="saveNightMode">
+            <form class="panel-form" @submit.prevent>
               <label class="check-line">
                 <input v-model="panelState.night.enabled" type="checkbox" />
                 <span>{{ t("automaticDim") }}</span>
@@ -1673,15 +1651,6 @@ onBeforeUnmount(() => {
               </label>
               <p class="help-text">{{ t("wakeHelp") }}</p>
 
-              <div class="button-row">
-                <MacButton
-                  default-action
-                  type="submit"
-                  :disabled="!!busy"
-                >
-                  {{ t("save") }}
-                </MacButton>
-              </div>
             </form>
           </MacWindow>
 
@@ -1696,7 +1665,7 @@ onBeforeUnmount(() => {
             "
             @close="closeActiveApp()"
           >
-            <form class="panel-form" @submit.prevent="saveChime">
+            <form class="panel-form" @submit.prevent>
               <label class="field">
                 <span>{{ t("schedule") }}</span>
                 <select v-model.number="panelState.chime.mode">
@@ -1776,15 +1745,6 @@ onBeforeUnmount(() => {
                 </label>
               </div>
 
-              <div class="button-row">
-                <MacButton
-                  default-action
-                  type="submit"
-                  :disabled="!!busy"
-                >
-                  {{ t("save") }}
-                </MacButton>
-              </div>
             </form>
           </MacWindow>
 
@@ -2000,7 +1960,7 @@ onBeforeUnmount(() => {
             "
             @close="closeActiveApp()"
           >
-            <form class="sound-manager" @submit.prevent="saveSystemSounds">
+            <form class="sound-manager" @submit.prevent>
               <div class="speaker-icon" aria-hidden="true">
                 <span></span>
               </div>
@@ -2105,16 +2065,6 @@ onBeforeUnmount(() => {
                     </select>
                   </label>
                 </div>
-              </div>
-
-              <div class="button-row">
-                <MacButton
-                  default-action
-                  type="submit"
-                  :disabled="!!busy"
-                >
-                  {{ t("saveSounds") }}
-                </MacButton>
               </div>
 
               <section class="sound-library" :aria-label="t('soundLibrary')">
@@ -2329,46 +2279,6 @@ onBeforeUnmount(() => {
         </footer>
       </template>
     </main>
-
-    <Transition name="dialog">
-      <div
-        v-if="closeConfirmation"
-        class="dialog-shade"
-        @click.self="keepEditing"
-      >
-        <section
-          class="classic-confirm"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="unsaved-title"
-          aria-describedby="unsaved-message"
-        >
-          <div class="confirm-icon" aria-hidden="true">!</div>
-          <div>
-            <h2 id="unsaved-title">{{ t("unsavedTitle") }}</h2>
-            <p id="unsaved-message">
-              {{
-                t("unsavedMessage", {
-                  title: activeAppTitle,
-                })
-              }}
-            </p>
-          </div>
-          <div class="confirm-actions">
-            <MacButton danger @click="discardChanges">
-              {{ t("discardChanges") }}
-            </MacButton>
-            <MacButton
-              ref="keepEditingRef"
-              default-action
-              @click="keepEditing"
-            >
-              {{ t("keepEditing") }}
-            </MacButton>
-          </div>
-        </section>
-      </div>
-    </Transition>
 
     <Transition name="dialog">
       <div

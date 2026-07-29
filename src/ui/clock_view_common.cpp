@@ -88,24 +88,22 @@ void ClockView::updateMacintoshLabels(
     char buf[24];
     const bool hour12 =
         g_time_format.hour_format == HourFormat::Hour12;
-    if (g_time_format.show_seconds)
-    {
-        snprintf(
-            buf, sizeof(buf), "%02u:%02u:%02u",
-            configured_display_hour(now.hour()),
-            now.minute(), sec);
-    }
-    else
-    {
-        snprintf(
-            buf, sizeof(buf), "%02u:%02u",
-            configured_display_hour(now.hour()),
-            now.minute());
-    }
+    format_configured_time(now, buf, sizeof(buf));
     lv_label_set_text(ui_shell.time, buf);
+    const int16_t numeral_top_gap =
+        g_face_customization.numeral_size ==
+                FaceNumeralSize::Default
+            ? 0
+            : 3;
+    const int16_t numeral_left_offset =
+        g_face_customization.numeral_size ==
+                FaceNumeralSize::Large
+            ? -1
+            : 0;
     lv_obj_align(
         ui_shell.time, LV_ALIGN_TOP_MID,
-        hour12 ? -6 : 0, 14 + 4);
+        (hour12 ? -6 : 0) + numeral_left_offset,
+        14 + 4 + numeral_top_gap);
     if (hour12)
     {
         lv_label_set_text(
@@ -831,6 +829,13 @@ void ClockView::applyFaceCustomization()
     }
 
     lv_obj_set_style_text_font(ui_shell.time, time_font, 0);
+    lv_obj_set_style_text_letter_space(
+        ui_shell.time,
+        g_face_customization.numeral_size ==
+                FaceNumeralSize::Large
+            ? -1
+            : 1,
+        0);
     lv_obj_set_style_text_font(
         clock_view.compact_time, time_font, 0);
     for (lv_obj_t *number : clock_view.analog_numbers)
