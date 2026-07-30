@@ -284,6 +284,9 @@ void UiShell::hideAll()
     if (clock_view.flip)
         lv_obj_add_flag(
             clock_view.flip, LV_OBJ_FLAG_HIDDEN);
+    if (clock_view.odometer)
+        lv_obj_add_flag(
+            clock_view.odometer, LV_OBJ_FLAG_HIDDEN);
     if (clock_view.screensaver)
         lv_obj_add_flag(
             clock_view.screensaver, LV_OBJ_FLAG_HIDDEN);
