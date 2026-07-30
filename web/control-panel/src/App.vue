@@ -11,14 +11,17 @@ import {
 import {
   deleteSound,
   exportConfiguration,
+  fetchMiniVmacFiles,
   fetchState,
   fetchStatus,
   importSoundUrl,
+  miniVmacDownloadUrl,
   postForm,
   restoreConfiguration,
   searchMyInstants as searchMyInstantsApi,
   uploadSound,
   uploadFirmware,
+  uploadMiniVmacFile,
 } from "./api";
 import MacAppIcon from "./components/MacAppIcon.vue";
 import MacButton from "./components/MacButton.vue";
@@ -43,9 +46,11 @@ const launcherApps = [
   { id: "sounds", titleKey: "soundManager", icon: "sound" },
   { id: "update", titleKey: "softwareUpdate", icon: "update" },
   { id: "backup", titleKey: "configurationBackup", icon: "backup" },
+  { id: "minivmac", titleKey: "miniVmacFiles", icon: "minivmac" },
 ];
 
 const panelState = ref(null);
+const miniVmacFiles = ref([]);
 const loading = ref(true);
 const busy = ref("");
 const notice = ref(null);
@@ -384,6 +389,8 @@ async function loadState({ quiet = false } = {}) {
   if (!quiet) loading.value = true;
   try {
     panelState.value = await fetchState();
+    const miniVmac = await fetchMiniVmacFiles();
+    miniVmacFiles.value = miniVmac.files || [];
     if (panelState.value.mqtt) {
       panelState.value.mqtt.password = "";
       panelState.value.mqtt.clearPassword = false;
@@ -394,6 +401,23 @@ async function loadState({ quiet = false } = {}) {
     showNotice(t("contactError"), "error");
   } finally {
     loading.value = false;
+  }
+}
+
+async function chooseMiniVmacFile(event, slot) {
+  const file = event.target.files?.[0];
+  if (!file || busy.value) return;
+  busy.value = `minivmac-${slot}`;
+  try {
+    await uploadMiniVmacFile(slot, file);
+    const result = await fetchMiniVmacFiles();
+    miniVmacFiles.value = result.files || [];
+    showNotice(t("miniVmacFileInstalled"));
+  } catch (error) {
+    showNotice(error?.message || t("miniVmacFileError"), "error");
+  } finally {
+    busy.value = "";
+    event.target.value = "";
   }
 }
 
@@ -1894,6 +1918,68 @@ onBeforeUnmount(() => {
                 </MacButton>
               </div>
             </form>
+          </MacWindow>
+
+          <MacWindow
+            v-if="activeApp === 'minivmac'"
+            id="minivmac"
+            ref="activeWindowRef"
+            :title="activeAppTitle"
+            closable
+            wide
+            :close-label="t('closeWindow', { title: activeAppTitle })"
+            @close="closeActiveApp()"
+          >
+            <section class="panel-form">
+              <h2>{{ t("miniVmacFiles") }}</h2>
+              <p class="help-text">{{ t("miniVmacFilesHelp") }}</p>
+              <table class="classic-table">
+                <thead>
+                  <tr>
+                    <th>{{ t("file") }}</th>
+                    <th>{{ t("status") }}</th>
+                    <th>{{ t("actions") }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="file in miniVmacFiles" :key="file.slot">
+                    <td><strong>{{ file.name }}</strong></td>
+                    <td>
+                      {{
+                        file.exists
+                          ? t("installedFileSize", {
+                              size: formatSoundSize(file.size),
+                            })
+                          : t("notInstalled")
+                      }}
+                    </td>
+                    <td>
+                      <div class="button-row">
+                        <label class="mac-button mac-button--secondary">
+                          {{ t("upload") }}
+                          <input
+                            class="visually-hidden"
+                            type="file"
+                            accept=".rom,.ROM,.dsk,.DSK,application/octet-stream"
+                            :disabled="!!busy"
+                            @change="chooseMiniVmacFile($event, file.slot)"
+                          />
+                        </label>
+                        <a
+                          v-if="file.exists"
+                          class="mac-button"
+                          :href="miniVmacDownloadUrl(file.slot)"
+                          :download="file.name"
+                        >
+                          {{ t("download") }}
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <p class="help-text">{{ t("miniVmacReplaceWarning") }}</p>
+            </section>
           </MacWindow>
 
           <MacWindow

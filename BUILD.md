@@ -151,9 +151,13 @@ The rear USB connection remains accessible on the completed build.
    environment.
 4. Run `./prepare.sh` once in a fresh checkout.
 
-`prepare.sh` downloads and extracts the Mini vMac source, applies the tracked
-patches, and downloads initial ROM/disk inputs when they are absent. Review the
-script and use only ROMs and software that you are legally entitled to use.
+`prepare.sh` downloads and extracts the Mini vMac source and applies the
+tracked patches.
+
+After the finished Maclock joins Wi-Fi, it downloads `vMac.ROM` and the
+System 7 `disk1.dsk` only when those files are absent. You can also install or
+save the ROM and disk images with **Mini vMac Files** in the web control panel.
+Use only ROMs and software that you are legally entitled to use.
 
 The generated `src/minivmac/` tree, downloaded archives, ROM, and `disk*.dsk`
 files are deliberately excluded from Git.
@@ -177,6 +181,10 @@ The `data/` directory is packaged into LittleFS:
 - Tracked PNG and MP3 assets implement the clock interface.
 - `vMac.ROM` supplies the Macintosh Plus ROM.
 - Sequential `disk1.dsk`, `disk2.dsk`, and later images supply Mini vMac disks.
+
+The device provisions the initial ROM and first disk after Wi-Fi connects; they
+no longer need to be downloaded by `prepare.sh` or included in the initial
+LittleFS upload.
 
 Mini vMac stops mounting disks at the first missing number. Keep disk names
 contiguous.

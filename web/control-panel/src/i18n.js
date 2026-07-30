@@ -1351,6 +1351,25 @@ const backupTranslations = [
   },
 ];
 
+const miniVmacTranslations = [
+  {
+    miniVmacFiles: "Mini vMac Files",
+    miniVmacFilesHelp:
+      "Install or save the Macintosh Plus ROM and writable floppy-disk images used by Mini vMac.",
+    file: "File",
+    status: "Status",
+    actions: "Actions",
+    upload: "Upload…",
+    download: "Download",
+    notInstalled: "Not installed",
+    installedFileSize: "Installed — {size}",
+    miniVmacFileInstalled: "Mini vMac file installed",
+    miniVmacFileError: "The Mini vMac file could not be installed",
+    miniVmacReplaceWarning:
+      "Uploading replaces the selected file. Exit Mini vMac before changing its ROM or disks.",
+  },
+];
+
 const mqttTranslations = [
   {
     mqtt: "MQTT",
@@ -1442,15 +1461,19 @@ export function translate(language, key, replacements = {}) {
     backupTranslations[language] || backupTranslations[0];
   const mqttTable =
     mqttTranslations[language] || mqttTranslations[0];
+  const miniVmacTable =
+    miniVmacTranslations[language] || miniVmacTranslations[0];
   let text =
     table[key] ??
     updateTable[key] ??
     backupTable[key] ??
     mqttTable[key] ??
+    miniVmacTable[key] ??
     translations[0][key] ??
     updateTranslations[0][key] ??
     backupTranslations[0][key] ??
     mqttTranslations[0][key] ??
+    miniVmacTranslations[0][key] ??
     key;
   if (typeof text !== "string") return text;
   Object.entries(replacements).forEach(([name, value]) => {

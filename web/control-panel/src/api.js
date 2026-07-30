@@ -150,6 +150,17 @@ const demoState = {
   },
 };
 
+const demoMiniVmacFiles = [
+  { slot: "rom", name: "vMac.ROM", exists: true, size: 131072 },
+  { slot: "disk1", name: "disk1.dsk", exists: true, size: 2097152 },
+  ...[2, 3, 4, 5, 6].map((number) => ({
+    slot: `disk${number}`,
+    name: `disk${number}.dsk`,
+    exists: false,
+    size: 0,
+  })),
+];
+
 let demoTimerEndsAt = 0;
 
 function bodyFor(values) {
@@ -390,6 +401,36 @@ export async function fetchState() {
   refreshDemoSoundUsage();
   refreshDemoUpcomingAlarm();
   return clone(demoState);
+}
+
+export async function fetchMiniVmacFiles() {
+  if (!import.meta.env.DEV) return realFetch("/api/minivmac/files");
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  return { files: clone(demoMiniVmacFiles) };
+}
+
+export async function uploadMiniVmacFile(slot, file) {
+  if (import.meta.env.DEV) {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    const entry = demoMiniVmacFiles.find((item) => item.slot === slot);
+    if (entry) {
+      entry.exists = true;
+      entry.size = file?.size || 0;
+    }
+    return { ok: true, message: "Mini vMac file installed" };
+  }
+  const body = new FormData();
+  body.append("file", file, file.name);
+  const response = await fetch(
+    `/api/minivmac/upload?slot=${encodeURIComponent(slot)}`,
+    { method: "POST", body },
+  );
+  return parseResponse(response);
+}
+
+export function miniVmacDownloadUrl(slot) {
+  if (import.meta.env.DEV) return "#";
+  return `/api/minivmac/download?slot=${encodeURIComponent(slot)}`;
 }
 
 export async function fetchStatus() {

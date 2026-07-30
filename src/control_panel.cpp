@@ -3,7 +3,17 @@
 #include <ArduinoJson.h>
 #include <ESPmDNS.h>
 #include <LittleFS.h>
+#include <HTTPClient.h>
+#include <NetworkClient.h>
 #include <WebServer.h>
+#include <vector>
+#if defined(ARDUINO_ARCH_ESP32) && !defined(MACLOCK_LOCAL)
+#include <WiFiClient.h>
+#include <esp_heap_caps.h>
+#include <miniz.h>
+#else
+#include <zlib.h>
+#endif
 
 #include "audio_volume.h"
 #include "brightness.h"
@@ -23,6 +33,13 @@ struct ControlPanelService::State
     String update_upload_error;
     ConfigurationArchive configuration_archive;
     ControlPanelSoundLibrary sound_library;
+    File minivmac_upload;
+    String minivmac_upload_target;
+    String minivmac_upload_temp;
+    String minivmac_upload_error;
+    size_t minivmac_upload_size = 0;
+    bool minivmac_upload_started = false;
+    bool minivmac_bootstrap_attempted = false;
 };
 
 namespace
@@ -61,6 +78,523 @@ static void send_result(
     document["ok"] = ok;
     document["message"] = message;
     send_json(document, status);
+}
+
+static bool minivmac_slot(
+    const String &slot, String &path, String &display_name)
+{
+    if (slot == "rom")
+    {
+        path = "/vMac.ROM";
+        display_name = "vMac.ROM";
+        return true;
+    }
+    if (!slot.startsWith("disk"))
+        return false;
+    const int number = atoi(slot.substring(4).c_str());
+    if (number < 1 || number > 6 ||
+        slot != String("disk") + number)
+        return false;
+    path = String("/disk") + number + ".dsk";
+    display_name = String("disk") + number + ".dsk";
+    return true;
+}
+
+static void send_minivmac_files()
+{
+    JsonDocument document;
+    JsonArray files = document["files"].to<JsonArray>();
+    for (int index = 0; index <= 6; ++index)
+    {
+        const String slot =
+            index == 0 ? "rom" : String("disk") + index;
+        String path;
+        String name;
+        minivmac_slot(slot, path, name);
+        JsonObject entry = files.add<JsonObject>();
+        entry["slot"] = slot;
+        entry["name"] = name;
+        entry["exists"] = LittleFS.exists(path.c_str());
+        if (entry["exists"].as<bool>())
+        {
+            File file = LittleFS.open(path.c_str(), "r");
+            entry["size"] = file ? file.size() : 0;
+            file.close();
+        }
+        else
+            entry["size"] = 0;
+    }
+    send_json(document);
+}
+
+static void download_minivmac_file()
+{
+    String path;
+    String name;
+    if (!g_server.hasArg("slot") ||
+        !minivmac_slot(g_server.arg("slot"), path, name))
+    {
+        send_result(false, "Invalid Mini vMac file slot", 400);
+        return;
+    }
+    File file = LittleFS.open(path.c_str(), "r");
+    if (!file)
+    {
+        send_result(false, "Mini vMac file not found", 404);
+        return;
+    }
+    g_server.sendHeader(
+        "Content-Disposition",
+        String("attachment; filename=\"") + name + "\"");
+    g_server.sendHeader("Cache-Control", "no-store");
+#if defined(MACLOCK_LOCAL)
+    g_server.send(
+        501, "application/json",
+        "{\"ok\":false,\"message\":\"File downloads are unavailable locally\"}");
+#else
+    g_server.streamFile(file, "application/octet-stream");
+#endif
+    file.close();
+}
+
+static void receive_minivmac_upload()
+{
+    HTTPUpload &upload = g_server.upload();
+    auto &state = active_control_panel->state();
+    if (upload.status == UPLOAD_FILE_START)
+    {
+        state.minivmac_upload_error = "";
+        state.minivmac_upload_size = 0;
+        state.minivmac_upload_started = true;
+        String name;
+        if (!g_server.hasArg("slot") ||
+            !minivmac_slot(
+                g_server.arg("slot"),
+                state.minivmac_upload_target, name))
+        {
+            state.minivmac_upload_error =
+                "Invalid Mini vMac file slot";
+            return;
+        }
+        state.minivmac_upload_temp =
+            state.minivmac_upload_target + ".upload";
+        LittleFS.remove(state.minivmac_upload_temp.c_str());
+        state.minivmac_upload =
+            LittleFS.open(state.minivmac_upload_temp.c_str(), "w");
+        if (!state.minivmac_upload)
+            state.minivmac_upload_error =
+                "Could not create upload staging file";
+    }
+    else if (upload.status == UPLOAD_FILE_WRITE)
+    {
+        if (!state.minivmac_upload_error.length() &&
+            state.minivmac_upload.write(
+                upload.buf, upload.currentSize) != upload.currentSize)
+            state.minivmac_upload_error =
+                "Not enough storage for this file";
+        state.minivmac_upload_size += upload.currentSize;
+    }
+    else if (
+        upload.status == UPLOAD_FILE_END ||
+        upload.status == UPLOAD_FILE_ABORTED)
+    {
+        if (state.minivmac_upload)
+            state.minivmac_upload.close();
+        if (upload.status == UPLOAD_FILE_ABORTED)
+            state.minivmac_upload_error = "Upload was cancelled";
+    }
+}
+
+static void finish_minivmac_upload()
+{
+    auto &state = active_control_panel->state();
+    if (!state.minivmac_upload_started)
+    {
+        send_result(false, "No Mini vMac upload was received", 400);
+        return;
+    }
+    state.minivmac_upload_started = false;
+    if (state.minivmac_upload)
+        state.minivmac_upload.close();
+    if (!state.minivmac_upload_error.length())
+    {
+        if (state.minivmac_upload_target == "/vMac.ROM" &&
+            state.minivmac_upload_size != 128 * 1024)
+            state.minivmac_upload_error =
+                "The Macintosh Plus ROM must be exactly 128 KiB";
+        else if (
+            state.minivmac_upload_target != "/vMac.ROM" &&
+            (state.minivmac_upload_size == 0 ||
+             state.minivmac_upload_size % 512 != 0))
+            state.minivmac_upload_error =
+                "A disk image must be non-empty and 512-byte aligned";
+    }
+    if (state.minivmac_upload_error.length())
+    {
+        LittleFS.remove(state.minivmac_upload_temp.c_str());
+        send_result(
+            false, state.minivmac_upload_error.c_str(), 400);
+        return;
+    }
+
+    const String backup = state.minivmac_upload_target + ".previous";
+    LittleFS.remove(backup.c_str());
+    const bool had_existing =
+        LittleFS.exists(state.minivmac_upload_target.c_str());
+    if (had_existing &&
+        !LittleFS.rename(
+            state.minivmac_upload_target.c_str(), backup.c_str()))
+    {
+        LittleFS.remove(state.minivmac_upload_temp.c_str());
+        send_result(false, "Could not stage the existing file", 500);
+        return;
+    }
+    if (!LittleFS.rename(
+            state.minivmac_upload_temp.c_str(),
+            state.minivmac_upload_target.c_str()))
+    {
+        if (had_existing)
+            LittleFS.rename(
+                backup.c_str(),
+                state.minivmac_upload_target.c_str());
+        LittleFS.remove(state.minivmac_upload_temp.c_str());
+        send_result(false, "Could not install the uploaded file", 500);
+        return;
+    }
+    if (had_existing)
+        LittleFS.remove(backup.c_str());
+    send_result(true, "Mini vMac file installed");
+}
+
+static bool download_to_littlefs(
+    const char *url, const char *path)
+{
+#if defined(MACLOCK_LOCAL)
+    NetworkClient client;
+    HTTPClient http;
+    if (!http.begin(client, url))
+    {
+        http.end();
+        return false;
+    }
+    const int status = http.GET();
+    if (status != HTTP_CODE_OK)
+    {
+        Serial.printf(
+            "[Mini vMac] Download failed: HTTP %d (%s)\n",
+            status, url);
+        http.end();
+        return false;
+    }
+    const String response = http.getString();
+    Serial.printf(
+        "[Mini vMac] Downloaded %lu bytes from %s\n",
+        static_cast<unsigned long>(response.length()), url);
+    http.end();
+    File output = LittleFS.open(path, "w");
+    const bool ok = output &&
+        response.length() &&
+        output.write(
+            reinterpret_cast<const uint8_t *>(response.c_str()),
+            response.length()) == response.length();
+    output.close();
+    if (!ok)
+    {
+        Serial.printf(
+            "[Mini vMac] Could not stage %lu downloaded bytes at %s\n",
+            static_cast<unsigned long>(response.length()), path);
+        LittleFS.remove(path);
+    }
+    return ok;
+#else
+    WiFiClient client;
+    HTTPClient http;
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    if (!http.begin(client, url) || http.GET() != HTTP_CODE_OK)
+    {
+        http.end();
+        return false;
+    }
+    File output = LittleFS.open(path, FILE_WRITE);
+    if (!output)
+    {
+        http.end();
+        return false;
+    }
+    WiFiClient *stream = http.getStreamPtr();
+    uint8_t buffer[4096];
+    int remaining = http.getSize();
+    bool ok = true;
+    while (http.connected() && (remaining < 0 || remaining > 0))
+    {
+        const size_t available = stream->available();
+        if (!available)
+        {
+            delay(1);
+            continue;
+        }
+        const size_t wanted =
+            min(available, sizeof(buffer));
+        const int count = stream->readBytes(buffer, wanted);
+        if (count <= 0 ||
+            output.write(buffer, count) != static_cast<size_t>(count))
+        {
+            ok = false;
+            break;
+        }
+        if (remaining > 0)
+            remaining -= count;
+        delay(0);
+    }
+    output.close();
+    http.end();
+    if (remaining > 0)
+        ok = false;
+    if (!ok)
+        LittleFS.remove(path);
+    return ok;
+#endif
+}
+
+static uint16_t zip_u16(const uint8_t *data)
+{
+    return static_cast<uint16_t>(data[0]) |
+           (static_cast<uint16_t>(data[1]) << 8);
+}
+
+static uint32_t zip_u32(const uint8_t *data)
+{
+    return static_cast<uint32_t>(data[0]) |
+           (static_cast<uint32_t>(data[1]) << 8) |
+           (static_cast<uint32_t>(data[2]) << 16) |
+           (static_cast<uint32_t>(data[3]) << 24);
+}
+
+static bool inflate_zip_entry(
+    File &input, File &output, size_t compressed_size,
+    size_t uncompressed_size)
+{
+#if defined(MACLOCK_LOCAL)
+    std::vector<uint8_t> compressed(compressed_size);
+    std::vector<uint8_t> uncompressed(uncompressed_size);
+    if (input.read(
+            compressed.data(), compressed.size()) != compressed.size())
+        return false;
+    z_stream stream = {};
+    if (inflateInit2(&stream, -MAX_WBITS) != Z_OK)
+        return false;
+    stream.next_in = compressed.data();
+    stream.avail_in = static_cast<uInt>(compressed.size());
+    stream.next_out = uncompressed.data();
+    stream.avail_out = static_cast<uInt>(uncompressed.size());
+    const int result = inflate(&stream, Z_FINISH);
+    const bool ok =
+        result == Z_STREAM_END &&
+        stream.total_out == uncompressed.size() &&
+        output.write(
+            uncompressed.data(), uncompressed.size()) ==
+            uncompressed.size();
+    if (!ok)
+        Serial.printf(
+            "[Mini vMac] ZIP inflate failed: result=%d, input=%lu/%lu, output=%lu/%lu\n",
+            result,
+            static_cast<unsigned long>(stream.total_in),
+            static_cast<unsigned long>(compressed.size()),
+            static_cast<unsigned long>(stream.total_out),
+            static_cast<unsigned long>(uncompressed.size()));
+    inflateEnd(&stream);
+    return ok;
+#else
+    (void)uncompressed_size;
+    auto allocate_buffer = [](size_t size) -> void *
+    {
+        void *buffer = heap_caps_malloc(
+            size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        return buffer ? buffer : malloc(size);
+    };
+    auto *dictionary = static_cast<uint8_t *>(
+        allocate_buffer(TINFL_LZ_DICT_SIZE));
+    auto *compressed = static_cast<uint8_t *>(
+        allocate_buffer(4096));
+    auto *decompressor = static_cast<tinfl_decompressor *>(
+        allocate_buffer(sizeof(tinfl_decompressor)));
+    if (!dictionary || !compressed || !decompressor)
+    {
+        free(decompressor);
+        free(compressed);
+        free(dictionary);
+        return false;
+    }
+    tinfl_init(decompressor);
+    size_t remaining = compressed_size;
+    size_t available = 0;
+    size_t input_offset = 0;
+    size_t output_offset = 0;
+    tinfl_status status = TINFL_STATUS_NEEDS_MORE_INPUT;
+    while (status != TINFL_STATUS_DONE)
+    {
+        if (!available)
+        {
+            const size_t count = min(remaining, size_t(4096));
+            if (!count || input.read(compressed, count) != count)
+                break;
+            remaining -= count;
+            available = count;
+            input_offset = 0;
+        }
+        size_t consumed = available;
+        size_t produced = TINFL_LZ_DICT_SIZE - output_offset;
+        const mz_uint32 flags =
+            remaining ? TINFL_FLAG_HAS_MORE_INPUT : 0;
+        status = tinfl_decompress(
+            decompressor, compressed + input_offset, &consumed,
+            dictionary, dictionary + output_offset, &produced,
+            flags);
+        input_offset += consumed;
+        available -= consumed;
+        if (produced)
+        {
+            if (output.write(
+                    dictionary + output_offset, produced) != produced)
+                status = TINFL_STATUS_FAILED;
+            output_offset =
+                (output_offset + produced) % TINFL_LZ_DICT_SIZE;
+        }
+        if (status < TINFL_STATUS_DONE)
+            break;
+        delay(0);
+    }
+    free(decompressor);
+    free(compressed);
+    free(dictionary);
+    return status == TINFL_STATUS_DONE &&
+           !remaining && !available;
+#endif
+}
+
+static bool extract_system7(
+    const char *zip_path, const char *disk_path)
+{
+    File input = LittleFS.open(zip_path, "r");
+    if (!input)
+        return false;
+    bool local_header_found = false;
+    uint8_t signature[4];
+    const size_t search_limit = min(input.size(), size_t(4096));
+    while (input.position() + sizeof(signature) <= search_limit)
+    {
+        const size_t start = input.position();
+        if (input.read(signature, sizeof(signature)) !=
+            sizeof(signature))
+            break;
+        if (zip_u32(signature) == 0x04034b50UL)
+        {
+            local_header_found = input.seek(start);
+            break;
+        }
+        if (!input.seek(start + 1))
+            break;
+    }
+    bool ok = false;
+    size_t size = 0;
+    while (
+        local_header_found &&
+        input.size() - input.position() >= 30)
+    {
+        uint8_t header[30];
+        const size_t header_size =
+            input.read(header, sizeof(header));
+        if (header_size != sizeof(header) ||
+            zip_u32(header) != 0x04034b50UL)
+            break;
+        const uint16_t flags = zip_u16(header + 6);
+        const uint16_t method = zip_u16(header + 8);
+        const size_t compressed_size = zip_u32(header + 18);
+        const size_t uncompressed_size = zip_u32(header + 22);
+        const uint16_t name_length = zip_u16(header + 26);
+        const uint16_t extra_length = zip_u16(header + 28);
+        if ((flags & 0x08) || name_length >= 128)
+            break;
+        char name[128] = {};
+        if (input.read(
+                reinterpret_cast<uint8_t *>(name),
+                name_length) != name_length ||
+            !input.seek(input.position() + extra_length))
+            break;
+        if (strcasecmp(name, "System7.DSK") != 0)
+        {
+            if (!input.seek(input.position() + compressed_size))
+                break;
+            continue;
+        }
+        File output = LittleFS.open(disk_path, "w");
+        if (!output)
+            break;
+        if (method == 0)
+        {
+            uint8_t buffer[4096];
+            size_t remaining = compressed_size;
+            ok = true;
+            while (remaining)
+            {
+                const size_t count = min(remaining, sizeof(buffer));
+                if (input.read(buffer, count) != count ||
+                    output.write(buffer, count) != count)
+                {
+                    ok = false;
+                    break;
+                }
+                remaining -= count;
+            }
+        }
+        else if (method == 8)
+            ok = inflate_zip_entry(
+                input, output, compressed_size, uncompressed_size);
+        size = output.size();
+        output.close();
+        break;
+    }
+    input.close();
+    if (!ok || !size || size % 512 != 0)
+    {
+        LittleFS.remove(disk_path);
+        return false;
+    }
+    return true;
+}
+
+static void provision_minivmac_defaults()
+{
+    if (!LittleFS.exists("/vMac.ROM"))
+    {
+        Serial.println("[Mini vMac] Downloading missing ROM");
+        if (download_to_littlefs(
+                "http://psychonaut.bplaced.net/MinivMac/vMac.ROM",
+                "/vMac.ROM.download"))
+        {
+            File rom = LittleFS.open("/vMac.ROM.download", "r");
+            const bool valid = rom && rom.size() >= 128 * 1024;
+            rom.close();
+            if (valid)
+                LittleFS.rename("/vMac.ROM.download", "/vMac.ROM");
+            else
+                LittleFS.remove("/vMac.ROM.download");
+        }
+    }
+    if (!LittleFS.exists("/disk1.dsk"))
+    {
+        Serial.println("[Mini vMac] Downloading missing System 7 disk");
+        LittleFS.remove("/System7.zip.download");
+        LittleFS.remove("/disk1.dsk.download");
+        if (download_to_littlefs(
+                "http://psychonaut.bplaced.net/MinivMac/MinivMac_disks/System7.zip",
+                "/System7.zip.download") &&
+            extract_system7(
+                "/System7.zip.download", "/disk1.dsk.download"))
+            LittleFS.rename("/disk1.dsk.download", "/disk1.dsk");
+        LittleFS.remove("/System7.zip.download");
+        LittleFS.remove("/disk1.dsk.download");
+    }
 }
 
 static bool read_uint(
@@ -959,6 +1493,14 @@ static void configure_routes()
         "/api/update/firmware", HTTP_POST,
         finish_firmware_upload, receive_firmware_upload);
     g_server.on(
+        "/api/minivmac/files", HTTP_GET, send_minivmac_files);
+    g_server.on(
+        "/api/minivmac/download", HTTP_GET,
+        download_minivmac_file);
+    g_server.on(
+        "/api/minivmac/upload", HTTP_POST,
+        finish_minivmac_upload, receive_minivmac_upload);
+    g_server.on(
         "/api/configuration/export", HTTP_GET,
         []()
         {
@@ -1042,6 +1584,15 @@ void ControlPanelService::begin(ControlPanelEventSink &events)
     g_events = &events;
     g_configuration_archive.begin(events);
     configure_routes();
+#if defined(MACLOCK_LOCAL)
+    if (!state_->minivmac_bootstrap_attempted)
+    {
+        state_->minivmac_bootstrap_attempted = true;
+        g_events->beginControlPanelNetworkTransfer();
+        provision_minivmac_defaults();
+        g_events->endControlPanelNetworkTransfer();
+    }
+#endif
 }
 
 void ControlPanelService::tick(const WifiModeSnapshot &wifi)
@@ -1063,6 +1614,15 @@ void ControlPanelService::tick(const WifiModeSnapshot &wifi)
         Serial.printf(
             "[Control] http://%s/ or http://maclock.local/\n",
             wifi.ip_address);
+        if (!state_->minivmac_bootstrap_attempted)
+        {
+            state_->minivmac_bootstrap_attempted = true;
+            if (g_events)
+                g_events->beginControlPanelNetworkTransfer();
+            provision_minivmac_defaults();
+            if (g_events)
+                g_events->endControlPanelNetworkTransfer();
+        }
     }
     g_server.handleClient();
 }

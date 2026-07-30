@@ -90,6 +90,7 @@ FetchContent_MakeAvailable(
     SDL3 imgui lvgl ArduinoJson miniaudio cpp_httplib curl)
 
 find_package(Threads REQUIRED)
+find_package(ZLIB REQUIRED)
 
 add_library(maclock-imgui STATIC
     "${imgui_SOURCE_DIR}/imgui.cpp"
@@ -223,6 +224,7 @@ target_link_libraries(maclock-local PRIVATE
     maclock-imgui
     httplib::httplib
     CURL::libcurl
+    ZLIB::ZLIB
     Threads::Threads)
 
 set_target_properties(maclock-local PROPERTIES

@@ -13,13 +13,3 @@ if [ ! -e "$ROOT_DIR/src/minivmac" ]; then
     patch -p0 -N -r - -d "$ROOT_DIR" < "$PATCH_FILE"
   done
 fi
-
-if [ ! -e data/vMac.ROM ]; then
-  wget http://psychonaut.bplaced.net/MinivMac/vMac.ROM -O data/vMac.ROM
-fi
-if [ ! -e data/disk1.dsk ]; then
-  wget http://psychonaut.bplaced.net/MinivMac/MinivMac_disks/System7.zip -O data/System7.zip
-  unzip data/System7.zip
-  mv System7.DSK data/disk1.dsk
-  rm data/System7.zip
-fi
