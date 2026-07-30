@@ -129,6 +129,9 @@ public:
         const char *sound_path, uint8_t volume) = 0;
     virtual void beginControlPanelNetworkTransfer() = 0;
     virtual void endControlPanelNetworkTransfer() = 0;
+    virtual void showControlPanelDownload(
+        const char *message, uint8_t progress) = 0;
+    virtual void hideControlPanelDownload() = 0;
     virtual bool requestControlUpdateCheck() = 0;
     virtual bool requestControlUpdateInstall() = 0;
     virtual void dismissControlUpdate(bool ignore_version) = 0;

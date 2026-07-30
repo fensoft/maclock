@@ -184,6 +184,32 @@ void UiShell::init()
         ui_shell.boot_message, LV_LABEL_LONG_CLIP);
     ui_shell.updateBootMessage();
 
+    ui_shell.boot_progress = lv_bar_create(ui_shell.boot);
+    lv_obj_remove_flag(
+        ui_shell.boot_progress, LV_OBJ_FLAG_SCROLLABLE);
+    lv_bar_set_range(ui_shell.boot_progress, 0, 100);
+    lv_bar_set_value(ui_shell.boot_progress, 0, LV_ANIM_OFF);
+    lv_obj_set_size(ui_shell.boot_progress, 176, 10);
+    lv_obj_set_pos(ui_shell.boot_progress, 74, 56);
+    lv_obj_set_style_radius(ui_shell.boot_progress, 0, 0);
+    lv_obj_set_style_border_width(ui_shell.boot_progress, 1, 0);
+    lv_obj_set_style_border_color(
+        ui_shell.boot_progress, lv_color_black(), 0);
+    lv_obj_set_style_bg_color(
+        ui_shell.boot_progress, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(
+        ui_shell.boot_progress, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(
+        ui_shell.boot_progress, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(
+        ui_shell.boot_progress, lv_color_black(),
+        LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(
+        ui_shell.boot_progress, LV_OPA_COVER,
+        LV_PART_INDICATOR);
+    lv_obj_add_flag(
+        ui_shell.boot_progress, LV_OBJ_FLAG_HIDDEN);
+
     for (size_t i = 0; i < k_plugin_max; ++i)
     {
         ui_shell.plugin_icons[i] = lv_image_create(scr);

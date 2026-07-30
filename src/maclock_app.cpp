@@ -89,6 +89,7 @@ public:
     lv_obj_t *disk_missing_2;
     lv_obj_t *boot;
     lv_obj_t *boot_message;
+    lv_obj_t *boot_progress;
     lv_obj_t *menu;
     lv_obj_t *menu_titles;
     lv_obj_t *menu_right;

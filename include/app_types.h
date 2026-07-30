@@ -165,7 +165,7 @@ struct AppSettings
     ScreensaverMode screensaver_mode = ScreensaverMode::Off;
     uint8_t screensaver_delay_index = 1;
     BootBrightness boot_brightness = BootBrightness::Latest;
-    bool boot_floppy_emulator = true;
+    bool boot_floppy_emulator = false;
     NightModeSettings night_mode;
     ChimeSettings chime;
 };

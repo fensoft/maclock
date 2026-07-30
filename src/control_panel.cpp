@@ -267,8 +267,12 @@ static void finish_minivmac_upload()
 }
 
 static bool download_to_littlefs(
-    const char *url, const char *path)
+    const char *url, const char *path,
+    const char *progress_message)
 {
+    if (g_events)
+        g_events->showControlPanelDownload(
+            progress_message, 0);
 #if defined(MACLOCK_LOCAL)
     NetworkClient client;
     HTTPClient http;
@@ -287,6 +291,9 @@ static bool download_to_littlefs(
         return false;
     }
     const String response = http.getString();
+    if (g_events)
+        g_events->showControlPanelDownload(
+            progress_message, 100);
     Serial.printf(
         "[Mini vMac] Downloaded %lu bytes from %s\n",
         static_cast<unsigned long>(response.length()), url);
@@ -322,19 +329,42 @@ static bool download_to_littlefs(
         return false;
     }
     WiFiClient *stream = http.getStreamPtr();
-    uint8_t buffer[4096];
+    static constexpr size_t kDownloadBufferSize = 4096;
+    uint8_t *buffer = static_cast<uint8_t *>(
+        heap_caps_malloc(
+            kDownloadBufferSize,
+            MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM));
+    if (!buffer)
+        buffer = static_cast<uint8_t *>(
+            heap_caps_malloc(
+                kDownloadBufferSize, MALLOC_CAP_8BIT));
+    if (!buffer)
+    {
+        output.close();
+        http.end();
+        LittleFS.remove(path);
+        return false;
+    }
     int remaining = http.getSize();
+    const int total = remaining;
+    int last_progress = -1;
+    uint32_t last_data_ms = millis();
     bool ok = true;
     while (http.connected() && (remaining < 0 || remaining > 0))
     {
         const size_t available = stream->available();
         if (!available)
         {
+            if (millis() - last_data_ms >= 15000)
+            {
+                ok = false;
+                break;
+            }
             delay(1);
             continue;
         }
         const size_t wanted =
-            min(available, sizeof(buffer));
+            min(available, kDownloadBufferSize);
         const int count = stream->readBytes(buffer, wanted);
         if (count <= 0 ||
             output.write(buffer, count) != static_cast<size_t>(count))
@@ -344,8 +374,24 @@ static bool download_to_littlefs(
         }
         if (remaining > 0)
             remaining -= count;
+        last_data_ms = millis();
+        const int progress =
+            total > 0
+                ? static_cast<int>(
+                      (static_cast<uint64_t>(total - remaining) *
+                       100) /
+                      total)
+                : 0;
+        if (g_events && progress != last_progress)
+        {
+            last_progress = progress;
+            g_events->showControlPanelDownload(
+                progress_message,
+                static_cast<uint8_t>(progress));
+        }
         delay(0);
     }
+    heap_caps_free(buffer);
     output.close();
     http.end();
     if (remaining > 0)
@@ -570,7 +616,8 @@ static void provision_minivmac_defaults()
         Serial.println("[Mini vMac] Downloading missing ROM");
         if (download_to_littlefs(
                 "http://psychonaut.bplaced.net/MinivMac/vMac.ROM",
-                "/vMac.ROM.download"))
+                "/vMac.ROM.download",
+                "Downloading Macintosh ROM..."))
         {
             File rom = LittleFS.open("/vMac.ROM.download", "r");
             const bool valid = rom && rom.size() >= 128 * 1024;
@@ -586,9 +633,14 @@ static void provision_minivmac_defaults()
         Serial.println("[Mini vMac] Downloading missing System 7 disk");
         LittleFS.remove("/System7.zip.download");
         LittleFS.remove("/disk1.dsk.download");
-        if (download_to_littlefs(
-                "http://psychonaut.bplaced.net/MinivMac/MinivMac_disks/System7.zip",
-                "/System7.zip.download") &&
+        const bool downloaded = download_to_littlefs(
+            "http://psychonaut.bplaced.net/MinivMac/MinivMac_disks/System7.zip",
+            "/System7.zip.download",
+            "Downloading System 7 disk...");
+        if (downloaded && g_events)
+            g_events->showControlPanelDownload(
+                "Installing System 7 disk...", 100);
+        if (downloaded &&
             extract_system7(
                 "/System7.zip.download", "/disk1.dsk.download"))
             LittleFS.rename("/disk1.dsk.download", "/disk1.dsk");
@@ -1590,6 +1642,7 @@ void ControlPanelService::begin(ControlPanelEventSink &events)
         state_->minivmac_bootstrap_attempted = true;
         g_events->beginControlPanelNetworkTransfer();
         provision_minivmac_defaults();
+        g_events->hideControlPanelDownload();
         g_events->endControlPanelNetworkTransfer();
     }
 #endif
@@ -1621,7 +1674,10 @@ void ControlPanelService::tick(const WifiModeSnapshot &wifi)
                 g_events->beginControlPanelNetworkTransfer();
             provision_minivmac_defaults();
             if (g_events)
+            {
+                g_events->hideControlPanelDownload();
                 g_events->endControlPanelNetworkTransfer();
+            }
         }
     }
     g_server.handleClient();

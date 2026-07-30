@@ -73,6 +73,9 @@ public:
         const char *sound_path, uint8_t volume) override;
     void beginControlPanelNetworkTransfer() override;
     void endControlPanelNetworkTransfer() override;
+    void showControlPanelDownload(
+        const char *message, uint8_t progress) override;
+    void hideControlPanelDownload() override;
     bool requestControlUpdateCheck() override;
     bool requestControlUpdateInstall() override;
     void dismissControlUpdate(bool ignore_version) override;

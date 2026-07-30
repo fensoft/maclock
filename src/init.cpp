@@ -54,6 +54,28 @@ public:
         return true;
     }
 
+#ifndef MACLOCK_LOCAL
+    void flush() override
+    {
+        // ESP8266Audio's ESP32 implementation retries forever when I2S
+        // stops accepting samples. Preserve the normal DMA-tail drain,
+        // but never let faulty/older audio hardware block application
+        // startup permanently.
+        const size_t sample_count = _buffers * _bufferWords;
+        const uint32_t started_ms = millis();
+        int16_t silence[2] = {0, 0};
+        for (size_t i = 0; i < sample_count; ++i)
+        {
+            while (!AudioOutputI2S::ConsumeSample(silence))
+            {
+                if (millis() - started_ms >= 2000)
+                    return;
+                delay(1);
+            }
+        }
+    }
+#endif
+
     size_t writeStereoFrames(
         const int16_t *frames, size_t frame_count)
     {

@@ -127,7 +127,7 @@ AppSettings SettingsStore::load()
         BootBrightness::Latest,
         static_cast<BootBrightness>(3));
     settings.boot_floppy_emulator =
-        preferences_.getBool("floppy_emulator", true);
+        preferences_.getBool("floppy_emulator", false);
 
     settings.night_mode.enabled =
         preferences_.getBool("night_enabled", false);

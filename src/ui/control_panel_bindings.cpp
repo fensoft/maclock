@@ -523,6 +523,55 @@ void MaclockApp::endControlPanelNetworkTransfer()
     audio_service.resumeTask();
 }
 
+void MaclockApp::showControlPanelDownload(
+    const char *message, uint8_t progress)
+{
+    if (!ui_shell.boot || !ui_shell.boot_message ||
+        !ui_shell.boot_progress)
+        return;
+
+    ui_shell.hideAll();
+    lv_obj_clear_flag(
+        ui_shell.background, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(ui_shell.boot, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(
+        ui_shell.boot_progress, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(
+        ui_shell.corners, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_size(ui_shell.boot_message, 188, 30);
+    lv_obj_set_pos(ui_shell.boot_message, 68, 20);
+    lv_label_set_long_mode(
+        ui_shell.boot_message, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(
+        ui_shell.boot_message, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(
+        ui_shell.boot_message,
+        message ? tr(message) : "");
+    lv_bar_set_value(
+        ui_shell.boot_progress,
+        progress > 100 ? 100 : progress,
+        LV_ANIM_OFF);
+    lv_timer_handler();
+}
+
+void MaclockApp::hideControlPanelDownload()
+{
+    if (ui_shell.boot_progress)
+        lv_obj_add_flag(
+            ui_shell.boot_progress, LV_OBJ_FLAG_HIDDEN);
+    if (ui_shell.boot_message)
+    {
+        lv_obj_set_size(ui_shell.boot_message, 188, 24);
+        lv_obj_set_pos(ui_shell.boot_message, 68, 25);
+        lv_label_set_long_mode(
+            ui_shell.boot_message, LV_LABEL_LONG_CLIP);
+        lv_obj_set_style_text_align(
+            ui_shell.boot_message, LV_TEXT_ALIGN_LEFT, 0);
+    }
+    ui_shell.updateBootMessage();
+    lv_timer_handler();
+}
+
 bool MaclockApp::requestControlUpdateCheck()
 {
     return update_service.requestCheck();

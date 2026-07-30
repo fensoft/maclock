@@ -262,8 +262,10 @@ void MaclockApp::tick()
         break;
     case UI_STATE_WAIT_STARTUP_SOUND: // wait for end of startup sound
     {
+        static constexpr uint32_t kStartupSoundTimeoutMs = 15000;
         if (!startup_sound_started_ ||
-            audio_service.takeFinished())
+            audio_service.takeFinished() ||
+            now - state_start_ms_ >= kStartupSoundTimeoutMs)
         {
             startup_sound_started_ = false;
             wifi_service.startTask();
@@ -370,26 +372,7 @@ void MaclockApp::tick()
                     lv_obj_align(ui_shell.plugin_icons[startup_view.plugin_count], LV_ALIGN_BOTTOM_LEFT,
                                  margin_x + (int16_t)startup_view.plugin_count * (icon_size + spacing),
                                  -margin_y);
-                    ui_shell.hideAll();
-                    lv_obj_clear_flag(ui_shell.background, LV_OBJ_FLAG_HIDDEN);
-                    lv_obj_clear_flag(ui_shell.boot, LV_OBJ_FLAG_HIDDEN);
-                    for (size_t j = 0; j < startup_view.plugin_count; ++j)
-                    {
-                        lv_obj_clear_flag(ui_shell.plugin_icons[j], LV_OBJ_FLAG_HIDDEN);
-                    }
-                    lv_obj_clear_flag(ui_shell.plugin_icons[startup_view.plugin_count], LV_OBJ_FLAG_HIDDEN);
-                    lv_timer_handler();
-                    bool blink_on = true;
-                    for (;;)
-                    {
-                        if (blink_on)
-                            lv_obj_clear_flag(ui_shell.plugin_icons[startup_view.plugin_count], LV_OBJ_FLAG_HIDDEN);
-                        else
-                            lv_obj_add_flag(ui_shell.plugin_icons[startup_view.plugin_count], LV_OBJ_FLAG_HIDDEN);
-                        blink_on = !blink_on;
-                        lv_timer_handler();
-                        vTaskDelay(pdMS_TO_TICKS(500));
-                    }
+                    startup_view.plugin_count++;
                 }
             }
             for (size_t i = startup_view.plugin_count; i < k_plugin_max; ++i)
@@ -418,7 +401,11 @@ void MaclockApp::tick()
         break;
     case UI_STATE_WAIT_FLOPPY_SOUND: // wait for end of floppy sound
     {
-        if (audio_service.takeFinished())
+        static constexpr uint32_t kFloppySoundTimeoutMs = 15000;
+        const bool sound_finished =
+            audio_service.takeFinished();
+        if (sound_finished ||
+            now - state_start_ms_ >= kFloppySoundTimeoutMs)
         {
             requested_state_ = advance_state(current_state_);
             state_start_ms_ = now;
