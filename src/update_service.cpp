@@ -128,20 +128,32 @@ String normalized_version(const char *version)
                : String(version);
 }
 
-bool protected_download_path(const char *path)
+bool protected_user_path(const char *path)
 {
-    return path &&
-           (strcmp(path, "/downloaded") == 0 ||
-            strncmp(
-                path, kDownloadedPrefix,
-                sizeof(kDownloadedPrefix) - 1) == 0);
+    if (!path)
+        return false;
+    if (strcmp(path, "/downloaded") == 0 ||
+        strncmp(
+            path, kDownloadedPrefix,
+            sizeof(kDownloadedPrefix) - 1) == 0 ||
+        strcmp(path, "/vMac.ROM") == 0)
+    {
+        return true;
+    }
+
+    // Mini vMac ROMs and disks are user-managed, potentially large,
+    // and must survive release-asset reconciliation.
+    return strlen(path) == strlen("/disk1.dsk") &&
+           strncmp(path, "/disk", strlen("/disk")) == 0 &&
+           path[5] >= '1' && path[5] <= '6' &&
+           strcmp(path + 6, ".dsk") == 0;
 }
 
 bool valid_asset_path(const char *path)
 {
     const size_t length = path ? strlen(path) : 0;
     if (!path || path[0] != '/' || path[1] == '\0' ||
-        protected_download_path(path) ||
+        protected_user_path(path) ||
         strstr(path, "..") || strchr(path, '\\') ||
         strstr(path, "//") ||
         strcmp(path, kAssetTemporaryPath) == 0 ||
@@ -533,7 +545,7 @@ void collect_files(
         const String entry_path = entry.path();
         const bool is_directory = entry.isDirectory();
         entry.close();
-        if (protected_download_path(entry_path.c_str()))
+        if (protected_user_path(entry_path.c_str()))
         {
             entry = directory.openNextFile();
             continue;
@@ -1462,7 +1474,7 @@ bool install_assets(
     for (const String &path : installed)
     {
         if (!manifest_contains(files, path.c_str()) &&
-            !protected_download_path(path.c_str()))
+            !protected_user_path(path.c_str()))
         {
             LittleFS.remove(path.c_str());
         }
@@ -1470,7 +1482,7 @@ bool install_assets(
     for (auto item = directories.rbegin();
          item != directories.rend(); ++item)
     {
-        if (!protected_download_path(item->c_str()))
+        if (!protected_user_path(item->c_str()))
             LittleFS.rmdir(item->c_str());
     }
 
