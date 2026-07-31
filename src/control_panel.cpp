@@ -513,8 +513,14 @@ static bool inflate_zip_entry(
     free(decompressor);
     free(compressed);
     free(dictionary);
-    return status == TINFL_STATUS_DONE &&
-           !remaining && !available;
+    const bool ok = status == TINFL_STATUS_DONE;
+    if (!ok)
+        Serial.printf(
+            "[Mini vMac] ZIP inflate failed: status=%d, remaining=%lu, buffered=%lu\n",
+            static_cast<int>(status),
+            static_cast<unsigned long>(remaining),
+            static_cast<unsigned long>(available));
+    return ok;
 #endif
 }
 
@@ -523,7 +529,10 @@ static bool extract_system7(
 {
     File input = LittleFS.open(zip_path, "r");
     if (!input)
+    {
+        Serial.println("[Mini vMac] Cannot open downloaded System 7 ZIP");
         return false;
+    }
     bool local_header_found = false;
     uint8_t signature[4];
     const size_t search_limit = min(input.size(), size_t(4096));
@@ -541,6 +550,8 @@ static bool extract_system7(
         if (!input.seek(start + 1))
             break;
     }
+    if (!local_header_found)
+        Serial.println("[Mini vMac] System 7 ZIP header not found");
     bool ok = false;
     size_t size = 0;
     while (
@@ -596,16 +607,24 @@ static bool extract_system7(
         else if (method == 8)
             ok = inflate_zip_entry(
                 input, output, compressed_size, uncompressed_size);
-        size = output.size();
         output.close();
+        File installed = LittleFS.open(disk_path, "r");
+        size = installed ? installed.size() : 0;
+        installed.close();
         break;
     }
     input.close();
     if (!ok || !size || size % 512 != 0)
     {
+        Serial.printf(
+            "[Mini vMac] System 7 extraction failed: ok=%d, size=%lu\n",
+            ok, static_cast<unsigned long>(size));
         LittleFS.remove(disk_path);
         return false;
     }
+    Serial.printf(
+        "[Mini vMac] Extracted System 7 disk: %lu bytes\n",
+        static_cast<unsigned long>(size));
     return true;
 }
 
@@ -640,10 +659,17 @@ static void provision_minivmac_defaults()
         if (downloaded && g_events)
             g_events->showControlPanelDownload(
                 "Installing System 7 disk...", 100);
-        if (downloaded &&
-            extract_system7(
-                "/System7.zip.download", "/disk1.dsk.download"))
-            LittleFS.rename("/disk1.dsk.download", "/disk1.dsk");
+        if (!downloaded)
+            Serial.println("[Mini vMac] System 7 download failed");
+        else if (extract_system7(
+                     "/System7.zip.download", "/disk1.dsk.download"))
+        {
+            if (LittleFS.rename(
+                    "/disk1.dsk.download", "/disk1.dsk"))
+                Serial.println("[Mini vMac] System 7 disk installed");
+            else
+                Serial.println("[Mini vMac] Could not install System 7 disk");
+        }
         LittleFS.remove("/System7.zip.download");
         LittleFS.remove("/disk1.dsk.download");
     }
