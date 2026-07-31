@@ -467,8 +467,14 @@ void MaclockApp::tick()
             }
             else
             {
+                if (!clock_view.screensaver_snapshot_ms ||
+                    now - clock_view.screensaver_snapshot_ms >= 250)
+                {
+                    clock_view.screensaver_snapshot.current = rtc_now();
+                    clock_view.screensaver_snapshot_ms = now;
+                }
                 clock_view.updateScreensaver(
-                    make_clock_snapshot(now));
+                    clock_view.screensaver_snapshot);
             }
             lv_timer_handler();
             break;
@@ -486,8 +492,10 @@ void MaclockApp::tick()
                 screensaver_delay_ms)
         {
             clock_view.showScreensaver();
+            clock_view.screensaver_snapshot.current = rtc_now();
+            clock_view.screensaver_snapshot_ms = now;
             clock_view.updateScreensaver(
-                make_clock_snapshot(now));
+                clock_view.screensaver_snapshot);
             lv_timer_handler();
             break;
         }

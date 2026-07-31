@@ -36,7 +36,7 @@ struct MqttService::State
     MQTTClient client{768, 12288};
     bool connected = false;
     uint32_t next_retry_ms = 0;
-    uint32_t retry_delay_ms = 2000;
+    uint32_t retry_delay_ms = 1000;
     uint32_t discovery_due_ms = 0;
     bool inbound_ready = false;
     String inbound_topic;
@@ -47,6 +47,8 @@ struct MqttService::State
 namespace
 {
 MqttService *active_mqtt_service = nullptr;
+static constexpr uint32_t kMqttInitialRetryMs = 1000;
+static constexpr uint32_t kMqttMaximumRetryMs = 60UL * 60UL * 1000UL;
 static constexpr const char *kScreensaverNames[] = {
     "Off", "After Dark", "Starfield", "Bouncing Mac",
     "Matrix Rain", "Pipes", "Flying Clocks", "Random"};
@@ -832,6 +834,7 @@ void process_inbound(MqttService::State &state, uint32_t now_ms)
 
 bool connect_client(MqttService::State &state, uint32_t now_ms)
 {
+    state.network.setConnectionTimeout(250);
     state.client.begin(
         state.settings.host,
         static_cast<int>(state.settings.port),
@@ -853,11 +856,11 @@ bool connect_client(MqttService::State &state, uint32_t now_ms)
         copy_text(state.snapshot.status, "Connection failed");
         state.next_retry_ms = now_ms + state.retry_delay_ms;
         state.retry_delay_ms = min<uint32_t>(
-            state.retry_delay_ms * 2, 30000);
+            state.retry_delay_ms * 2, kMqttMaximumRetryMs);
         return false;
     }
 
-    state.retry_delay_ms = 2000;
+    state.retry_delay_ms = kMqttInitialRetryMs;
     state.next_retry_ms = 0;
     copy_text(state.snapshot.status, "Connected");
     char beacon_topic[80];
@@ -1055,7 +1058,7 @@ bool MqttService::configure(
         settings.enabled ? "Waiting for Wi-Fi" : "Disabled");
 #ifndef MACLOCK_LOCAL
     state_->next_retry_ms = 0;
-    state_->retry_delay_ms = 2000;
+    state_->retry_delay_ms = kMqttInitialRetryMs;
 #endif
     refresh_snapshot(*state_);
     return true;

@@ -394,6 +394,7 @@ void ClockView::showScreensaver()
         lv_obj_add_flag(g_cursor, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(screensaver, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(screensaver);
+    screensaver_snapshot_ms = 0;
     activateScreensaverMode(g_screensaver_mode, true);
 }
 

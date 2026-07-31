@@ -505,6 +505,8 @@ public:
     bool screensaver_active = false;
     unsigned long last_activity_ms = 0;
     unsigned long last_update_ms = 0;
+    ClockRenderSnapshot screensaver_snapshot{};
+    unsigned long screensaver_snapshot_ms = 0;
 };
 
 class DiagnosticsView
