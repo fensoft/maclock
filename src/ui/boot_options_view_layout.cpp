@@ -258,31 +258,6 @@ void BootOptionsView::init(lv_obj_t *screen)
         boot_options_view.brightness_options, boot_brightness_event,
                         LV_EVENT_VALUE_CHANGED, nullptr);
 
-    boot_options_view.remember_label = lv_label_create(preferences_page);
-    lv_label_set_text(boot_options_view.remember_label, tr("Default boot mode"));
-    lv_obj_set_style_text_font(boot_options_view.remember_label, &lv_font_chicago_8, 0);
-    lv_obj_align(boot_options_view.remember_label, LV_ALIGN_TOP_MID, 0, 67);
-
-    boot_options_view.remember_selection =
-        lv_buttonmatrix_create(preferences_page);
-    lv_buttonmatrix_set_map(
-        boot_options_view.remember_selection, g_remember_map);
-    lv_buttonmatrix_set_button_ctrl_all(
-        boot_options_view.remember_selection,
-        LV_BUTTONMATRIX_CTRL_CHECKABLE);
-    lv_buttonmatrix_set_button_ctrl_all(
-        boot_options_view.remember_selection,
-        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
-    lv_buttonmatrix_set_one_checked(
-        boot_options_view.remember_selection, true);
-    lv_obj_set_size(
-        boot_options_view.remember_selection, 260, 48);
-    lv_obj_align(
-        boot_options_view.remember_selection,
-        LV_ALIGN_BOTTOM_MID, 0, 0);
-    style_boot_options_matrix(
-        boot_options_view.remember_selection);
-
     lv_obj_t *language_page =
         boot_options_view.pages[BOOT_OPTIONS_LANGUAGE];
     boot_options_view.language_options =
@@ -997,16 +972,25 @@ void BootOptionsView::init(lv_obj_t *screen)
         lv_obj_get_child(clock_button, 0);
     lv_label_set_text(
         boot_options_view.clock_button_label, tr("Clock"));
-    lv_obj_set_size(clock_button, 122, 124);
-    lv_obj_align(clock_button, LV_ALIGN_LEFT_MID, 8, 0);
+    lv_obj_set_size(clock_button, 122, 82);
+    lv_obj_align(clock_button, LV_ALIGN_TOP_LEFT, 8, 0);
 
     lv_obj_t *emulator_button =
         create_action_button(start_page, tr("Emulator"),
                              boot_start_emulator_event);
     boot_options_view.emulator_button_label =
         lv_obj_get_child(emulator_button, 0);
-    lv_obj_set_size(emulator_button, 122, 124);
-    lv_obj_align(emulator_button, LV_ALIGN_RIGHT_MID, -8, 0);
+    lv_obj_set_size(emulator_button, 122, 82);
+    lv_obj_align(emulator_button, LV_ALIGN_TOP_RIGHT, -8, 0);
+
+    lv_obj_t *boot_mode_button =
+        create_action_button(
+            start_page, "", boot_mode_toggle_event);
+    boot_options_view.boot_mode_button_label =
+        lv_obj_get_child(boot_mode_button, 0);
+    lv_obj_set_size(boot_mode_button, 260, 38);
+    lv_obj_align(boot_mode_button, LV_ALIGN_BOTTOM_MID, 0, 0);
+    update_boot_mode_button();
 
     lv_obj_t *tools_page =
         boot_options_view.pages[BOOT_OPTIONS_TOOLS];
@@ -1252,14 +1236,7 @@ void BootOptionsView::show()
         boot_options_view.brightness_options,
         (uint32_t)g_boot_brightness);
 
-    lv_buttonmatrix_clear_button_ctrl_all(
-        boot_options_view.remember_selection,
-        LV_BUTTONMATRIX_CTRL_CHECKED);
-    lv_buttonmatrix_set_button_ctrl(
-        boot_options_view.remember_selection,
-        1, LV_BUTTONMATRIX_CTRL_CHECKED);
-    lv_buttonmatrix_set_selected_button(
-        boot_options_view.remember_selection, 1);
+    update_boot_mode_button();
     update_regional_options_ui();
     update_display_options_ui();
     update_face_customization_options_ui();

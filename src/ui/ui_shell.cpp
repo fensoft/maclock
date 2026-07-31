@@ -125,14 +125,8 @@ static void refresh_language_ui()
     if (!boot_options_view.panel)
         return;
 
-    const uint32_t remember_selected =
-        lv_buttonmatrix_get_selected_button(
-            boot_options_view.remember_selection);
-
     lv_buttonmatrix_set_map(
         boot_options_view.brightness_options, g_brightness_map);
-    lv_buttonmatrix_set_map(
-        boot_options_view.remember_selection, g_remember_map);
     lv_buttonmatrix_set_map(
         boot_options_view.clock_face_options, g_clock_face_map);
     lv_buttonmatrix_set_map(
@@ -161,7 +155,6 @@ static void refresh_language_ui()
         boot_options_view.wifi_enabled_options, g_wifi_enabled_map);
 
     lv_label_set_text(boot_options_view.brightness_label, tr("Brightness"));
-    lv_label_set_text(boot_options_view.remember_label, tr("Default boot mode"));
     lv_label_set_text(
         boot_options_view.screensaver_delay_label,
         tr("Start after"));
@@ -182,6 +175,7 @@ static void refresh_language_ui()
     lv_label_set_text(boot_options_view.wifi_setup_label, tr("Setup Wi-Fi"));
     lv_label_set_text(boot_options_view.clock_button_label, tr("Clock"));
     lv_label_set_text(boot_options_view.emulator_button_label, tr("Emulator"));
+    update_boot_mode_button();
     lv_label_set_text(boot_options_view.diagnostics_button_label, tr("Diagnostics"));
     lv_label_set_text(
         boot_options_view.section_labels[BOOT_OPTIONS_SECTION_GENERAL],
@@ -231,9 +225,6 @@ static void refresh_language_ui()
     set_checked_button(
         boot_options_view.brightness_options,
         (uint32_t)g_boot_brightness);
-    set_checked_button(
-        boot_options_view.remember_selection,
-        remember_selected < 2 ? remember_selected : 1);
     update_regional_options_ui();
     update_display_options_ui();
     update_face_customization_options_ui();

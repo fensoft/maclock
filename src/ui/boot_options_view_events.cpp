@@ -4,7 +4,7 @@ static const BootOptionsPage
         BOOT_OPTIONS_LANGUAGE,
         BOOT_OPTIONS_DISPLAY,
         BOOT_OPTIONS_CHIME,
-        BOOT_OPTIONS_PREFERENCES};
+        BOOT_OPTIONS_START};
 
 static const BootOptionsPage
     g_boot_options_section_last[BOOT_OPTIONS_SECTION_COUNT] = {
@@ -186,9 +186,6 @@ static void update_boot_translation_maps()
     g_brightness_map[1] = tr("Lowest");
     g_brightness_map[2] = tr("Highest");
     g_brightness_map[3] = "";
-    g_remember_map[0] = tr("One time");
-    g_remember_map[1] = tr("Remember");
-    g_remember_map[2] = "";
     g_clock_face_map[0] = tr("Macintosh");
     g_clock_face_map[1] = tr("Compact");
     g_clock_face_map[2] = "\n";
@@ -859,33 +856,34 @@ static void boot_brightness_event(lv_event_t *event)
         apply_boot_brightness((BootBrightness)selected, true);
 }
 
-static bool boot_remember_selection()
+static void update_boot_mode_button()
 {
-    return boot_options_view.remember_selection &&
-           lv_buttonmatrix_has_button_ctrl(
-               boot_options_view.remember_selection,
-               1, LV_BUTTONMATRIX_CTRL_CHECKED);
+    if (!boot_options_view.boot_mode_button_label)
+        return;
+    lv_label_set_text(
+        boot_options_view.boot_mode_button_label,
+        g_boot_floppy_emulator
+            ? tr("Boot: Emulator")
+            : tr("Boot: Clock"));
 }
 
-static void remember_boot_mode(bool emulator)
+static void boot_mode_toggle_event(lv_event_t *event)
 {
-    if (!boot_remember_selection())
-        return;
-    g_boot_floppy_emulator = emulator;
-    settings_store.saveBootMode(emulator);
+    (void)event;
+    g_boot_floppy_emulator = !g_boot_floppy_emulator;
+    settings_store.saveBootMode(g_boot_floppy_emulator);
+    update_boot_mode_button();
 }
 
 static void boot_start_clock_event(lv_event_t *event)
 {
     (void)event;
-    remember_boot_mode(false);
     request_state(UI_STATE_EMPTY_SCREEN);
 }
 
 static void boot_start_emulator_event(lv_event_t *event)
 {
     (void)event;
-    remember_boot_mode(true);
     request_state(UI_STATE_EMULATOR);
 }
 
@@ -1207,7 +1205,7 @@ void BootOptionsView::setPage(BootOptionsPage page)
         tr("Face Details"), tr("Screensaver"),
         tr("Night Schedule"), tr("Night Screen"), tr("Chime"),
         tr("Chime Sound"), tr("Chime Volume"), tr("Quiet Hours"),
-        tr("Preferences"), tr("Start"), tr("Wi-Fi"),
+        tr("Start"), tr("Preferences"), tr("Wi-Fi"),
         tr("Tools"), tr("Software Update"), tr("About")};
     const char *section_names[BOOT_OPTIONS_SECTION_COUNT] = {
         tr("General"), tr("Display"), tr("Sound"), tr("System")};

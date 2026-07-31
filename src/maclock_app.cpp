@@ -169,8 +169,8 @@ enum BootOptionsPage
     BOOT_OPTIONS_CHIME_SOUND,
     BOOT_OPTIONS_CHIME_VOLUME,
     BOOT_OPTIONS_CHIME_QUIET,
-    BOOT_OPTIONS_PREFERENCES,
     BOOT_OPTIONS_START,
+    BOOT_OPTIONS_PREFERENCES,
     BOOT_OPTIONS_WIFI,
     BOOT_OPTIONS_TOOLS,
     BOOT_OPTIONS_UPDATE,
@@ -221,7 +221,6 @@ public:
     lv_obj_t *section_labels[BOOT_OPTIONS_SECTION_COUNT];
     lv_obj_t *home_calibration_label;
     lv_obj_t *brightness_options;
-    lv_obj_t *remember_selection;
     lv_obj_t *language_options;
     lv_obj_t *language_items[UI_LANGUAGE_COUNT];
     lv_obj_t *date_format_options;
@@ -285,7 +284,6 @@ public:
     lv_obj_t *next;
     lv_obj_t *next_label;
     lv_obj_t *brightness_label;
-    lv_obj_t *remember_label;
     lv_obj_t *screensaver_delay_label;
     lv_obj_t *dim_from_label;
     lv_obj_t *normal_at_label;
@@ -295,6 +293,7 @@ public:
     lv_obj_t *wifi_setup_label;
     lv_obj_t *clock_button_label;
     lv_obj_t *emulator_button_label;
+    lv_obj_t *boot_mode_button_label;
     lv_obj_t *diagnostics_button_label;
     lv_obj_t *calibration_label;
 };
@@ -664,7 +663,6 @@ static char g_floppy_sound_path[SOUND_SELECTOR_PATH_MAX] =
     "/floppy.mp3";
 static uint8_t g_floppy_sound_volume = 60;
 static const char *g_brightness_map[4] = {};
-static const char *g_remember_map[3] = {};
 static const char *g_date_format_map[4] = {
     "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", ""};
 static const char *g_clock_face_map[10] = {};

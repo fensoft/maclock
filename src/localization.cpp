@@ -118,6 +118,8 @@ static const Translation g_translations[] = {
     {"Lowest", "Minimum", "Mínimo", "Minimum", "Minima"},
     {"Highest", "Maximum", "Máximo", "Maximum", "Massima"},
     {"Default boot mode", "Mode au démarrage", "Modo de inicio", "Standard-Startmodus", "Modalità di avvio"},
+    {"Boot: Clock", "Démarrage : Horloge", "Inicio: Reloj", "Start: Uhr", "Avvio: Orologio"},
+    {"Boot: Emulator", "Démarrage : Émulateur", "Inicio: Emulador", "Start: Emulator", "Avvio: Emulatore"},
     {"One time", "Une fois", "Una vez", "Einmal", "Una volta"},
     {"Remember", "Mémoriser", "Recordar", "Speichern", "Ricorda"},
     {"Disabled", "Désactivé", "Desactivado", "Deaktiviert", "Disattivato"},
