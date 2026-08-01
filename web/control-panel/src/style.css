@@ -784,6 +784,98 @@ input[type="radio"]:checked::after {
   text-overflow: ellipsis;
 }
 
+.screensaver-mode-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.screensaver-mode-row .classic-radio {
+  min-width: 0;
+}
+
+.screensaver-play {
+  display: block;
+  width: 38px;
+  min-width: 38px;
+  padding: 0;
+}
+
+.screensaver-play .mac-button {
+  width: 38px;
+  min-width: 38px;
+  min-height: 28px;
+  padding: 2px 0;
+  font-family: sans-serif;
+}
+
+.photo-manager {
+  min-width: 0;
+  padding: 14px;
+  border: 2px solid #000;
+}
+
+.photo-manager legend {
+  padding: 0 7px;
+  font-weight: 700;
+}
+
+.photo-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.photo-upload-row .help-text {
+  margin: 0;
+}
+
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.photo-card {
+  min-width: 0;
+  padding: 7px;
+  border: 2px solid #000;
+  background: #fff;
+  box-shadow: 2px 2px 0 #777;
+}
+
+.photo-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 304 / 224;
+  border: 1px solid #000;
+  object-fit: cover;
+  image-rendering: auto;
+}
+
+.photo-card-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding-top: 7px;
+}
+
+.photo-card-footer > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-card-footer .mac-button {
+  min-width: 72px;
+  padding-inline: 9px;
+}
+
 .alarm-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1850,6 +1942,15 @@ hr {
 
   .screensaver-modes {
     grid-template-columns: 1fr;
+  }
+
+  .photo-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .photo-upload-row {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .accent-box {

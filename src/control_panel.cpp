@@ -40,6 +40,11 @@ struct ControlPanelService::State
     size_t minivmac_upload_size = 0;
     bool minivmac_upload_started = false;
     bool minivmac_bootstrap_attempted = false;
+    File photo_upload;
+    String photo_upload_path;
+    String photo_upload_error;
+    size_t photo_upload_size = 0;
+    bool photo_upload_started = false;
 };
 
 namespace
@@ -125,6 +130,174 @@ static void send_minivmac_files()
             entry["size"] = 0;
     }
     send_json(document);
+}
+
+static bool is_jpeg_name(const String &name)
+{
+    const size_t length = name.length();
+    return (length >= 4 &&
+            strcasecmp(name.c_str() + length - 4, ".jpg") == 0) ||
+           (length >= 5 &&
+            strcasecmp(name.c_str() + length - 5, ".jpeg") == 0);
+}
+
+static String safe_photo_name(const String &source)
+{
+    String name;
+    for (size_t i = 0; i < source.length() && name.length() < 72; ++i)
+    {
+        const char c = source[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_')
+            name += c;
+        else if (c == '.' || c == ' ')
+            name += c == ' ' ? '-' : c;
+    }
+    if (!is_jpeg_name(name))
+        return String();
+    return name;
+}
+
+static void send_screensaver_photos()
+{
+    JsonDocument document;
+    JsonArray photos = document["photos"].to<JsonArray>();
+    File directory = LittleFS.open("/screensaver");
+    if (directory && directory.isDirectory())
+    {
+        for (File file = directory.openNextFile(); file;
+             file = directory.openNextFile())
+        {
+            const String path = file.name();
+            if (file.isDirectory() || !is_jpeg_name(path))
+                continue;
+            const int slash = path.lastIndexOf("/");
+            JsonObject photo = photos.add<JsonObject>();
+            photo["name"] = slash >= 0 ? path.substring(slash + 1) : path;
+            photo["size"] = file.size();
+        }
+        directory.close();
+    }
+    send_json(document);
+}
+
+static bool requested_photo_path(String &path)
+{
+    if (!g_server.hasArg("name"))
+        return false;
+    const String name = safe_photo_name(g_server.arg("name"));
+    if (!name.length())
+        return false;
+    path = String("/screensaver/") + name;
+    return true;
+}
+
+static void send_screensaver_photo()
+{
+    String path;
+    if (!requested_photo_path(path) || !LittleFS.exists(path.c_str()))
+    {
+        send_result(false, "Photo not found", 404);
+        return;
+    }
+    File file = LittleFS.open(path.c_str(), "r");
+    if (!file)
+    {
+        send_result(false, "Photo could not be opened", 500);
+        return;
+    }
+    g_server.sendHeader("Cache-Control", "no-store");
+    g_server.setContentLength(file.size());
+    g_server.send(200, "image/jpeg", "");
+    uint8_t buffer[1024];
+    while (file.position() < file.size())
+    {
+        const size_t count = file.read(buffer, sizeof(buffer));
+        if (!count)
+            break;
+        g_server.sendContent(
+            reinterpret_cast<const char *>(buffer), count);
+    }
+    file.close();
+}
+
+static void receive_screensaver_photo_upload()
+{
+    HTTPUpload &upload = g_server.upload();
+    auto &state = active_control_panel->state();
+    if (upload.status == UPLOAD_FILE_START)
+    {
+        state.photo_upload_error = "";
+        state.photo_upload_size = 0;
+        state.photo_upload_started = true;
+        const String name = safe_photo_name(upload.filename);
+        if (!name.length())
+        {
+            state.photo_upload_error = "Only JPEG photos are accepted";
+            return;
+        }
+        if (!LittleFS.exists("/screensaver") &&
+            !LittleFS.mkdir("/screensaver"))
+        {
+            state.photo_upload_error = "Could not create photo folder";
+            return;
+        }
+        state.photo_upload_path = String("/screensaver/") + name;
+        state.photo_upload = LittleFS.open(
+            state.photo_upload_path.c_str(), "w");
+        if (!state.photo_upload)
+            state.photo_upload_error = "Could not create photo file";
+    }
+    else if (upload.status == UPLOAD_FILE_WRITE)
+    {
+        if (!state.photo_upload_error.length() &&
+            state.photo_upload.write(upload.buf, upload.currentSize) !=
+                upload.currentSize)
+            state.photo_upload_error = "Could not write photo file";
+        state.photo_upload_size += upload.currentSize;
+        if (state.photo_upload_size > 1024U * 1024U)
+            state.photo_upload_error = "Photo file is too large";
+    }
+    else if (upload.status == UPLOAD_FILE_END ||
+             upload.status == UPLOAD_FILE_ABORTED)
+    {
+        if (state.photo_upload)
+            state.photo_upload.close();
+        if (upload.status == UPLOAD_FILE_ABORTED)
+            state.photo_upload_error = "Photo upload was cancelled";
+        if (state.photo_upload_error.length())
+            LittleFS.remove(state.photo_upload_path.c_str());
+    }
+}
+
+static void finish_screensaver_photo_upload()
+{
+    auto &state = active_control_panel->state();
+    if (!state.photo_upload_started)
+    {
+        send_result(false, "No photo was uploaded", 400);
+        return;
+    }
+    state.photo_upload_started = false;
+    if (state.photo_upload_error.length())
+    {
+        send_result(false, state.photo_upload_error.c_str(), 400);
+        return;
+    }
+    send_result(true, "Photo uploaded");
+}
+
+static void delete_screensaver_photo()
+{
+    String path;
+    if (!requested_photo_path(path) || !LittleFS.exists(path.c_str()))
+    {
+        send_result(false, "Photo not found", 404);
+        return;
+    }
+    send_result(
+        LittleFS.remove(path.c_str()),
+        "Photo deleted");
 }
 
 static void download_minivmac_file()
@@ -1553,6 +1726,19 @@ static void configure_routes()
         "/api/screensaver",
         HTTP_POST,
         apply_screensaver);
+    g_server.on(
+        "/api/screensaver/photos", HTTP_GET,
+        send_screensaver_photos);
+    g_server.on(
+        "/api/screensaver/photo", HTTP_GET,
+        send_screensaver_photo);
+    g_server.on(
+        "/api/screensaver/photo/upload", HTTP_POST,
+        finish_screensaver_photo_upload,
+        receive_screensaver_photo_upload);
+    g_server.on(
+        "/api/screensaver/photo/delete", HTTP_POST,
+        delete_screensaver_photo);
     g_server.on("/api/alarm", HTTP_POST, apply_alarm);
     g_server.on("/api/timer", HTTP_POST, apply_timer);
     g_server.on("/api/night", HTTP_POST, apply_night);

@@ -139,8 +139,6 @@ static void refresh_language_ui()
         boot_options_view.flip_speed_options,
         g_flip_speed_map);
     lv_buttonmatrix_set_map(
-        boot_options_view.screensaver_options, g_screensaver_map);
-    lv_buttonmatrix_set_map(
         boot_options_view.screensaver_delay_options,
         g_screensaver_delay_map);
     lv_buttonmatrix_set_map(
@@ -231,9 +229,7 @@ static void refresh_language_ui()
     set_checked_button(
         boot_options_view.clock_face_options,
         (uint32_t)g_clock_face);
-    set_checked_button(
-        boot_options_view.screensaver_options,
-        (uint32_t)g_screensaver_mode);
+    update_screensaver_mode_button();
     set_checked_button(
         boot_options_view.screensaver_delay_options,
         g_screensaver_delay_index);

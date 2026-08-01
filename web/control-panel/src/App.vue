@@ -9,9 +9,11 @@ import {
 } from "vue";
 
 import {
+  deleteScreensaverPhoto,
   deleteSound,
   exportConfiguration,
   fetchMiniVmacFiles,
+  fetchScreensaverPhotos,
   fetchState,
   fetchStatus,
   importSoundUrl,
@@ -22,6 +24,8 @@ import {
   uploadSound,
   uploadFirmware,
   uploadMiniVmacFile,
+  uploadScreensaverPhoto,
+  screensaverPhotoUrl,
 } from "./api";
 import MacAppIcon from "./components/MacAppIcon.vue";
 import MacButton from "./components/MacButton.vue";
@@ -69,6 +73,8 @@ const myInstantsQuery = ref("");
 const myInstantsResults = ref([]);
 const myInstantsSearched = ref(false);
 const deleteSoundTarget = ref(null);
+const screensaverPhotos = ref([]);
+const screensaverPhotoInput = ref(null);
 const restoreConfirmation = ref(false);
 const pendingBackupFile = ref(null);
 let statusPoll = 0;
@@ -146,6 +152,17 @@ const screensaverOptions = computed(() =>
     "pipes",
     "flyingClocks",
     "randomRotation",
+    "flyingToasters",
+    "marqueeMessage",
+    "digitalRainClock",
+    "mystify",
+    "aquarium",
+    "gameOfLife",
+    "maze",
+    "errorParade",
+    "rainyWindow",
+    "fireworks",
+    "photoSlideshow",
   ].map((key) => t(key)),
 );
 const screensaverDelayOptions = computed(() =>
@@ -391,6 +408,8 @@ async function loadState({ quiet = false } = {}) {
     panelState.value = await fetchState();
     const miniVmac = await fetchMiniVmacFiles();
     miniVmacFiles.value = miniVmac.files || [];
+    const photos = await fetchScreensaverPhotos();
+    screensaverPhotos.value = photos.photos || [];
     if (panelState.value.mqtt) {
       panelState.value.mqtt.password = "";
       panelState.value.mqtt.clearPassword = false;
@@ -401,6 +420,74 @@ async function loadState({ quiet = false } = {}) {
     showNotice(t("contactError"), "error");
   } finally {
     loading.value = false;
+  }
+}
+
+async function resizeScreensaverPhoto(file) {
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = 304;
+  canvas.height = 224;
+  const context = canvas.getContext("2d", { alpha: false });
+  const scale = Math.max(304 / bitmap.width, 224 / bitmap.height);
+  const width = bitmap.width * scale;
+  const height = bitmap.height * scale;
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, 304, 224);
+  context.drawImage(bitmap, (304 - width) / 2, (224 - height) / 2,
+    width, height);
+  bitmap.close?.();
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (result) => result ? resolve(result) : reject(new Error("JPEG encode failed")),
+      "image/jpeg", 0.88,
+    );
+  });
+  const base = (file.name || "photo")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/^-+|-+$/g, "") || "photo";
+  return new File([blob], `${base}.jpg`, { type: "image/jpeg" });
+}
+
+async function addScreensaverPhoto(file) {
+  if (!file || busy.value) return;
+  if (!/^image\/jpe?g$/i.test(file.type) && !/\.jpe?g$/i.test(file.name)) {
+    showNotice(t("jpegOnly"), "error");
+    return;
+  }
+  busy.value = "screensaver-photo-upload";
+  try {
+    const resized = await resizeScreensaverPhoto(file);
+    await uploadScreensaverPhoto(resized);
+    const result = await fetchScreensaverPhotos();
+    screensaverPhotos.value = result.photos || [];
+    showNotice(t("photoUploaded"));
+  } catch {
+    showNotice(t("photoOperationError"), "error");
+  } finally {
+    busy.value = "";
+    if (screensaverPhotoInput.value)
+      screensaverPhotoInput.value.value = "";
+  }
+}
+
+function chooseScreensaverPhoto(event) {
+  addScreensaverPhoto(event.target.files?.[0]);
+}
+
+async function removeScreensaverPhoto(photo) {
+  if (!photo || busy.value) return;
+  busy.value = `screensaver-photo-delete-${photo.name}`;
+  try {
+    await deleteScreensaverPhoto(photo.name);
+    const result = await fetchScreensaverPhotos();
+    screensaverPhotos.value = result.photos || [];
+    showNotice(t("photoDeleted"));
+  } catch {
+    showNotice(t("photoOperationError"), "error");
+  } finally {
+    busy.value = "";
   }
 }
 
@@ -492,19 +579,20 @@ function saveMqtt() {
   mqtt.clearPassword = false;
 }
 
-function screensaverAction(action) {
+function screensaverAction(action, mode = null) {
   const screensaver = panelState.value.screensaver;
   runAction(
     `screensaver-${action}`,
     "/api/screensaver",
     {
       action,
-      mode: screensaver.mode,
+      mode: mode ?? screensaver.mode,
       delay: screensaver.delay,
     },
     action === "launch"
       ? t("screensaverLaunched")
       : t("screensaverSaved"),
+    { refresh: action !== "launch" },
   );
 }
 
@@ -1386,18 +1474,29 @@ onBeforeUnmount(() => {
 
               <fieldset class="radio-box screensaver-modes">
                 <legend>{{ t("screensaverMode") }}</legend>
-                <label
+                <div
                   v-for="(name, index) in screensaverOptions"
                   :key="name"
-                  class="classic-radio"
+                  class="screensaver-mode-row"
                 >
-                  <input
-                    v-model.number="panelState.screensaver.mode"
-                    type="radio"
-                    :value="index"
-                  />
-                  <span>{{ name }}</span>
-                </label>
+                  <label class="classic-radio">
+                    <input
+                      v-model.number="panelState.screensaver.mode"
+                      type="radio"
+                      :value="index"
+                    />
+                    <span>{{ name }}</span>
+                  </label>
+                  <MacButton
+                    class="screensaver-play"
+                    :disabled="!!busy || index === 0"
+                    :aria-label="`${t('launchNow')}: ${name}`"
+                    :title="`${t('launchNow')}: ${name}`"
+                    @click="screensaverAction('launch', index)"
+                  >
+                    ▶
+                  </MacButton>
+                </div>
               </fieldset>
 
               <label class="field">
@@ -1415,17 +1514,59 @@ onBeforeUnmount(() => {
 
               <p class="help-text">{{ t("screensaverHelp") }}</p>
 
-              <div class="button-row">
-                <MacButton
-                  default-action
-                  :disabled="
-                    !!busy || panelState.screensaver.mode === 0
-                  "
-                  @click="screensaverAction('launch')"
-                >
-                  {{ t("launchNow") }}
-                </MacButton>
-              </div>
+              <fieldset class="photo-manager">
+                <legend>{{ t("slideshowPhotos") }}</legend>
+                <div class="photo-upload-row">
+                  <input
+                    ref="screensaverPhotoInput"
+                    class="visually-hidden"
+                    type="file"
+                    accept="image/jpeg,.jpg,.jpeg"
+                    @change="chooseScreensaverPhoto"
+                  />
+                  <MacButton
+                    :disabled="!!busy"
+                    @click="screensaverPhotoInput?.click()"
+                  >
+                    {{ t("addPhoto") }}
+                  </MacButton>
+                  <span class="help-text">{{ t("photoResizeHelp") }}</span>
+                </div>
+                <p v-if="!screensaverPhotos.length" class="empty-state">
+                  {{ t("noSlideshowPhotos") }}
+                </p>
+                <div v-else class="photo-grid">
+                  <article
+                    v-for="photo in screensaverPhotos"
+                    :key="photo.name"
+                    class="photo-card"
+                  >
+                    <a
+                      :href="screensaverPhotoUrl(photo.name)"
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      <img
+                        :src="screensaverPhotoUrl(photo.name)"
+                        :alt="photo.name"
+                        width="152"
+                        height="112"
+                      />
+                    </a>
+                    <div class="photo-card-footer">
+                      <span :title="photo.name">{{ photo.name }}</span>
+                      <MacButton
+                        danger
+                        :disabled="!!busy"
+                        @click="removeScreensaverPhoto(photo)"
+                      >
+                        {{ t("remove") }}
+                      </MacButton>
+                    </div>
+                  </article>
+                </div>
+              </fieldset>
+
             </form>
           </MacWindow>
 

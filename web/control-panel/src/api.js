@@ -150,6 +150,8 @@ const demoState = {
   },
 };
 
+const demoScreensaverPhotos = [];
+
 const demoMiniVmacFiles = [
   { slot: "rom", name: "vMac.ROM", exists: true, size: 131072 },
   { slot: "disk1", name: "disk1.dsk", exists: true, size: 2097152 },
@@ -407,6 +409,49 @@ export async function fetchMiniVmacFiles() {
   if (!import.meta.env.DEV) return realFetch("/api/minivmac/files");
   await new Promise((resolve) => setTimeout(resolve, 100));
   return { files: clone(demoMiniVmacFiles) };
+}
+
+export async function fetchScreensaverPhotos() {
+  if (import.meta.env.DEV) {
+    return { photos: clone(demoScreensaverPhotos) };
+  }
+  return realFetch("/api/screensaver/photos");
+}
+
+export function screensaverPhotoUrl(name) {
+  if (import.meta.env.DEV) {
+    return demoScreensaverPhotos.find((photo) => photo.name === name)?.url || "";
+  }
+  return `/api/screensaver/photo?name=${encodeURIComponent(name)}`;
+}
+
+export async function uploadScreensaverPhoto(file) {
+  if (import.meta.env.DEV) {
+    const url = URL.createObjectURL(file);
+    demoScreensaverPhotos.push({ name: file.name, size: file.size, url });
+    return { ok: true, message: "Photo uploaded" };
+  }
+  const body = new FormData();
+  body.append("file", file, file.name);
+  const response = await fetch("/api/screensaver/photo/upload", {
+    method: "POST",
+    body,
+  });
+  return parseResponse(response);
+}
+
+export async function deleteScreensaverPhoto(name) {
+  if (import.meta.env.DEV) {
+    const index = demoScreensaverPhotos.findIndex(
+      (photo) => photo.name === name,
+    );
+    if (index >= 0) {
+      URL.revokeObjectURL(demoScreensaverPhotos[index].url);
+      demoScreensaverPhotos.splice(index, 1);
+    }
+    return { ok: true, message: "Photo deleted" };
+  }
+  return postForm("/api/screensaver/photo/delete", { name });
 }
 
 export async function uploadMiniVmacFile(slot, file) {

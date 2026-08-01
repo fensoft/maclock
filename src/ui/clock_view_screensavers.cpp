@@ -46,16 +46,40 @@ static void fill_matrix_column(char *text, size_t text_size)
 static ScreensaverMode random_screensaver_mode(
     ScreensaverMode previous)
 {
-    ScreensaverMode selected = static_cast<ScreensaverMode>(
-        random(
-            static_cast<long>(ScreensaverMode::AfterDark),
-            static_cast<long>(ScreensaverMode::Random)));
-    if (selected == previous)
+    bool has_photos = false;
+    File photo_directory = LittleFS.open("/screensaver");
+    if (photo_directory && photo_directory.isDirectory())
     {
-        uint8_t next = static_cast<uint8_t>(selected) + 1;
-        if (next >= static_cast<uint8_t>(ScreensaverMode::Random))
-            next = static_cast<uint8_t>(ScreensaverMode::AfterDark);
-        selected = static_cast<ScreensaverMode>(next);
+        for (File file = photo_directory.openNextFile(); file;
+             file = photo_directory.openNextFile())
+        {
+            const String path = file.name();
+            const char *name = path.c_str();
+            const size_t length = strlen(name);
+            if ((length >= 4 &&
+                 strcasecmp(name + length - 4, ".jpg") == 0) ||
+                (length >= 5 &&
+                 strcasecmp(name + length - 5, ".jpeg") == 0))
+            {
+                has_photos = true;
+                break;
+            }
+        }
+        photo_directory.close();
+    }
+    const uint8_t mode_count =
+        static_cast<uint8_t>(ScreensaverMode::Count) - 2;
+    ScreensaverMode selected = ScreensaverMode::AfterDark;
+    for (uint8_t attempt = 0; attempt < 32; ++attempt)
+    {
+        const uint8_t selected_index =
+            static_cast<uint8_t>(random(0, mode_count));
+        selected = selected_index < 6
+            ? static_cast<ScreensaverMode>(selected_index + 1)
+            : static_cast<ScreensaverMode>(selected_index + 2);
+        if (selected != previous &&
+            (selected != ScreensaverMode::PhotoSlideshow || has_photos))
+            break;
     }
     return selected;
 }
@@ -317,6 +341,7 @@ void ClockView::initScreensavers(lv_obj_t *screen)
             screensaver_flying_x[i],
             screensaver_flying_y[i]);
     }
+    initExtendedScreensavers(screensaver);
 }
 
 void ClockView::activateScreensaverMode(
@@ -336,11 +361,13 @@ void ClockView::activateScreensaverMode(
 
     if (mode == ScreensaverMode::Off ||
         static_cast<uint8_t>(mode) >=
-            static_cast<uint8_t>(ScreensaverMode::Random))
+            static_cast<uint8_t>(ScreensaverMode::Count))
     {
         mode = ScreensaverMode::AfterDark;
     }
     screensaver_active_mode = mode;
+
+    const bool extended = activateExtendedScreensaver(mode, reset);
 
     set_screensaver_layer_visible(
         screensaver_star_layer,
@@ -365,6 +392,9 @@ void ClockView::activateScreensaverMode(
         screensaver_flying_layer,
         mode == ScreensaverMode::FlyingClocks);
 
+    if (extended)
+        return;
+
     if (!reset)
         return;
     screensaver_last_move_ms = 0;
@@ -386,7 +416,7 @@ void ClockView::activateScreensaverMode(
     }
 }
 
-void ClockView::showScreensaver()
+void ClockView::showScreensaver(ScreensaverMode mode)
 {
     ui_shell.hideAll();
     screensaver_active = true;
@@ -395,15 +425,14 @@ void ClockView::showScreensaver()
     lv_obj_clear_flag(screensaver, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(screensaver);
     screensaver_snapshot_ms = 0;
-    activateScreensaverMode(g_screensaver_mode, true);
+    activateScreensaverMode(mode, true);
 }
 
 void ClockView::updateScreensaver(
     const ClockRenderSnapshot &snapshot)
 {
     const unsigned long now_ms = millis();
-    if (g_screensaver_mode == ScreensaverMode::Random &&
-        screensaver_random_due_ms &&
+    if (screensaver_random_due_ms &&
         static_cast<int32_t>(
             now_ms - screensaver_random_due_ms) >= 0)
     {
@@ -435,6 +464,9 @@ void ClockView::updateScreensaver(
         }
         screensaver_last_second = current.second();
     }
+
+    if (updateExtendedScreensaver(snapshot))
+        return;
 
     const unsigned long frame_interval =
         screensaver_frame_interval(

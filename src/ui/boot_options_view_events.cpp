@@ -211,17 +211,6 @@ static void update_boot_translation_maps()
     g_flip_speed_map[1] = tr("Normal");
     g_flip_speed_map[2] = tr("Fast");
     g_flip_speed_map[3] = "";
-    g_screensaver_map[0] = tr("Off");
-    g_screensaver_map[1] = tr("After Dark");
-    g_screensaver_map[2] = tr("Stars");
-    g_screensaver_map[3] = "\n";
-    g_screensaver_map[4] = tr("Mac Logo");
-    g_screensaver_map[5] = tr("Matrix");
-    g_screensaver_map[6] = tr("Pipes");
-    g_screensaver_map[7] = "\n";
-    g_screensaver_map[8] = tr("Clocks");
-    g_screensaver_map[9] = tr("Random");
-    g_screensaver_map[10] = "";
     g_screensaver_delay_map[0] = tr("1 min");
     g_screensaver_delay_map[1] = tr("5 min");
     g_screensaver_delay_map[2] = tr("10 min");
@@ -673,15 +662,35 @@ static void flip_speed_event(lv_event_t *event)
     apply_face_customization_change();
 }
 
+static const char *screensaver_mode_text(ScreensaverMode mode)
+{
+    static const char *names[] = {
+        "Off", "After Dark", "Stars", "Mac Logo", "Matrix", "Pipes",
+        "Clocks", "Random", "Flying Toasters", "Marquee Message",
+        "Digital Rain Clock", "Mystify", "Aquarium", "Game of Life",
+        "Maze", "Error Parade", "Rainy Window", "Fireworks",
+        "Photo Slideshow"};
+    const uint8_t index = static_cast<uint8_t>(mode);
+    return tr(index < SCREENSAVER_MODE_COUNT ? names[index] : names[0]);
+}
+
+static void update_screensaver_mode_button()
+{
+    if (boot_options_view.screensaver_option_label)
+        lv_label_set_text(
+            boot_options_view.screensaver_option_label,
+            screensaver_mode_text(g_screensaver_mode));
+}
+
 static void screensaver_event(lv_event_t *event)
 {
-    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
-    const uint32_t selected =
-        lv_buttonmatrix_get_selected_button(options);
+    (void)event;
+    uint8_t selected = static_cast<uint8_t>(g_screensaver_mode) + 1;
     if (selected >= SCREENSAVER_MODE_COUNT)
-        return;
-    g_screensaver_mode = (ScreensaverMode)selected;
+        selected = 0;
+    g_screensaver_mode = static_cast<ScreensaverMode>(selected);
     settings_store.saveScreensaverMode(g_screensaver_mode);
+    update_screensaver_mode_button();
 }
 
 static void screensaver_delay_event(lv_event_t *event)

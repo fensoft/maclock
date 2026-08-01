@@ -161,6 +161,7 @@ private:
     uint8_t control_preview_volume_ = 0;
     bool control_preview_pending_ = false;
     bool screensaver_launch_pending_ = false;
+    ScreensaverMode screensaver_preview_mode_ = ScreensaverMode::Off;
     bool update_network_guard_active_ = false;
 
     unsigned long last_alarm_check_ms_ = 0;

@@ -51,7 +51,10 @@ static constexpr uint32_t kMqttInitialRetryMs = 1000;
 static constexpr uint32_t kMqttMaximumRetryMs = 60UL * 60UL * 1000UL;
 static constexpr const char *kScreensaverNames[] = {
     "Off", "After Dark", "Starfield", "Bouncing Mac",
-    "Matrix Rain", "Pipes", "Flying Clocks", "Random"};
+    "Matrix Rain", "Pipes", "Flying Clocks", "Random",
+    "Flying Toasters", "Marquee Message", "Digital Rain Clock",
+    "Mystify", "Aquarium", "Game of Life", "Maze", "Error Parade",
+    "Rainy Window", "Fireworks", "Photo Slideshow"};
 static constexpr const char *kClockFaceNames[] = {
     "Macintosh", "Compact", "Analog", "Flip", "Odometer", "Mac OS 8"};
 

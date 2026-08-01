@@ -249,6 +249,7 @@ public:
     lv_obj_t *flip_speed_label;
     lv_obj_t *flip_speed_options;
     lv_obj_t *screensaver_options;
+    lv_obj_t *screensaver_option_label;
     lv_obj_t *screensaver_delay_options;
     lv_obj_t *night_enabled_options;
     lv_obj_t *night_start_options;
@@ -403,11 +404,16 @@ public:
     void applyFaceCustomization();
     void applyTimeFormatLayout();
     void initScreensavers(lv_obj_t *screen);
-    void showScreensaver();
+    void showScreensaver(ScreensaverMode mode);
     void updateScreensaver(
         const ClockRenderSnapshot &snapshot);
     void activateScreensaverMode(
         ScreensaverMode mode, bool reset);
+    void initExtendedScreensavers(lv_obj_t *parent);
+    bool activateExtendedScreensaver(
+        ScreensaverMode mode, bool reset);
+    bool updateExtendedScreensaver(
+        const ClockRenderSnapshot &snapshot);
     void updateMacintoshLabels(
         const ClockRenderSnapshot &snapshot);
 
@@ -506,6 +512,19 @@ public:
     unsigned long last_update_ms = 0;
     ClockRenderSnapshot screensaver_snapshot{};
     unsigned long screensaver_snapshot_ms = 0;
+    lv_obj_t *screensaver_canvas = nullptr;
+    lv_obj_t *screensaver_photo = nullptr;
+    uint8_t *screensaver_canvas_buffer = nullptr;
+    alignas(2) uint8_t screensaver_state[2200] = {};
+    int16_t screensaver_x[64] = {};
+    int16_t screensaver_y[64] = {};
+    int8_t screensaver_dx[64] = {};
+    int8_t screensaver_dy[64] = {};
+    uint32_t screensaver_extended_frame = 0;
+    uint32_t screensaver_photo_due_ms = 0;
+    uint8_t screensaver_photo_transition = 0;
+    bool screensaver_photo_loaded = false;
+    char screensaver_photo_path[96] = "";
 };
 
 class DiagnosticsView
@@ -669,7 +688,6 @@ static const char *g_clock_face_map[10] = {};
 static const char *g_face_accent_map[9] = {};
 static const char *g_face_size_map[4] = {};
 static const char *g_flip_speed_map[4] = {};
-static const char *g_screensaver_map[12] = {};
 static const uint8_t g_screensaver_delays_minutes[] = {
     1, 5, 10, 30};
 static const char *g_screensaver_delay_map[7] = {};
@@ -1033,6 +1051,7 @@ static void maybe_start_chime(const DateTime &current)
 #include "ui/clock_view_common.cpp"
 #include "ui/clock_view_faces.cpp"
 #include "ui/clock_view_screensavers.cpp"
+#include "ui/clock_view_screensavers_extended.cpp"
 #include "ui/ui_assets.cpp"
 #include "ui/mqtt_notification_view.cpp"
 #include "ui/maclock_state_machine.cpp"

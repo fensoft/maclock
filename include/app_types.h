@@ -114,6 +114,17 @@ enum class ScreensaverMode : uint8_t
     Pipes,
     FlyingClocks,
     Random,
+    FlyingToasters,
+    Marquee,
+    DigitalRainClock,
+    Mystify,
+    Aquarium,
+    Life,
+    Maze,
+    ErrorParade,
+    RainyWindow,
+    Fireworks,
+    PhotoSlideshow,
     Count
 };
 

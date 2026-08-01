@@ -596,32 +596,16 @@ void BootOptionsView::init(lv_obj_t *screen)
     lv_obj_t *screensaver_page =
         boot_options_view.pages[BOOT_OPTIONS_SCREENSAVER];
     boot_options_view.screensaver_options =
-        lv_buttonmatrix_create(screensaver_page);
-    lv_buttonmatrix_set_map(
-        boot_options_view.screensaver_options,
-        g_screensaver_map);
-    lv_buttonmatrix_set_button_ctrl_all(
-        boot_options_view.screensaver_options,
-        LV_BUTTONMATRIX_CTRL_CHECKABLE);
-    lv_buttonmatrix_set_button_ctrl_all(
-        boot_options_view.screensaver_options,
-        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
-    lv_buttonmatrix_set_one_checked(
-        boot_options_view.screensaver_options, true);
+        create_action_button(
+            screensaver_page, "", screensaver_event);
+    boot_options_view.screensaver_option_label =
+        lv_obj_get_child(boot_options_view.screensaver_options, 0);
     lv_obj_set_size(
         boot_options_view.screensaver_options, 260, 80);
     lv_obj_align(
         boot_options_view.screensaver_options,
         LV_ALIGN_TOP_MID, 0, 0);
-    style_boot_options_matrix(
-        boot_options_view.screensaver_options);
-    lv_obj_set_style_pad_row(
-        boot_options_view.screensaver_options, 4, 0);
-    lv_obj_set_style_pad_column(
-        boot_options_view.screensaver_options, 5, 0);
-    lv_obj_add_event_cb(
-        boot_options_view.screensaver_options,
-        screensaver_event, LV_EVENT_VALUE_CHANGED, nullptr);
+    update_screensaver_mode_button();
 
     boot_options_view.screensaver_delay_label =
         lv_label_create(screensaver_page);
@@ -1243,9 +1227,7 @@ void BootOptionsView::show()
     set_checked_button(
         boot_options_view.clock_face_options,
         (uint32_t)g_clock_face);
-    set_checked_button(
-        boot_options_view.screensaver_options,
-        (uint32_t)g_screensaver_mode);
+    update_screensaver_mode_button();
     set_checked_button(
         boot_options_view.screensaver_delay_options,
         g_screensaver_delay_index);

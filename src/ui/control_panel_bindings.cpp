@@ -335,23 +335,23 @@ bool MaclockApp::applyControlScreensaver(
         return false;
     }
 
-    app_settings.screensaver_mode = mode;
-    app_settings.screensaver_delay_index =
-        delay_index;
-    settings_store.saveScreensaverMode(mode);
-    settings_store.saveScreensaverDelay(delay_index);
-    set_checked_button(
-        boot_options_view.screensaver_options,
-        static_cast<uint8_t>(mode));
-    set_checked_button(
-        boot_options_view.screensaver_delay_options,
-        delay_index);
-
     if (launch_now)
     {
+        screensaver_preview_mode_ = mode;
         screensaver_launch_pending_ = true;
         if (current_state_ != UiState::Normal)
             requestState(UiState::Normal);
+    }
+    else
+    {
+        app_settings.screensaver_mode = mode;
+        app_settings.screensaver_delay_index = delay_index;
+        settings_store.saveScreensaverMode(mode);
+        settings_store.saveScreensaverDelay(delay_index);
+        update_screensaver_mode_button();
+        set_checked_button(
+            boot_options_view.screensaver_delay_options,
+            delay_index);
     }
     return true;
 }

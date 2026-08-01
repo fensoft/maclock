@@ -433,11 +433,12 @@ void MaclockApp::tick()
         }
 
         if (screensaver_launch_pending_ &&
-            g_screensaver_mode != SCREENSAVER_OFF)
+            screensaver_preview_mode_ != ScreensaverMode::Off)
         {
             screensaver_launch_pending_ = false;
             clock_view.last_activity_ms = now;
-            clock_view.showScreensaver();
+            clock_view.showScreensaver(screensaver_preview_mode_);
+            screensaver_preview_mode_ = ScreensaverMode::Off;
             clock_view.updateScreensaver(
                 make_clock_snapshot(now));
             lv_timer_handler();
@@ -491,7 +492,7 @@ void MaclockApp::tick()
             now - clock_view.last_activity_ms >=
                 screensaver_delay_ms)
         {
-            clock_view.showScreensaver();
+            clock_view.showScreensaver(g_screensaver_mode);
             clock_view.screensaver_snapshot.current = rtc_now();
             clock_view.screensaver_snapshot_ms = now;
             clock_view.updateScreensaver(
