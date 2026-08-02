@@ -252,6 +252,7 @@ void UiShell::init()
 
 static void run_emulator()
 {
+    maclock_hal().emulatorModeChanged(true);
     audio_service.stop();
     control_panel_service.stop();
     mqtt_service.stop(false);
@@ -261,6 +262,8 @@ static void run_emulator()
     ui_shell.releaseMacOS8Assets();
 
     minivmac();
+
+    maclock_hal().emulatorModeChanged(false);
 
     input_service.resumeTask();
     audio_service.resumeTask();
@@ -303,6 +306,7 @@ void DiagnosticsView::update(
              "%s: %lld/%u\n"
              "%s: %s\n"
              "%s: %s\n"
+             "%s: %s\n"
              "%-7s: %s\n"
              "%-7s: %s\n"
              "%-7s: %s\n"
@@ -327,6 +331,10 @@ void DiagnosticsView::update(
              snapshot.touch_pressed
                  ? tr("Pressed")
                  : tr("Released"),
+             tr("Touchscreen"),
+             snapshot.touchscreen_present
+                 ? tr("Present")
+                 : tr("Missing"),
              tr("Charging"),
              snapshot.charging ? tr("Yes") : tr("No"),
              tr("I2C"),

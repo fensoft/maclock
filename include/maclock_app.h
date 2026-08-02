@@ -16,6 +16,7 @@
 #include "input_service.h"
 #include "maclock_hal.h"
 #include "mqtt_service.h"
+#include "rotary_navigator.h"
 #include "rtc_service.h"
 #include "settings_store.h"
 #include "timer_ui.h"
@@ -125,6 +126,10 @@ public:
     TimerView &timerView() { return timer_view_; }
     DateTimeEditor &dateTimeEditor() { return datetime_editor_; }
     DisplayService &display() { return display_service_; }
+    bool touchscreenAvailable() const
+    {
+        return touchscreen_available_;
+    }
 
 private:
     void syncUpdatePrompt(bool allowed);
@@ -147,6 +152,7 @@ private:
     TimerService timer_service_;
     TimerView timer_view_;
     DateTimeEditor datetime_editor_;
+    RotaryNavigator rotary_navigator_;
 
     UiState requested_state_ = UiState::None;
     UiState current_state_ = UiState::EmptyScreen;
@@ -163,6 +169,10 @@ private:
     bool screensaver_launch_pending_ = false;
     ScreensaverMode screensaver_preview_mode_ = ScreensaverMode::Off;
     bool update_network_guard_active_ = false;
+    bool touchscreen_available_ = true;
+    bool rotary_menu_active_ = false;
+    int rotary_last_position_ = 0;
+    int rotary_brightness_position_ = 0;
 
     unsigned long last_alarm_check_ms_ = 0;
     unsigned long last_encoder_save_ms_ = 0;

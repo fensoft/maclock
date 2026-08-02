@@ -32,6 +32,11 @@ struct LocalSimulatorUiModel
 
     uint16_t http_port = 8088;
     bool floppy = false;
+    bool emulator_active = false;
+    bool touchscreen_present = true;
+    std::function<void(bool)> set_touchscreen_present;
+    // 0 = settings, 1 = clock, 2 = emulator.
+    std::function<void(uint8_t)> reset_maclock;
     std::function<void(bool, float, float)> set_touch;
     std::function<void(int)> encoder_delta;
     std::function<void(bool)> set_floppy;

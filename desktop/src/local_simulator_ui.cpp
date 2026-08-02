@@ -50,6 +50,12 @@ void maclock_local_draw_hardware_panel(
     LocalSimulatorUiModel &model)
 {
     static bool framebuffer_right_touch_active = false;
+    static bool framebuffer_left_touch_active = false;
+    static float wheel_accumulator = 0.0f;
+    const uint8_t framebuffer_scale =
+        model.scale > 1
+            ? static_cast<uint8_t>(model.scale - 1)
+            : model.scale;
 
     if (ImGui::BeginTable(
             "hardware-layout", 2,
@@ -58,7 +64,7 @@ void maclock_local_draw_hardware_panel(
         ImGui::TableSetupColumn(
             "display", ImGuiTableColumnFlags_WidthFixed,
             static_cast<float>(
-                kLogicalWidth * model.scale + 16));
+                kLogicalWidth * framebuffer_scale + 16));
         ImGui::TableSetupColumn("devices");
         ImGui::TableNextColumn();
 
@@ -70,9 +76,9 @@ void maclock_local_draw_hardware_panel(
         ImGui::Image(
             reinterpret_cast<ImTextureID>(model.texture),
             ImVec2(
-                kLogicalWidth * model.scale,
+                kLogicalWidth * framebuffer_scale,
                 (kDisplayHeight - kLogicalTop) *
-                    model.scale),
+                    framebuffer_scale),
             ImVec2(
                 0.0f,
                 static_cast<float>(kLogicalTop) /
@@ -88,6 +94,7 @@ void maclock_local_draw_hardware_panel(
         const bool down =
             hovered &&
             ImGui::IsMouseDown(ImGuiMouseButton_Left);
+        framebuffer_left_touch_active = down;
         if (down)
         {
             const float x =
@@ -124,12 +131,36 @@ void maclock_local_draw_hardware_panel(
         }
         if (hovered && ImGui::GetIO().MouseWheel != 0)
         {
-            model.encoder_delta(
-                ImGui::GetIO().MouseWheel > 0 ? 1 : -1);
+            wheel_accumulator += ImGui::GetIO().MouseWheel;
+            while (wheel_accumulator >= 6.0f)
+            {
+                model.encoder_delta(1);
+                wheel_accumulator -= 6.0f;
+            }
+            while (wheel_accumulator <= -6.0f)
+            {
+                model.encoder_delta(-1);
+                wheel_accumulator += 6.0f;
+            }
         }
 
         ImGui::TableNextColumn();
         ImGui::SeparatorText("I2C devices");
+        ImGui::TextUnformatted("Touchscreen");
+        ImGui::SameLine();
+        if (ImGui::Button(
+                model.touchscreen_present
+                    ? "Connected##touchscreen"
+                    : "Disconnected##touchscreen",
+                ImVec2(-1.0f, 38.0f)))
+        {
+            model.touchscreen_present =
+                !model.touchscreen_present;
+            model.set_touchscreen_present(
+                model.touchscreen_present);
+        }
+        ImGui::TextDisabled(
+            "Reset Maclock to apply boot-time touch detection.");
         const char *sensor_names[] = {
             "BMP5xx", "HTU2x", "Disconnected"};
         bool weather_changed = false;
@@ -303,6 +334,24 @@ void maclock_local_draw_hardware_panel(
     }
 
     ImGui::SeparatorText("Physical controls");
+    const float reset_width =
+        (ImGui::GetContentRegionAvail().x -
+         ImGui::GetStyle().ItemSpacing.x * 2.0f) /
+        3.0f;
+    if (ImGui::Button(
+            "Reset to Emulator",
+            ImVec2(reset_width, 46.0f)))
+        model.reset_maclock(2);
+    ImGui::SameLine();
+    if (ImGui::Button(
+            "Reset to Clock",
+            ImVec2(reset_width, 46.0f)))
+        model.reset_maclock(1);
+    ImGui::SameLine();
+    if (ImGui::Button(
+            "Reset to Settings",
+            ImVec2(reset_width, 46.0f)))
+        model.reset_maclock(0);
     const ImGuiStyle &style = ImGui::GetStyle();
     const float available_width =
         ImGui::GetContentRegionAvail().x;
@@ -363,6 +412,9 @@ void maclock_local_draw_hardware_panel(
         clock_down || alarm_clock_down);
     model.set_discrete_touch(
         framebuffer_right_touch_active ||
+        ((model.emulator_active ||
+          !model.touchscreen_present) &&
+         framebuffer_left_touch_active) ||
         touch_down);
 
     const float secondary_width =

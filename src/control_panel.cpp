@@ -1006,6 +1006,8 @@ static void send_state()
 
     JsonObject appearance =
         document["appearance"].to<JsonObject>();
+    document["touchscreenPresent"] =
+        snapshot.touchscreen_present;
     appearance["language"] =
         static_cast<uint8_t>(snapshot.settings.language);
     appearance["face"] =

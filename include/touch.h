@@ -21,6 +21,8 @@ struct TouchCalibration
 };
 
 void touch_init(unsigned short int w, unsigned short int h, unsigned char r);
+void touch_set_available(bool available);
+bool touch_available(void);
 bool touch_touched(void);
 bool touch_consume_press_edge(void);
 

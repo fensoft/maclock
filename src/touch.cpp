@@ -13,6 +13,7 @@ static unsigned short int min_y = 0;
 static unsigned short int max_y = 0;
 static bool last_touched = false;
 static bool press_edge = false;
+static bool available = true;
 
 static FT6336 ts = FT6336(
     I2C_SDA,
@@ -63,12 +64,29 @@ void touch_init(unsigned short int w, unsigned short int h, unsigned char r)
     height = h;
     rotation = r;
     touch_reset_calibration();
-    ts.begin();
-    ts.setRotation(r);
+    if (available)
+    {
+        ts.begin();
+        ts.setRotation(r);
+    }
+}
+
+void touch_set_available(bool value)
+{
+    available = value;
+    last_touched = false;
+    press_edge = false;
+}
+
+bool touch_available(void)
+{
+    return available;
 }
 
 bool touch_touched(void)
 {
+    if (!available)
+        return false;
     ts.read();
     if (ts.isTouched)
     {
@@ -99,6 +117,8 @@ bool touch_consume_press_edge(void)
 
 bool touch_read_raw(uint16_t &x, uint16_t &y)
 {
+    if (!available)
+        return false;
     ts.read();
     if (ts.isTouched)
     {

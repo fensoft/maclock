@@ -116,6 +116,10 @@ public:
     virtual void pump() = 0;
     virtual bool shouldQuit() const = 0;
     virtual void appReady() = 0;
+    virtual void emulatorModeChanged(bool active)
+    {
+        (void)active;
+    }
     virtual bool overrideBootEmulator(bool &enabled) const
     {
         (void)enabled;

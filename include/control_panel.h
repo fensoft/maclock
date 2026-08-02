@@ -60,6 +60,7 @@ struct ControlPanelLocation
 struct ControlPanelSnapshot
 {
     AppSettings settings;
+    bool touchscreen_present = true;
     bool screensaver_active = false;
     uint8_t brightness = 6;
     char startup_sound[SOUND_SELECTOR_PATH_MAX] = "/startup.mp3";

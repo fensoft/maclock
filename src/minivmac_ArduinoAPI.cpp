@@ -246,6 +246,9 @@ static int EmulatorSavedBrightness = -1;
 static uint32_t EmulatorBrightnessSaveMs = 0;
 static uint32_t EmulatorExitHoldStartMs = 0;
 static bool EmulatorExitRequested = false;
+static int EmulatorLastEncoder = 0;
+static bool EmulatorLastTouchButton = false;
+static uint32_t EmulatorFullBrightnessUntilMs = 0;
 static bool EmulatorSoundInitialized = false;
 static volatile bool EmulatorSoundStarted = false;
 static uint32_t EmulatorSoundSampleRate = 0;
@@ -556,6 +559,9 @@ static void EmulatorInputsBegin()
     EmulatorBrightnessSaveMs = millis();
     EmulatorExitHoldStartMs = 0;
     EmulatorExitRequested = false;
+    EmulatorLastEncoder = (int)emulator_encoder().getCount();
+    EmulatorLastTouchButton = !digitalRead(GPIO_TOUCH);
+    EmulatorFullBrightnessUntilMs = 0;
     analogWrite(TFT_BL_VAR, brightness_to_pwm(brightness));
 }
 
@@ -564,6 +570,18 @@ static void EmulatorInputsUpdate()
     const uint32_t now = millis();
     const bool clock_pressed = !digitalRead(GPIO_CLOCK);
     const bool alarm_pressed = !digitalRead(GPIO_ALARM);
+    const bool touch_pressed = !digitalRead(GPIO_TOUCH);
+    const int encoder_position =
+        (int)emulator_encoder().getCount();
+    const bool hardware_activity =
+        (clock_pressed && !EmulatorClockButton.pressed) ||
+        (alarm_pressed && !EmulatorAlarmButton.pressed) ||
+        (touch_pressed && !EmulatorLastTouchButton) ||
+        encoder_position != EmulatorLastEncoder;
+    EmulatorLastTouchButton = touch_pressed;
+    EmulatorLastEncoder = encoder_position;
+    if (hardware_activity)
+        EmulatorFullBrightnessUntilMs = now + 10000;
 
     if (clock_pressed && alarm_pressed)
     {
@@ -590,10 +608,18 @@ static void EmulatorInputsUpdate()
     }
 
     const int brightness = EmulatorReadBrightness();
-    if (brightness != EmulatorAppliedBrightness)
+    const bool force_full_brightness =
+        (int32_t)(EmulatorFullBrightnessUntilMs - now) > 0;
+    const int applied_brightness =
+        force_full_brightness ? kBrightnessMax : brightness;
+    if (applied_brightness != EmulatorAppliedBrightness)
     {
-        analogWrite(TFT_BL_VAR, brightness_to_pwm(brightness));
-        EmulatorAppliedBrightness = brightness;
+        analogWrite(
+            TFT_BL_VAR,
+            force_full_brightness
+                ? 255
+                : brightness_to_pwm(brightness));
+        EmulatorAppliedBrightness = applied_brightness;
     }
     if (brightness != EmulatorSavedBrightness &&
         (uint32_t)(now - EmulatorBrightnessSaveMs) >= 500)
@@ -656,9 +682,6 @@ static void DrawScreenRegion(const uint8_t *screen_ptr,
     if (region.bottom <= region.top || region.right <= region.left)
         return;
 
-    // Mini vMac stores eight monochrome pixels per byte. Expanding an
-    // aligned region avoids per-pixel source addressing while adding at
-    // most seven harmless pixels on either side.
     region.left &= ~7;
     region.right = (region.right + 7) & ~7;
     if (region.right > width)
@@ -695,7 +718,6 @@ static void DrawScreenRegion(const uint8_t *screen_ptr,
             screen_ptr + y * pitch_bytes + region.left / 8;
         uint16_t *dst = line_buffer;
         int remaining = region_width;
-
         while (remaining >= 8)
         {
             const uint8_t byte = *src++;
@@ -710,7 +732,6 @@ static void DrawScreenRegion(const uint8_t *screen_ptr,
             dst += 8;
             remaining -= 8;
         }
-
         if (remaining > 0)
         {
             const uint8_t byte = *src;
@@ -727,7 +748,8 @@ static void DrawScreenRegion(const uint8_t *screen_ptr,
 #ifdef MINIVMAC_PROFILE
     EmulatorProfileAddRender(
         (uint64_t)esp_timer_get_time() - profile_start_us,
-        (uint32_t)region_width * (uint32_t)(region.bottom - region.top));
+        (uint32_t)region_width *
+            (uint32_t)(region.bottom - region.top));
 #endif
 }
 

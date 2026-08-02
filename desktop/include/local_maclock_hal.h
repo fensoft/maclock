@@ -23,6 +23,8 @@ struct LocalMaclockOptions
     uint8_t scale = 0;
     bool reset_state = false;
     bool floppy_inserted = false;
+    bool touch_disconnected = false;
+    bool touch_option_set = false;
     bool headless = false;
     uint32_t run_for_ms = 0;
     std::string framebuffer_output;
@@ -47,7 +49,11 @@ public:
     void pump() override;
     bool shouldQuit() const override;
     void requestQuit() noexcept;
+    bool restartRequested() const;
+    LocalStartupMode restartStartup() const;
+    bool touchscreenPresent() const;
     void appReady() override;
+    void emulatorModeChanged(bool active) override;
     bool overrideBootEmulator(bool &enabled) const override;
     bool isLocal() const override { return true; }
 

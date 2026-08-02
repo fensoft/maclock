@@ -23,6 +23,8 @@
 #include <thread>
 #include <vector>
 
+extern "C" void MinivMacAPI_RequestSafeExit(void);
+
 namespace
 {
 constexpr int kDisplayWidth = 320;
@@ -249,8 +251,11 @@ struct LocalMaclockHal::Impl
     std::chrono::steady_clock::time_point started;
     std::thread::id main_thread;
     std::atomic<bool> quit{false};
+    std::atomic<bool> restart_requested{false};
+    LocalStartupMode restart_startup = LocalStartupMode::Config;
     bool begun = false;
     bool app_ready = false;
+    bool emulator_active = false;
 
     SDL_Window *window = nullptr;
     SDL_Renderer *renderer = nullptr;
@@ -276,6 +281,7 @@ struct LocalMaclockHal::Impl
     void *encoder = nullptr;
     bool floppy = false;
     bool screen_touch = false;
+    bool touchscreen_present = true;
     uint16_t touch_raw_x = 0;
     uint16_t touch_raw_y = 0;
 
@@ -302,10 +308,72 @@ struct LocalMaclockHal::Impl
 
     LocalAudioOutput audio;
 
+    std::filesystem::path hardwareStatePath() const
+    {
+        return std::filesystem::path(options.state_directory) /
+               "local-hardware-state.txt";
+    }
+
+    void loadHardwareState()
+    {
+        std::ifstream input(hardwareStatePath());
+        unsigned version = 0;
+        int touch = 1;
+        int weather = 0;
+        int address = 0x47;
+        int weather_connected = 1;
+        int rtc_type = 0;
+        int rtc_connected = 1;
+        int floppy_state = 0;
+        if (input >> version >> touch >> weather >> address >>
+                weather_connected >> temperature >> pressure >>
+                humidity >> rtc_type >> rtc_connected >>
+                floppy_state &&
+            version == 1)
+        {
+            touchscreen_present = touch != 0;
+            weather_kind = static_cast<uint8_t>(weather);
+            weather_address = static_cast<uint8_t>(address);
+            weather_present = weather_connected != 0;
+            rtc_ds1307 = rtc_type != 0;
+            rtc_present = rtc_connected != 0;
+            floppy = floppy_state != 0;
+            pins[GPIO_FLOPPY] = floppy ? LOW : HIGH;
+        }
+    }
+
+    void saveHardwareStateUnlocked() const
+    {
+        const std::filesystem::path destination =
+            hardwareStatePath();
+        const std::filesystem::path temporary =
+            destination.string() + ".tmp";
+        std::ofstream output(temporary, std::ios::trunc);
+        output << 1 << ' ' << (touchscreen_present ? 1 : 0) << ' '
+               << static_cast<unsigned>(weather_kind) << ' '
+               << static_cast<unsigned>(weather_address) << ' '
+               << (weather_present ? 1 : 0) << ' '
+               << temperature << ' ' << pressure << ' '
+               << humidity << ' ' << (rtc_ds1307 ? 1 : 0) << ' '
+               << (rtc_present ? 1 : 0) << ' '
+               << (floppy ? 1 : 0) << '\n';
+        output.close();
+        std::error_code error;
+        std::filesystem::rename(temporary, destination, error);
+        if (error)
+        {
+            std::filesystem::remove(destination, error);
+            error.clear();
+            std::filesystem::rename(temporary, destination, error);
+        }
+    }
+
     bool i2cPresent(uint8_t address) const
     {
-        if (address == 0x18 || address == 0x38)
+        if (address == 0x18)
             return true;
+        if (address == 0x38)
+            return touchscreen_present;
         if (address == 0x68)
             return rtc_present;
         if (weather_kind == 0)
@@ -368,6 +436,11 @@ struct LocalMaclockHal::Impl
     void setTouch(bool down, float x, float y)
     {
         std::lock_guard<std::mutex> lock(io_mutex);
+        if (!touchscreen_present)
+        {
+            screen_touch = false;
+            return;
+        }
         screen_touch = down;
         if (!down)
             return;
@@ -480,6 +553,7 @@ struct LocalMaclockHal::Impl
                 temperature = temp;
                 pressure = pressure_value;
                 humidity = humidity_value;
+                saveHardwareStateUnlocked();
             };
         model.set_rtc =
             [this](bool ds1307, bool present)
@@ -487,6 +561,7 @@ struct LocalMaclockHal::Impl
                 std::lock_guard<std::mutex> lock(io_mutex);
                 rtc_ds1307 = ds1307;
                 rtc_present = present;
+                saveHardwareStateUnlocked();
             };
         model.reset_rtc =
             [this]()
@@ -506,6 +581,31 @@ struct LocalMaclockHal::Impl
                 audio.setVolume(new_volume);
             };
         model.http_port = options.http_port;
+        model.emulator_active = emulator_active;
+        model.touchscreen_present = touchscreen_present;
+        model.set_touchscreen_present =
+            [this](bool present)
+            {
+                std::lock_guard<std::mutex> lock(io_mutex);
+                touchscreen_present = present;
+                if (!present)
+                    screen_touch = false;
+                saveHardwareStateUnlocked();
+            };
+        model.reset_maclock =
+            [this](uint8_t target)
+            {
+                if (target == 2)
+                    restart_startup = LocalStartupMode::Emulator;
+                else if (target == 1)
+                    restart_startup = LocalStartupMode::Clock;
+                else
+                    restart_startup = LocalStartupMode::Config;
+                restart_requested = true;
+                quit = true;
+                if (emulator_active)
+                    MinivMacAPI_RequestSafeExit();
+            };
         model.set_touch =
             [this](bool down, float x, float y)
             {
@@ -520,6 +620,7 @@ struct LocalMaclockHal::Impl
                 floppy = pressed;
                 pins[GPIO_FLOPPY] =
                     pressed ? LOW : HIGH;
+                saveHardwareStateUnlocked();
             };
         model.set_alarm =
             [this](bool pressed)
@@ -606,6 +707,15 @@ bool LocalMaclockHal::begin()
         impl_->options.state_directory, directory_error);
     if (directory_error)
         return false;
+    impl_->loadHardwareState();
+    if (impl_->options.touch_option_set)
+        impl_->touchscreen_present =
+            !impl_->options.touch_disconnected;
+    if (impl_->options.floppy_inserted)
+    {
+        impl_->floppy = true;
+        impl_->pins[GPIO_FLOPPY] = LOW;
+    }
 
     if (!impl_->options.headless)
     {
@@ -719,11 +829,33 @@ void LocalMaclockHal::requestQuit() noexcept
     impl_->quit = true;
 }
 
+bool LocalMaclockHal::restartRequested() const
+{
+    return impl_->restart_requested;
+}
+
+LocalStartupMode LocalMaclockHal::restartStartup() const
+{
+    return impl_->restart_startup;
+}
+
+bool LocalMaclockHal::touchscreenPresent() const
+{
+    std::lock_guard<std::mutex> lock(impl_->io_mutex);
+    return impl_->touchscreen_present;
+}
+
 void LocalMaclockHal::appReady()
 {
     impl_->app_ready = true;
     if (impl_->options.startup == LocalStartupMode::Config)
         impl_->setButton(GPIO_CLOCK, false);
+}
+
+void LocalMaclockHal::emulatorModeChanged(bool active)
+{
+    std::lock_guard<std::mutex> lock(impl_->io_mutex);
+    impl_->emulator_active = active;
 }
 
 bool LocalMaclockHal::overrideBootEmulator(

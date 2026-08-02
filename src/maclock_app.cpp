@@ -387,6 +387,7 @@ struct DiagnosticsSnapshot
     bool alarm_pressed;
     bool floppy_inserted;
     bool touch_pressed;
+    bool touchscreen_present;
     bool charging;
     int64_t encoder_position;
     char i2c_devices[48];
@@ -724,6 +725,16 @@ MaclockApp::MaclockApp(MaclockHal &hal)
 
 void MaclockApp::requestState(UiState state)
 {
+    if (!touchscreen_available_ &&
+        (state == UiState::Emulator ||
+         state == UiState::Calibration))
+    {
+        Serial.println(
+            state == UiState::Emulator
+                ? "Emulator unavailable: touchscreen required"
+                : "Calibration unavailable: touchscreen required");
+        return;
+    }
     requested_state_ = state;
 }
 
@@ -775,6 +786,7 @@ static DiagnosticsSnapshot make_diagnostics_snapshot()
         digitalRead(GPIO_ALARM) == LOW,
         digitalRead(GPIO_FLOPPY) == LOW,
         input_service.discreteTouchPressed(),
+        active_app && active_app->touchscreenAvailable(),
         digitalRead(GPIO_CHARGING) == HIGH,
         input_service.encoderPosition(),
         {},

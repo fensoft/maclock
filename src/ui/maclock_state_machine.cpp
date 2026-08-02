@@ -47,13 +47,21 @@ void MaclockApp::begin()
     display_service.beginPanel();
     touch_eeprom_begin();
     input_service.begin();
+    i2c_bus.begin(I2C_SDA, I2C_SCL);
+    touchscreen_available_ = i2c_bus.present(0x38);
+    touch_set_available(touchscreen_available_);
+    Serial.println(
+        touchscreen_available_
+            ? "Touchscreen detected at 0x38"
+            : "Touchscreen not detected; rotary navigation enabled");
 
     // LVGL renders a 304x224 viewport, not the full 320x240 panel.
     touch_init(
         display_service.tft().width() - 16,
         display_service.tft().height() - 16,
         display_service.tft().getRotation());
-    touch_load_calibration();
+    if (touchscreen_available_)
+        touch_load_calibration();
 
     apply_boot_brightness(g_boot_brightness, false);
 
@@ -61,7 +69,8 @@ void MaclockApp::begin()
     hal_.appReady();
     bool emulator_returned_to_menu = false;
 
-    if (!boot_options_requested && g_boot_floppy_emulator) {
+    if (!boot_options_requested && g_boot_floppy_emulator &&
+        touchscreen_available_) {
         run_emulator();
         emulator_returned_to_menu = true;
     }
@@ -72,7 +81,37 @@ void MaclockApp::begin()
     display_service.beginLvglInput();
     display_service.registerLittleFs();
     ui_shell.init();
-    i2c_bus.begin(I2C_SDA, I2C_SCL);
+    if (!touchscreen_available_)
+    {
+        if (boot_options_view.home_calibration_label)
+            lv_obj_add_flag(
+                boot_options_view.home_calibration_label,
+                LV_OBJ_FLAG_HIDDEN);
+        if (boot_options_view.calibration_label)
+            lv_obj_add_flag(
+                boot_options_view.calibration_label,
+                LV_OBJ_FLAG_HIDDEN);
+        if (boot_options_view.emulator_button_label)
+        {
+            lv_label_set_text(
+                boot_options_view.emulator_button_label,
+                tr("Touchscreen required"));
+            lv_obj_add_state(
+                lv_obj_get_parent(
+                    boot_options_view.emulator_button_label),
+                LV_STATE_DISABLED);
+        }
+        if (boot_options_view.boot_mode_button_label)
+        {
+            lv_label_set_text(
+                boot_options_view.boot_mode_button_label,
+                tr("Boot: Clock"));
+            lv_obj_add_state(
+                lv_obj_get_parent(
+                    boot_options_view.boot_mode_button_label),
+                LV_STATE_DISABLED);
+        }
+    }
     rtc_service.begin();
     {
         char rtc_status[64];
@@ -106,6 +145,18 @@ void MaclockApp::tick()
         observed_encoder != screensaver_last_encoder_;
     screensaver_last_encoder_ = observed_encoder;
     timer_service.update(now);
+
+    const auto is_rotary_menu = [](UiState state)
+    {
+        return state == UiState::SetDateTime ||
+               state == UiState::BootOptions ||
+               state == UiState::Diagnostics ||
+               state == UiState::AlarmEditor ||
+               state == UiState::AlarmRinging ||
+               state == UiState::TimerEditor ||
+               state == UiState::TimerFinished ||
+               state == UiState::WifiSetup;
+    };
 
     if (requested_state_ != UiState::None)
     {
@@ -682,12 +733,16 @@ void MaclockApp::tick()
         }
         else if (inputs.clock)
         {
-            requested_state_ = UI_STATE_CALIBRATION;
-            state_start_ms_ = now;
+            if (touchscreen_available_)
+            {
+                requested_state_ = UI_STATE_CALIBRATION;
+                state_start_ms_ = now;
+            }
         }
         break;
     case UI_STATE_EMULATOR:
-        run_emulator();
+        if (touchscreen_available_)
+            run_emulator();
         requested_state_ = UI_STATE_BOOT_OPTIONS;
         state_start_ms_ = now;
         break;
@@ -848,18 +903,57 @@ void MaclockApp::tick()
 
     last_state_ = current_state_;
 
-    if (inputs.touch ||
-        (screen_touch_pressed &&
-         current_state_ == UI_STATE_NORMAL &&
-         scheduled_display_state_ != NIGHT_DISPLAY_NORMAL))
+    const bool rotary_menu = is_rotary_menu(current_state_);
+    if (rotary_menu != rotary_menu_active_)
+    {
+        if (rotary_menu)
+        {
+            rotary_brightness_position_ =
+                observed_encoder < 0
+                    ? 0
+                    : (observed_encoder > kBrightnessMax
+                           ? kBrightnessMax
+                           : observed_encoder);
+            rotary_last_position_ = observed_encoder;
+            rotary_navigator_.enter();
+        }
+        else
+        {
+            rotary_navigator_.leave();
+            input_service.setEncoderPosition(
+                rotary_brightness_position_);
+            screensaver_last_encoder_ =
+                rotary_brightness_position_;
+        }
+        rotary_menu_active_ = rotary_menu;
+    }
+    if (rotary_menu_active_)
+    {
+        const int current_encoder =
+            input_service.encoderPosition();
+        const int delta = current_encoder - rotary_last_position_;
+        if (delta)
+        {
+            rotary_navigator_.move(delta > 0 ? 1 : -1);
+            rotary_last_position_ = current_encoder;
+        }
+        if (inputs.touch)
+            rotary_navigator_.activate();
+    }
+
+    if (inputs.touch || inputs.clock || inputs.alarm ||
+        rotary_activity || screen_touch_pressed)
         full_brightness_until_ms_ = now + 10000;
 
-    int enc = input_service.encoderPosition();
+    int enc = rotary_menu_active_
+                  ? rotary_brightness_position_
+                  : input_service.encoderPosition();
     if (enc < 0)
         enc = 0;
     if (enc > kBrightnessMax)
         enc = kBrightnessMax;
-    if (enc != input_service.encoderPosition())
+    if (!rotary_menu_active_ &&
+        enc != input_service.encoderPosition())
         input_service.setEncoderPosition(enc);
     if (current_state_ == UI_STATE_ALARM_RINGING &&
         active_alarm_index_ >= 0 &&

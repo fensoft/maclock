@@ -871,7 +871,9 @@ static void update_boot_mode_button()
         return;
     lv_label_set_text(
         boot_options_view.boot_mode_button_label,
-        g_boot_floppy_emulator
+        (active_app && !active_app->touchscreenAvailable())
+            ? tr("Boot: Clock")
+            : g_boot_floppy_emulator
             ? tr("Boot: Emulator")
             : tr("Boot: Clock"));
 }

@@ -4,6 +4,7 @@ ControlPanelSnapshot MaclockApp::controlPanelSnapshot()
 {
     ControlPanelSnapshot snapshot;
     snapshot.settings = app_settings;
+    snapshot.touchscreen_present = touchscreen_available_;
     snapshot.screensaver_active =
         clock_view.screensaver_active;
 

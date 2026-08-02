@@ -132,6 +132,7 @@ set(MACLOCK_APPLICATION_SOURCES
     src/mouse.cpp
     src/mqtt_service.cpp
     src/rtc_service.cpp
+    src/rotary_navigator.cpp
     src/selector_list_style.cpp
     src/settings_store.cpp
     src/sound_selector.cpp

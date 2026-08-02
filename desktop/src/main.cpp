@@ -9,6 +9,8 @@
 #include <cstring>
 #include <iostream>
 #include <string>
+#include <vector>
+#include <unistd.h>
 
 namespace
 {
@@ -38,6 +40,7 @@ void print_usage(const char *program)
         << "  --state-dir PATH\n"
         << "  --reset-state\n"
         << "  --floppy-inserted\n"
+        << "  --touch-disconnected\n"
         << "  --http-port PORT\n"
         << "  --scale auto|1|2|3|4\n"
         << "  --headless\n"
@@ -125,6 +128,11 @@ bool parse_options(
         else if (argument == "--floppy-inserted")
         {
             options.floppy_inserted = true;
+        }
+        else if (argument == "--touch-disconnected")
+        {
+            options.touch_disconnected = true;
+            options.touch_option_set = true;
         }
         else if (argument == "--headless")
         {
@@ -219,5 +227,45 @@ int main(int argc, char **argv)
                   << framebuffer_output << "\n";
     }
     maclock_local_freertos_shutdown();
+    if (hal.restartRequested())
+    {
+        std::vector<std::string> arguments;
+        arguments.emplace_back(argv[0]);
+        for (int i = 1; i < argc; ++i)
+        {
+            const std::string value = argv[i];
+            if (value == "--startup")
+            {
+                ++i;
+                continue;
+            }
+            if (value == "--reset-state" ||
+                value == "--touch-disconnected")
+                continue;
+            arguments.push_back(value);
+        }
+        arguments.emplace_back("--startup");
+        switch (hal.restartStartup())
+        {
+        case LocalStartupMode::Emulator:
+            arguments.emplace_back("emulator");
+            break;
+        case LocalStartupMode::Clock:
+            arguments.emplace_back("clock");
+            break;
+        default:
+            arguments.emplace_back("config");
+            break;
+        }
+        if (!hal.touchscreenPresent())
+            arguments.emplace_back("--touch-disconnected");
+        std::vector<char *> native;
+        for (std::string &value : arguments)
+            native.push_back(value.data());
+        native.push_back(nullptr);
+        execv(native[0], native.data());
+        std::perror("Could not reset Maclock");
+        return 1;
+    }
     return 0;
 }
