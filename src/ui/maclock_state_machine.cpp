@@ -498,7 +498,7 @@ void MaclockApp::tick()
 
         const bool clock_activity =
             inputs.clock || inputs.alarm || inputs.touch ||
-            screen_touch_pressed || rotary_activity;
+            screen_touch_pressed;
         if (clock_view.screensaver_active)
         {
             if (clock_activity)
@@ -903,7 +903,8 @@ void MaclockApp::tick()
 
     last_state_ = current_state_;
 
-    const bool rotary_menu = is_rotary_menu(current_state_);
+    const bool rotary_menu =
+        !touchscreen_available_ && is_rotary_menu(current_state_);
     if (rotary_menu != rotary_menu_active_)
     {
         if (rotary_menu)
@@ -942,8 +943,11 @@ void MaclockApp::tick()
     }
 
     if (inputs.touch || inputs.clock || inputs.alarm ||
-        rotary_activity || screen_touch_pressed)
+        screen_touch_pressed) {
         full_brightness_until_ms_ = now + 10000;
+    } else if (rotary_activity) {
+        full_brightness_until_ms_ = now;
+    }
 
     int enc = rotary_menu_active_
                   ? rotary_brightness_position_
@@ -972,18 +976,18 @@ void MaclockApp::tick()
                      kSunriseDurationMs);
         analogWrite(TFT_BL_VAR, sunrise_pwm);
     }
-    else if ((int32_t)(full_brightness_until_ms_ - now) > 0)
+    const int32_t wake_remaining = (int32_t)(full_brightness_until_ms_ - now);
+    if (wake_remaining > 0) {
         analogWrite(TFT_BL_VAR, 255);
-    else if (current_state_ == UI_STATE_NORMAL &&
-             scheduled_display_state_ == NIGHT_DISPLAY_OFF)
+    } else if (current_state_ == UI_STATE_NORMAL &&
+               scheduled_display_state_ == NIGHT_DISPLAY_OFF) {
         analogWrite(TFT_BL_VAR, 0);
-    else if (current_state_ == UI_STATE_NORMAL &&
-             scheduled_display_state_ == NIGHT_DISPLAY_DIMMED)
-        analogWrite(
-            TFT_BL_VAR,
-            brightness_to_pwm(min(enc, 1)));
-    else
+    } else if (current_state_ == UI_STATE_NORMAL &&
+               scheduled_display_state_ == NIGHT_DISPLAY_DIMMED) {
+        analogWrite(TFT_BL_VAR, brightness_to_pwm(min(enc, 1)));
+    } else {
         analogWrite(TFT_BL_VAR, brightness_to_pwm(enc));
+    }
 
     if (enc != g_last_saved_encoder && (now - last_encoder_save_ms_) >= 500)
     {
