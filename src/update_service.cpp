@@ -568,8 +568,16 @@ void collect_files(
 class HashedStream
 {
 public:
-    HashedStream(NetworkClient &client, size_t length)
-        : client_(client), remaining_(length)
+    using ProgressCallback =
+        void (*)(void *context, uint8_t progress);
+
+    HashedStream(
+        NetworkClient &client, size_t length,
+        ProgressCallback progress_callback = nullptr,
+        void *progress_context = nullptr)
+        : client_(client), remaining_(length), total_(length),
+          progress_callback_(progress_callback),
+          progress_context_(progress_context)
     {
         hash_.begin();
     }
@@ -589,6 +597,7 @@ public:
                 hash_.add(destination + read, count);
                 read += static_cast<size_t>(count);
                 remaining_ -= static_cast<size_t>(count);
+                reportProgress();
                 idle_since = millis();
                 continue;
             }
@@ -622,8 +631,24 @@ public:
     size_t remaining() const { return remaining_; }
 
 private:
+    void reportProgress()
+    {
+        if (!progress_callback_ || !total_)
+            return;
+        const uint8_t progress = static_cast<uint8_t>(
+            min<size_t>(99, (total_ - remaining_) * 100 / total_));
+        if (progress == last_progress_)
+            return;
+        last_progress_ = progress;
+        progress_callback_(progress_context_, progress);
+    }
+
     NetworkClient &client_;
     size_t remaining_;
+    size_t total_;
+    ProgressCallback progress_callback_;
+    void *progress_context_;
+    uint8_t last_progress_ = UINT8_MAX;
     SHA256Builder hash_;
 };
 
@@ -1180,7 +1205,17 @@ bool install_assets(
         return false;
     }
 
-    HashedStream input(*stream, expected_length);
+    HashedStream input(
+        *stream, expected_length,
+        [](void *context, uint8_t progress)
+        {
+            auto &update_state =
+                *static_cast<UpdateService::State *>(context);
+            set_progress(
+                update_state, UpdateStage::DownloadingAssets,
+                progress, "Downloading LittleFS assets");
+        },
+        &state);
     size_t processed = 0;
     uint16_t changed = 0;
     bool central_directory = false;
@@ -1445,15 +1480,6 @@ bool install_assets(
         }
 
         ++processed;
-        const uint8_t progress =
-            files.size()
-                ? static_cast<uint8_t>(
-                      min<size_t>(
-                          99, processed * 100 / files.size()))
-                : 99;
-        set_progress(
-            state, UpdateStage::InstallingAssets,
-            progress, "Installing LittleFS assets");
     }
 
     const String zip_digest = input.finish();
@@ -1485,6 +1511,10 @@ bool install_assets(
         if (!protected_user_path(item->c_str()))
             LittleFS.rmdir(item->c_str());
     }
+
+    set_progress(
+        state, UpdateStage::InstallingAssets, 100,
+        "LittleFS assets installed");
 
     portENTER_CRITICAL(&state.mux);
     state.snapshot.changed_assets = changed;
