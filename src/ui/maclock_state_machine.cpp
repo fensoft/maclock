@@ -367,10 +367,7 @@ void MaclockApp::tick()
         lv_obj_clear_flag(ui_shell.background, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(ui_shell.corners, LV_OBJ_FLAG_HIDDEN);
         lv_timer_handler();
-        audio_service.play(
-            SoundSelector::resolvePath(
-                g_floppy_sound_path, "/floppy.mp3"),
-            g_floppy_sound_volume);
+        floppy_sound_started_ = false;
     }
         requested_state_ = advance_state(current_state_);
         state_start_ms_ = now;
@@ -446,6 +443,14 @@ void MaclockApp::tick()
         }
         if (now - state_start_ms_ >= 1500 && startup_view.plugin_reveal == startup_view.plugin_count)
         {
+            // Plugin PNGs and the MP3 both live in LittleFS. Finish all
+            // boot-image reads before the audio task starts streaming the
+            // floppy sound, otherwise concurrent filesystem access can
+            // make the decoder observe a premature EOF.
+            floppy_sound_started_ = audio_service.play(
+                SoundSelector::resolvePath(
+                    g_floppy_sound_path, "/floppy.mp3"),
+                g_floppy_sound_volume);
             requested_state_ = advance_state(current_state_);
             state_start_ms_ = now;
         }
@@ -455,9 +460,10 @@ void MaclockApp::tick()
         static constexpr uint32_t kFloppySoundTimeoutMs = 15000;
         const bool sound_finished =
             audio_service.takeFinished();
-        if (sound_finished ||
+        if (!floppy_sound_started_ || sound_finished ||
             now - state_start_ms_ >= kFloppySoundTimeoutMs)
         {
+            floppy_sound_started_ = false;
             requested_state_ = advance_state(current_state_);
             state_start_ms_ = now;
         }

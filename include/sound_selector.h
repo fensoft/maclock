@@ -35,6 +35,7 @@ public:
     const char *path() const;
     void setPreviewVolume(uint8_t volume);
     void refreshLanguage();
+    void reload(const char *selected_path);
 
     // LVGL callbacks use these fields through their instance user data.
     lv_obj_t *list = nullptr;

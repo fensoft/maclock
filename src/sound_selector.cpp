@@ -402,6 +402,33 @@ void SoundSelector::setPreviewVolume(uint8_t volume)
     update_preview_volume_label(this);
 }
 
+void SoundSelector::reload(const char *selected_path)
+{
+    lv_obj_t *parent = list ? lv_obj_get_parent(list) : nullptr;
+    if (!parent)
+        return;
+
+    const uint8_t saved_volume = preview_volume;
+    const SoundSelectorChangedCallback saved_changed_callback =
+        changed_callback;
+    const SoundSelectorPreviewCallback saved_preview_callback =
+        g_preview_callback;
+    void *const saved_user_data = user_data;
+
+    if (list)
+        lv_obj_delete(list);
+    if (play_button)
+        lv_obj_delete(play_button);
+    if (volume_button)
+        lv_obj_delete(volume_button);
+
+    scan();
+    g_preview_callback = saved_preview_callback;
+    begin(
+        parent, selected_path, saved_volume,
+        saved_changed_callback, saved_user_data);
+}
+
 void SoundSelector::refreshLanguage()
 {
     if (play_label)

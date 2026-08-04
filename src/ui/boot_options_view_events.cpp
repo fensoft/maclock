@@ -1259,6 +1259,11 @@ void BootOptionsView::setPage(BootOptionsPage page)
             return;
         }
     }
+    else if (page == BOOT_OPTIONS_CHIME_SOUND)
+    {
+        boot_options_view.chime_sound_selector.reload(
+            g_chime_sound_path);
+    }
 
     if (page == BOOT_OPTIONS_HOME)
     {

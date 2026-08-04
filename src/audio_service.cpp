@@ -179,6 +179,11 @@ void AudioService::runTask()
                     // until those samples have physically played before
                     // reporting completion or stopping I2S.
                     audio_output->flush();
+                    // Allow the final DMA frame and the codec's analog
+                    // output path to settle before muting. Without this
+                    // short tail, the end of sounds such as the floppy
+                    // loading sample can be clipped.
+                    vTaskDelay(pdMS_TO_TICKS(75));
                 }
                 const es8311_handle_t codec = display_.codec();
                 if (codec)

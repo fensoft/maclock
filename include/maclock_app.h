@@ -159,6 +159,7 @@ private:
     UiState last_state_ = UiState::None;
     unsigned long state_start_ms_ = 0;
     bool startup_sound_started_ = false;
+    bool floppy_sound_started_ = false;
     int active_alarm_index_ = -1;
     uint8_t active_alarm_volume_ = 0;
 
