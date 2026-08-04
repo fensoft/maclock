@@ -150,6 +150,7 @@ public:
     uint8_t plugin_count = 0;
     uint8_t plugin_reveal = 0;
     unsigned long next_reveal_ms = 0;
+    lv_draw_buf_t *plugin_buffers[k_plugin_max] = {};
 };
 
 enum BootOptionsPage

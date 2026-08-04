@@ -386,7 +386,20 @@ void MaclockApp::tick()
             startup_view.next_reveal_ms = now + (unsigned long)random(100, 301);
             for (size_t i = 0; i < k_plugin_max; ++i)
             {
+                // Remove any previous RAM-backed source before releasing it.
+                set_image_src(
+                    ui_shell.plugin_icons[i], ui_shell.plugin_buf,
+                    "S:/plugin.png");
+                if (startup_view.plugin_buffers[i])
+                {
+                    lv_draw_buf_destroy(startup_view.plugin_buffers[i]);
+                    startup_view.plugin_buffers[i] = nullptr;
+                }
+            }
+            for (size_t i = 0; i < k_plugin_max; ++i)
+            {
                 const uint8_t addr = k_addrs[i];
+                const size_t slot = startup_view.plugin_count;
                 if (addr != 0 && i2c_bus.present(addr) && startup_view.plugin_count < k_plugin_max)
                 {
                     char fs_path[32];
@@ -394,9 +407,18 @@ void MaclockApp::tick()
                     snprintf(fs_path, sizeof(fs_path), "/plugin_0x%02X.png", addr);
                     snprintf(lv_path, sizeof(lv_path), "S:/plugin_0x%02X.png", addr);
                     if (littlefs_exists(fs_path))
-                        lv_image_set_src(ui_shell.plugin_icons[startup_view.plugin_count], lv_path);
+                    {
+                        startup_view.plugin_buffers[slot] =
+                            load_png_once(lv_path);
+                        set_image_src(
+                            ui_shell.plugin_icons[slot],
+                            startup_view.plugin_buffers[slot]
+                                ? startup_view.plugin_buffers[slot]
+                                : ui_shell.plugin_buf,
+                            "S:/plugin.png");
+                    }
                     else
-                        set_image_src(ui_shell.plugin_icons[startup_view.plugin_count], ui_shell.plugin_buf, "S:/plugin.png");
+                        set_image_src(ui_shell.plugin_icons[slot], ui_shell.plugin_buf, "S:/plugin.png");
                     lv_obj_align(ui_shell.plugin_icons[startup_view.plugin_count], LV_ALIGN_BOTTOM_LEFT,
                                  margin_x + (int16_t)startup_view.plugin_count * (icon_size + spacing),
                                  -margin_y);
@@ -410,8 +432,17 @@ void MaclockApp::tick()
                     snprintf(lv_path, sizeof(lv_path), "S:/plugin_0x%02X.png", addr);
                     if (littlefs_exists(fs_path))
                     {
-                        lv_draw_buf_t *missing = make_plugin_missing_buf(load_png_once(lv_path));
-                        set_image_src(ui_shell.plugin_icons[startup_view.plugin_count], missing, lv_path);
+                        lv_draw_buf_t *loaded = load_png_once(lv_path);
+                        startup_view.plugin_buffers[slot] =
+                            make_plugin_missing_buf(loaded);
+                        if (loaded)
+                            lv_draw_buf_destroy(loaded);
+                        set_image_src(
+                            ui_shell.plugin_icons[slot],
+                            startup_view.plugin_buffers[slot]
+                                ? startup_view.plugin_buffers[slot]
+                                : ui_shell.plugin_missing_buf,
+                            "S:/plugin.png");
                     }
                     else
                     {
@@ -425,6 +456,14 @@ void MaclockApp::tick()
             }
             for (size_t i = startup_view.plugin_count; i < k_plugin_max; ++i)
                 lv_obj_add_flag(ui_shell.plugin_icons[i], LV_OBJ_FLAG_HIDDEN);
+
+            // Every image source is now RAM-backed. Audio can stream from
+            // LittleFS while the icons are revealed without competing with
+            // LVGL filesystem reads.
+            floppy_sound_started_ = audio_service.play(
+                SoundSelector::resolvePath(
+                    g_floppy_sound_path, "/floppy.mp3"),
+                g_floppy_sound_volume, true);
         }
         if (now - state_start_ms_ >= 0)
         {
@@ -443,14 +482,6 @@ void MaclockApp::tick()
         }
         if (now - state_start_ms_ >= 1500 && startup_view.plugin_reveal == startup_view.plugin_count)
         {
-            // Plugin PNGs and the MP3 both live in LittleFS. Finish all
-            // boot-image reads before the audio task starts streaming the
-            // floppy sound, otherwise concurrent filesystem access can
-            // make the decoder observe a premature EOF.
-            floppy_sound_started_ = audio_service.play(
-                SoundSelector::resolvePath(
-                    g_floppy_sound_path, "/floppy.mp3"),
-                g_floppy_sound_volume);
             requested_state_ = advance_state(current_state_);
             state_start_ms_ = now;
         }

@@ -1,6 +1,9 @@
 #pragma once
 
 #include <AudioFileSourceLittleFS.h>
+#ifndef MACLOCK_LOCAL
+#include <AudioFileSource.h>
+#endif
 #include <AudioGeneratorMP3.h>
 
 #include "freertos/FreeRTOS.h"
@@ -20,7 +23,9 @@ public:
     void suspendTask();
     void resumeTask();
 
-    bool play(const char *path, uint8_t volume);
+    bool play(
+        const char *path, uint8_t volume,
+        bool preload_to_memory = false);
     void setVolume(uint8_t volume);
     void stop();
     bool takeFinished();
@@ -32,7 +37,12 @@ private:
     void deletePlaybackLocked();
 
     DisplayService &display_;
+#ifndef MACLOCK_LOCAL
+    AudioFileSource *file_ = nullptr;
+#else
     AudioFileSourceLittleFS *file_ = nullptr;
+#endif
+    uint8_t *preloaded_data_ = nullptr;
     AudioGeneratorMP3 *decoder_ = nullptr;
     bool finished_ = false;
     portMUX_TYPE finished_mux_ = portMUX_INITIALIZER_UNLOCKED;

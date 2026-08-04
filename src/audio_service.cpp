@@ -4,6 +4,12 @@
 #include "display_service.h"
 #include "es8311.h"
 
+#ifndef MACLOCK_LOCAL
+#include <AudioFileSourcePROGMEM.h>
+#include <LittleFS.h>
+#include <esp_heap_caps.h>
+#endif
+
 namespace
 {
 AudioService *g_preview_audio = nullptr;
@@ -65,6 +71,11 @@ void AudioService::deletePlaybackLocked()
         delete file_;
         file_ = nullptr;
     }
+    if (preloaded_data_)
+    {
+        free(preloaded_data_);
+        preloaded_data_ = nullptr;
+    }
 }
 
 void AudioService::stop()
@@ -79,7 +90,9 @@ void AudioService::stop()
         xSemaphoreGive(lock_);
 }
 
-bool AudioService::play(const char *path, uint8_t volume)
+bool AudioService::play(
+    const char *path, uint8_t volume,
+    bool preload_to_memory)
 {
     AudioOutputI2S *audio_output = display_.audioOutput();
     if (!path || !audio_output)
@@ -94,7 +107,35 @@ bool AudioService::play(const char *path, uint8_t volume)
     audio_output->SetGain(1.0f);
     display_.prepareAudioPlayback();
 
-    file_ = new AudioFileSourceLittleFS(path);
+#ifndef MACLOCK_LOCAL
+    if (preload_to_memory)
+    {
+        fs::File source = LittleFS.open(path, "r");
+        const size_t size = source ? source.size() : 0;
+        if (size)
+        {
+            preloaded_data_ = static_cast<uint8_t *>(
+                heap_caps_malloc(
+                    size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+            if (preloaded_data_ &&
+                source.read(preloaded_data_, size) == size)
+            {
+                file_ = new AudioFileSourcePROGMEM(
+                    preloaded_data_, size);
+            }
+            else if (preloaded_data_)
+            {
+                free(preloaded_data_);
+                preloaded_data_ = nullptr;
+            }
+        }
+        source.close();
+    }
+#else
+    (void)preload_to_memory;
+#endif
+    if (!file_)
+        file_ = new AudioFileSourceLittleFS(path);
     decoder_ = new AudioGeneratorMP3();
     const bool started =
         file_ && decoder_ &&
