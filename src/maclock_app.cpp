@@ -1072,3 +1072,21 @@ static void maybe_start_chime(const DateTime &current)
 #include "ui/mqtt_notification_view.cpp"
 #include "ui/maclock_state_machine.cpp"
 #include "ui/control_panel_bindings.cpp"
+
+#ifdef MACLOCK_LOCAL
+bool MaclockApp::showLocalManualPage(uint8_t page)
+{
+    if (page >= BOOT_OPTIONS_PAGE_COUNT)
+        return false;
+    if (current_state_ == UiState::BootOptions)
+    {
+        boot_options_view.setPage(
+            static_cast<BootOptionsPage>(page));
+        return true;
+    }
+    boot_options_view.page_on_show =
+        static_cast<BootOptionsPage>(page);
+    requestState(UiState::BootOptions);
+    return true;
+}
+#endif

@@ -1,5 +1,8 @@
 # Maclock User Manual
 
+**English** · [Français](manual.fr.md) · [Español](manual.es.md) ·
+[Deutsch](manual.de.md) · [Italiano](manual.it.md)
+
 This manual explains how to use Maclock. For assembly and installation, see
 the [Build Your Own guide](BUILD.md).
 
@@ -177,6 +180,7 @@ been used for a while.
 
 | Photo Slideshow |
 | --- |
+| ![Photo Slideshow screensaver](img/manual/screensaver-photo-slideshow.png) |
 
 - Select **Play** beside a choice to preview it without changing your saved
   screensaver.

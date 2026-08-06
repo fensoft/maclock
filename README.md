@@ -16,8 +16,9 @@ It combines two experiences:
 
 ## Documentation
 
-- **[User Manual](manual.md)** — controls, daily operation, configuration,
-  alarms, connectivity, updates, and Mini vMac.
+- **User Manual:** [English](manual.md) · [Français](manual.fr.md) ·
+  [Español](manual.es.md) · [Deutsch](manual.de.md) ·
+  [Italiano](manual.it.md)
 - **[Build Your Own](BUILD.md)** — required hardware, disassembly, wiring,
   firmware preparation, and flashing.
 - **[Troubleshooting](TROUBLESHOOTING.md)** — startup, touchscreen, RTC,

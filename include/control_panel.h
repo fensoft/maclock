@@ -99,6 +99,10 @@ class ControlPanelEventSink
 public:
     virtual ~ControlPanelEventSink() = default;
 
+#ifdef MACLOCK_LOCAL
+    virtual bool showLocalManualPage(uint8_t page) = 0;
+#endif
+
     virtual ControlPanelSnapshot controlPanelSnapshot() = 0;
     virtual ControlPanelConfiguration
         controlPanelConfiguration() = 0;

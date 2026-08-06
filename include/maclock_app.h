@@ -32,6 +32,10 @@ class MaclockApp final
 public:
     explicit MaclockApp(MaclockHal &hal);
 
+#ifdef MACLOCK_LOCAL
+    bool showLocalManualPage(uint8_t page) override;
+#endif
+
     void begin();
     void tick();
 

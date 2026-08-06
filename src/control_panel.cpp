@@ -1432,6 +1432,20 @@ static void apply_screensaver()
         applied ? 200 : 500);
 }
 
+#ifdef MACLOCK_LOCAL
+static void show_local_manual_page()
+{
+    uint32_t page = 0;
+    if (!read_uint("page", 0, 20, page) || !g_events ||
+        !g_events->showLocalManualPage(static_cast<uint8_t>(page)))
+    {
+        send_result(false, "Invalid manual page", 400);
+        return;
+    }
+    send_result(true, "Manual page displayed", 200);
+}
+#endif
+
 static void apply_location()
 {
     String city = g_server.arg("city");
@@ -1722,6 +1736,11 @@ static void configure_routes()
     g_server.on(
         "/api/update/status", HTTP_GET, send_update_status);
     g_server.on("/api/appearance", HTTP_POST, apply_appearance);
+#ifdef MACLOCK_LOCAL
+    g_server.on(
+        "/api/manual/page", HTTP_POST,
+        show_local_manual_page);
+#endif
     g_server.on("/api/location", HTTP_POST, apply_location);
     g_server.on("/api/mqtt", HTTP_POST, apply_mqtt);
     g_server.on(
