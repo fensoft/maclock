@@ -177,7 +177,6 @@ been used for a while.
 
 | Photo Slideshow |
 | --- |
-| ![Photo Slideshow screensaver](img/manual/screensaver-photo-slideshow.png) |
 
 - Select **Play** beside a choice to preview it without changing your saved
   screensaver.
@@ -398,34 +397,3 @@ After the fourth crosshair, Maclock saves the calibration and returns to the
 clock. Press Clock during calibration to cancel without saving.
 
 ![Touchscreen calibration crosshair](img/manual/touch-calibration.png)
-
-## 17. If Something Goes Wrong
-
-### Maclock does not reach the clock
-
-1. Disconnect power, wait a few seconds, and reconnect it without holding any
-   buttons.
-2. Read any message shown on the screen.
-3. Keep Maclock connected to power and Wi-Fi if it says an update is
-   continuing.
-4. Open Diagnostics if Configuration is available.
-
-### A control does not respond
-
-1. Wake the display first if night mode has dimmed or turned it off.
-2. Try the front buttons.
-3. Restart Maclock.
-4. If the touchscreen is unavailable, use the rotary control and top sensor.
-
-### An update cannot finish
-
-1. Keep Maclock connected to reliable power and Wi-Fi.
-2. Remove unused downloaded sounds if Maclock asks for more space.
-3. Restart Maclock and try the update again.
-
-For more help, see [Troubleshooting](TROUBLESHOOTING.md).
-
-## Support
-
-For community help, join the
-[Maclock Discord server](https://discord.gg/89etSPMFym).
