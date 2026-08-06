@@ -31,7 +31,66 @@ static void clear_canvas(ClockView &view, bool white = false)
 }
 
 static void put_pixel(
-    ClockView &view, int16_t x, int16_t y, bool white = true)
+    ClockView &view, int16_t x, int16_t y, bool white = true);
+
+static bool atlas_pixel_white(
+    const lv_draw_buf_t *atlas, uint32_t x, uint32_t y)
+{
+    if (!atlas || x >= atlas->header.w || y >= atlas->header.h)
+        return false;
+    const uint8_t *pixel = static_cast<const uint8_t *>(
+        lv_draw_buf_goto_xy(atlas, x, y));
+    switch (static_cast<lv_color_format_t>(atlas->header.cf))
+    {
+    case LV_COLOR_FORMAT_L8:
+        return pixel[0] >= 128;
+    case LV_COLOR_FORMAT_RGB888:
+    case LV_COLOR_FORMAT_XRGB8888:
+        return static_cast<uint16_t>(pixel[0]) + pixel[1] + pixel[2] >= 384;
+    case LV_COLOR_FORMAT_ARGB8888:
+    case LV_COLOR_FORMAT_ARGB8888_PREMULTIPLIED:
+    {
+        const lv_color32_t color = *reinterpret_cast<const lv_color32_t *>(pixel);
+        return color.alpha >= 128 &&
+               static_cast<uint16_t>(color.red) + color.green + color.blue >= 384;
+    }
+    case LV_COLOR_FORMAT_RGB565:
+    {
+        const lv_color16_t color = *reinterpret_cast<const lv_color16_t *>(pixel);
+        return color.red + color.green + color.blue >= 48;
+    }
+    default:
+        return false;
+    }
+}
+
+static void draw_atlas_sprite(
+    ClockView &view, const lv_draw_buf_t *atlas,
+    uint8_t variant, uint16_t cell_width, uint16_t cell_height,
+    int16_t x, int16_t y, uint16_t width, uint16_t height,
+    bool mirror = false, bool white = true)
+{
+    if (!atlas)
+        return;
+    const uint32_t source_left = (variant % 10U) * cell_width;
+    for (uint16_t yy = 0; yy < height; ++yy)
+        for (uint16_t xx = 0; xx < width; ++xx)
+        {
+            const uint16_t sample_x = static_cast<uint16_t>(
+                (static_cast<uint32_t>(xx) * cell_width) / width);
+            const uint16_t source_x = mirror
+                ? static_cast<uint16_t>(cell_width - 1 - sample_x)
+                : sample_x;
+            const uint16_t source_y = static_cast<uint16_t>(
+                (static_cast<uint32_t>(yy) * cell_height) / height);
+            if (atlas_pixel_white(
+                    atlas, source_left + source_x, source_y))
+                put_pixel(view, x + xx, y + yy, white);
+        }
+}
+
+static void put_pixel(
+    ClockView &view, int16_t x, int16_t y, bool white)
 {
     if (x < 0 || y < 0 || x >= kExtWidth || y >= kExtHeight)
         return;
@@ -153,6 +212,142 @@ static void seed_particles(ClockView &view, uint8_t count)
         view.screensaver_y[i] = random(0, kExtHeight);
         view.screensaver_dx[i] = random(0, 2) ? 1 : -1;
         view.screensaver_dy[i] = random(0, 2) ? 1 : -1;
+    }
+}
+
+static uint8_t random_fish_variant()
+{
+    return static_cast<uint8_t>(random(0, 9));
+}
+
+static void draw_toaster(
+    ClockView &view, int16_t x, int16_t y,
+    uint8_t variant, bool wings_up)
+{
+    const int16_t body_w = 18 + (variant % 3) * 3;
+    const int16_t body_h = 12 + ((variant / 3) % 3) * 2;
+    fill_rect(view, x, y, body_w, body_h);
+    fill_rect(view, x + 3, y + 3, body_w - 6, body_h - 6, false);
+    line(view, x + 4, y + 1, x + body_w - 5, y + 1, false);
+    put_pixel(view, x + body_w - 2, y + body_h / 2, false);
+
+    const int16_t root_x = x + 5 + (variant & 3);
+    const int16_t root_y = y;
+    const int16_t reach = 7 + (variant % 5) * 2;
+    const int16_t rise = wings_up ? -(8 + (variant % 4) * 3)
+                                  : 7 + (variant % 4) * 2;
+    line(view, root_x, root_y, root_x - reach, root_y + rise);
+    line(view, root_x + 3, root_y, root_x - reach / 2, root_y + rise);
+    if (variant == 1 || variant == 6 || variant == 9)
+        line(view, root_x - reach, root_y + rise,
+             root_x - reach - 4, root_y + rise / 2);
+    if (variant == 4)
+    {
+        fill_rect(view, root_x - 3, root_y - 4, 4, 4);
+        line(view, root_x - 1, root_y - 3,
+             root_x - reach, root_y + rise);
+    }
+    if (variant == 5)
+        line(view, root_x - reach, root_y + rise,
+             root_x - reach - 5, root_y - rise / 3);
+    if (variant == 7)
+        fill_rect(view, x + body_w, y + body_h / 2, 5, 3);
+    if (variant == 8)
+    {
+        line(view, x, y + body_h, x + 5, y + body_h + 4);
+        line(view, x + body_w, y + body_h,
+             x + body_w - 5, y + body_h + 4);
+    }
+}
+
+static int16_t fish_x(int16_t x, int16_t width, int16_t local, bool right)
+{
+    return right ? x + local : x + width - 1 - local;
+}
+
+static void fish_line(
+    ClockView &view, int16_t x, int16_t y, int16_t width,
+    bool right, int x0, int y0, int x1, int y1)
+{
+    line(view, fish_x(x, width, x0, right), y + y0,
+         fish_x(x, width, x1, right), y + y1);
+}
+
+static void draw_fish(
+    ClockView &view, int16_t x, int16_t y,
+    uint8_t variant, bool right)
+{
+    const int16_t width = 26;
+    const int16_t body_h = 7 + (variant % 4) * 2;
+    const int16_t top = 7 - body_h / 2;
+    const int16_t body_start = variant == 6 ? 8 : 5;
+    const int16_t body_width = variant == 6 ? 11 : 15;
+    for (int row = 0; row < body_h; ++row)
+    {
+        const int inset = (row == 0 || row == body_h - 1) ? 2 :
+                          (row == 1 || row == body_h - 2) ? 1 : 0;
+        fish_line(view, x, y, width, right,
+                  body_start + inset, top + row,
+                  body_start + body_width - 1 - inset, top + row);
+    }
+    fish_line(view, x, y, width, right, body_start, 7, 0, 2);
+    fish_line(view, x, y, width, right, body_start, 7, 0, 12);
+    fish_line(view, x, y, width, right, 0, 2, 0, 12);
+    put_pixel(view, fish_x(x, width, body_start + body_width - 3, right),
+              y + top + 2, false);
+
+    switch (variant)
+    {
+    case 1: // puffer
+        for (int spike = 5; spike < 20; spike += 4)
+        {
+            put_pixel(view, fish_x(x, width, spike, right), y + top - 2);
+            put_pixel(view, fish_x(x, width, spike, right), y + top + body_h + 1);
+        }
+        break;
+    case 2: // angelfish
+        fish_line(view, x, y, width, right, 10, top, 14, top - 7);
+        fish_line(view, x, y, width, right, 14, top - 7, 17, top);
+        fish_line(view, x, y, width, right, 10, top + body_h,
+                  14, top + body_h + 7);
+        break;
+    case 3: // fast fish
+        fish_line(view, x, y, width, right, 8, top - 1, 18, top - 1);
+        fish_line(view, x, y, width, right, 8, top + body_h,
+                  18, top + body_h);
+        break;
+    case 4: // flowing fins
+        fish_line(view, x, y, width, right, 9, top, 6, top - 5);
+        fish_line(view, x, y, width, right, 10, top + body_h - 1,
+                  5, top + body_h + 5);
+        break;
+    case 5: // striped
+        for (int stripe = 9; stripe <= 15; stripe += 3)
+            fish_line(view, x, y, width, right, stripe, top + 1,
+                      stripe, top + body_h - 2);
+        break;
+    case 6: // tiny schooling fish
+        fish_line(view, x, y, width, right, 8, 7, 4, 4);
+        fish_line(view, x, y, width, right, 8, 7, 4, 10);
+        break;
+    case 7: // seahorse-like crest
+        fish_line(view, x, y, width, right, 17, top, 19, top - 4);
+        fish_line(view, x, y, width, right, 19, top - 4, 21, top);
+        break;
+    case 8: // friendly shark
+        fish_line(view, x, y, width, right, 11, top, 14, top - 5);
+        fish_line(view, x, y, width, right, 17, top + body_h - 1,
+                  21, top + body_h + 3);
+        break;
+    case 9: // bottom dweller
+        fish_line(view, x, y, width, right, 6, top + body_h,
+                  21, top + body_h);
+        fish_line(view, x, y, width, right, 9, top + body_h,
+                  5, top + body_h + 3);
+        break;
+    default:
+        fish_line(view, x, y, width, right, 10, top, 13, top - 3);
+        break;
     }
 }
 
@@ -324,6 +519,12 @@ static void draw_photo(ClockView &view)
 
 void ClockView::initExtendedScreensavers(lv_obj_t *parent)
 {
+    screensaver_toaster_atlas =
+        load_png_once("S:/screensavers/toasters.png");
+    screensaver_fish_atlas =
+        load_png_once("S:/screensavers/fish.png");
+    screensaver_error_atlas =
+        load_png_once("S:/screensavers/errors.png");
     screensaver_canvas_buffer = static_cast<uint8_t *>(
         heap_caps_malloc(
             kExtBufferBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
@@ -376,6 +577,15 @@ bool ClockView::activateExtendedScreensaver(
         screensaver_extended_frame = 0;
         memset(screensaver_state, 0, sizeof(screensaver_state));
         seed_particles(*this, 64);
+        if (mode == ScreensaverMode::FlyingToasters)
+            for (uint8_t i = 0; i < 7; ++i)
+                screensaver_state[i] = random(0, 10);
+        if (mode == ScreensaverMode::Aquarium)
+            for (uint8_t i = 0; i < 9; ++i)
+                screensaver_state[i] = random_fish_variant();
+        if (mode == ScreensaverMode::ErrorParade)
+            for (uint8_t i = 0; i < 5; ++i)
+                screensaver_state[i] = random(0, 10);
         screensaver_photo_transition = 0;
         screensaver_photo_due_ms = millis() + 10000;
         if (mode == ScreensaverMode::Life)
@@ -412,16 +622,23 @@ bool ClockView::updateExtendedScreensaver(
         {
             screensaver_x[i] += 2;
             screensaver_y[i] += (i & 1) ? 1 : -1;
-            if (screensaver_x[i] > kExtWidth + 30)
-                screensaver_x[i] = -40;
+            if (screensaver_x[i] > kExtWidth + 56)
+            {
+                screensaver_x[i] = -56;
+                screensaver_state[i] = random(0, 10);
+            }
             if (screensaver_y[i] < -20) screensaver_y[i] = kExtHeight;
             if (screensaver_y[i] > kExtHeight) screensaver_y[i] = -20;
             const int x = screensaver_x[i], y = screensaver_y[i];
-            fill_rect(*this, x, y, 24, 17);
-            fill_rect(*this, x + 4, y + 3, 16, 10, false);
-            line(*this, x, y + 4, x - 12, y - 5);
-            line(*this, x, y + 9, x - 12, y + 16);
-            fill_rect(*this, x + 9, y - 10, 8, 10);
+            if (screensaver_toaster_atlas)
+                draw_atlas_sprite(
+                    *this, screensaver_toaster_atlas,
+                    screensaver_state[i], 64, 48,
+                    x - 8, y - 10, 56, 42, true);
+            else
+                draw_toaster(
+                    *this, x, y, screensaver_state[i],
+                    ((frame / 5) + i) & 1U);
         }
         break;
 
@@ -470,20 +687,29 @@ bool ClockView::updateExtendedScreensaver(
         for (uint8_t i = 0; i < 9; ++i)
         {
             screensaver_x[i] += (i & 1) ? 1 : -1;
-            if (screensaver_x[i] < -25) screensaver_x[i] = kExtWidth + 20;
-            if (screensaver_x[i] > kExtWidth + 25) screensaver_x[i] = -20;
+            if (screensaver_x[i] < -48)
+            {
+                screensaver_x[i] = kExtWidth + 48;
+                screensaver_state[i] = random_fish_variant();
+            }
+            if (screensaver_x[i] > kExtWidth + 48)
+            {
+                screensaver_x[i] = -48;
+                screensaver_state[i] = random_fish_variant();
+            }
             const int x = screensaver_x[i], y = 15 + i * 22;
-            fill_rect(*this, x, y, 18, 9);
-            if (i & 1)
-            {
-                line(*this, x + 18, y + 4, x + 25, y);
-                line(*this, x + 18, y + 4, x + 25, y + 8);
-            }
+            if (screensaver_fish_atlas)
+                draw_atlas_sprite(
+                    *this, screensaver_fish_atlas,
+                    screensaver_state[i], 64, 48,
+                    x - 8, y - 8, 48, 36, i & 1U);
             else
-            {
-                line(*this, x, y + 4, x - 7, y);
-                line(*this, x, y + 4, x - 7, y + 8);
-            }
+                draw_fish(
+                    *this, x, y,
+                    screensaver_state[i] >= 6
+                        ? screensaver_state[i] + 1
+                        : screensaver_state[i],
+                    i & 1U);
         }
         for (uint8_t i = 0; i < 16; ++i)
             put_pixel(*this, (i * 37) % kExtWidth,
@@ -553,16 +779,56 @@ bool ClockView::updateExtendedScreensaver(
     case ScreensaverMode::ErrorParade:
         for (uint8_t i = 0; i < 5; ++i)
         {
-            const int x = (screensaver_x[i] + frame * (i + 1)) % 220;
+            constexpr int kErrorWidth = 84;
+            constexpr int kErrorTravel = kExtWidth + kErrorWidth;
+            const int x = static_cast<int>(
+                (screensaver_x[i] + frame * (i + 1)) % kErrorTravel) -
+                kErrorWidth;
             const int y = 12 + ((screensaver_y[i] + frame) % 145);
-            fill_rect(*this, x, y, 84, 54);
-            fill_rect(*this, x + 2, y + 2, 80, 50, false);
-            line(*this, x + 2, y + 12, x + 81, y + 12);
-            fill_rect(*this, x + 8, y + 20, 10, 10);
-            draw_text(*this, x + 25, y + 22, "ERROR", 1);
-            fill_rect(*this, x + 49, y + 39, 25, 9);
-            fill_rect(*this, x + 50, y + 40, 23, 7, false);
-            draw_text(*this, x + 55, y + 40, "OK", 1);
+            if (screensaver_error_atlas)
+            {
+                const uint8_t variant = static_cast<uint8_t>(
+                    (screensaver_state[i] +
+                     (frame * (i + 1)) / 220) % 10);
+                fill_rect(*this, x, y, 84, 54);
+                line(*this, x + 1, y + 1, x + 82, y + 1, false);
+                line(*this, x + 1, y + 1, x + 1, y + 52, false);
+                line(*this, x + 82, y + 1, x + 82, y + 52, false);
+                line(*this, x + 1, y + 52, x + 82, y + 52, false);
+                line(*this, x + 2, y + 12, x + 81, y + 12, false);
+                line(*this, x + 5, y + 3, x + 12, y + 3, false);
+                line(*this, x + 5, y + 10, x + 12, y + 10, false);
+                line(*this, x + 5, y + 3, x + 5, y + 10, false);
+                line(*this, x + 12, y + 3, x + 12, y + 10, false);
+                for (int stripe_y = 3; stripe_y <= 9; stripe_y += 2)
+                {
+                    line(*this, x + 16, y + stripe_y,
+                         x + 25, y + stripe_y, false);
+                    line(*this, x + 58, y + stripe_y,
+                         x + 79, y + stripe_y, false);
+                }
+                draw_text(*this, x + 28, y + 3, "ERROR", 1, false);
+                draw_atlas_sprite(
+                    *this, screensaver_error_atlas,
+                    variant, 40, 40, x + 3, y + 13, 40, 40,
+                    false, false);
+                line(*this, x + 53, y + 36, x + 77, y + 36, false);
+                line(*this, x + 53, y + 48, x + 77, y + 48, false);
+                line(*this, x + 53, y + 36, x + 53, y + 48, false);
+                line(*this, x + 77, y + 36, x + 77, y + 48, false);
+                draw_text(*this, x + 59, y + 39, "OK", 1, false);
+            }
+            else
+            {
+                fill_rect(*this, x, y, 84, 54);
+                fill_rect(*this, x + 2, y + 2, 80, 50, false);
+                line(*this, x + 2, y + 12, x + 81, y + 12);
+                fill_rect(*this, x + 8, y + 20, 10, 10);
+                draw_text(*this, x + 25, y + 22, "ERROR", 1);
+                fill_rect(*this, x + 49, y + 39, 25, 9);
+                fill_rect(*this, x + 50, y + 40, 23, 7, false);
+                draw_text(*this, x + 55, y + 40, "OK", 1);
+            }
         }
         break;
 

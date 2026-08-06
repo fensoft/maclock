@@ -333,78 +333,92 @@ void maclock_local_draw_hardware_panel(
         ImGui::EndTable();
     }
 
+    constexpr float kControlHeight = 40.0f;
+    const float controls_height =
+        ImGui::GetTextLineHeightWithSpacing() +
+        kControlHeight * 2.0f +
+        ImGui::GetStyle().ItemSpacing.y + 28.0f;
+    ImGui::SetCursorPosY(std::max(
+        ImGui::GetCursorPosY(),
+        ImGui::GetContentRegionMax().y - controls_height));
     ImGui::SeparatorText("Physical controls");
-    const float reset_width =
-        (ImGui::GetContentRegionAvail().x -
-         ImGui::GetStyle().ItemSpacing.x * 2.0f) /
-        3.0f;
-    if (ImGui::Button(
-            "Reset to Emulator",
-            ImVec2(reset_width, 46.0f)))
-        model.reset_maclock(2);
-    ImGui::SameLine();
-    if (ImGui::Button(
-            "Reset to Clock",
-            ImVec2(reset_width, 46.0f)))
-        model.reset_maclock(1);
-    ImGui::SameLine();
-    if (ImGui::Button(
-            "Reset to Settings",
-            ImVec2(reset_width, 46.0f)))
-        model.reset_maclock(0);
-    const ImGuiStyle &style = ImGui::GetStyle();
-    const float available_width =
-        ImGui::GetContentRegionAvail().x;
-    const float primary_width =
-        std::max(
-            100.0f,
-            (available_width -
-             style.ItemSpacing.x * 4.0f) /
-                5.0f);
-    constexpr float kControlHeight = 46.0f;
+    char encoder_value[48];
+    snprintf(
+        encoder_value, sizeof(encoder_value),
+        "Encoder: %lld",
+        static_cast<long long>(model.encoder_value()));
 
-    if (model.floppy)
+    if (ImGui::BeginTable(
+            "reset-encoder-controls", 6,
+            ImGuiTableFlags_SizingStretchSame))
     {
-        ImGui::PushStyleColor(
-            ImGuiCol_Button,
-            ImGui::GetStyleColorVec4(
-                ImGuiCol_ButtonActive));
+        ImGui::TableNextColumn();
+        if (ImGui::Button(
+                "Reset: Emulator", ImVec2(-1.0f, kControlHeight)))
+            model.reset_maclock(2);
+        ImGui::TableNextColumn();
+        if (ImGui::Button(
+                "Reset: Clock", ImVec2(-1.0f, kControlHeight)))
+            model.reset_maclock(1);
+        ImGui::TableNextColumn();
+        if (ImGui::Button(
+                "Reset: Settings", ImVec2(-1.0f, kControlHeight)))
+            model.reset_maclock(0);
+        ImGui::TableNextColumn();
+        if (ImGui::Button(
+                "Encoder -", ImVec2(-1.0f, kControlHeight)))
+            model.encoder_delta(-1);
+        ImGui::TableNextColumn();
+        if (ImGui::Button(
+                "Encoder +", ImVec2(-1.0f, kControlHeight)))
+            model.encoder_delta(1);
+        ImGui::TableNextColumn();
+        ImGui::BeginDisabled();
+        ImGui::Button(
+            encoder_value, ImVec2(-1.0f, kControlHeight));
+        ImGui::EndDisabled();
+        ImGui::EndTable();
     }
-    if (ImGui::Button(
-            model.floppy
-                ? "Floppy: inserted"
-                : "Floppy: ejected",
-            ImVec2(primary_width, kControlHeight)))
+
+    bool alarm_down = false;
+    bool clock_down = false;
+    bool alarm_clock_down = false;
+    bool touch_down = false;
+    if (ImGui::BeginTable(
+            "physical-button-controls", 5,
+            ImGuiTableFlags_SizingStretchSame))
     {
-        model.set_floppy(!model.floppy);
+        ImGui::TableNextColumn();
+
+        if (model.floppy)
+            ImGui::PushStyleColor(
+                ImGuiCol_Button,
+                ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+        if (ImGui::Button(
+                model.floppy
+                    ? "Floppy: inserted"
+                    : "Floppy: ejected",
+                ImVec2(-1.0f, kControlHeight)))
+            model.set_floppy(!model.floppy);
+        if (model.floppy)
+            ImGui::PopStyleColor();
+
+        ImGui::TableNextColumn();
+        ImGui::Button("Alarm", ImVec2(-1.0f, kControlHeight));
+        alarm_down = ImGui::IsItemActive();
+        ImGui::TableNextColumn();
+        ImGui::Button("Clock", ImVec2(-1.0f, kControlHeight));
+        clock_down = ImGui::IsItemActive();
+        ImGui::TableNextColumn();
+        ImGui::Button(
+            "Alarm + Clock", ImVec2(-1.0f, kControlHeight));
+        alarm_clock_down = ImGui::IsItemActive();
+        ImGui::TableNextColumn();
+        ImGui::Button(
+            "Discrete touch", ImVec2(-1.0f, kControlHeight));
+        touch_down = ImGui::IsItemActive();
+        ImGui::EndTable();
     }
-    if (model.floppy)
-        ImGui::PopStyleColor();
-
-    ImGui::SameLine();
-    ImGui::Button(
-        "Alarm",
-        ImVec2(primary_width, kControlHeight));
-    const bool alarm_down = ImGui::IsItemActive();
-
-    ImGui::SameLine();
-    ImGui::Button(
-        "Clock",
-        ImVec2(primary_width, kControlHeight));
-    const bool clock_down = ImGui::IsItemActive();
-
-    ImGui::SameLine();
-    ImGui::Button(
-        "Alarm + Clock",
-        ImVec2(primary_width, kControlHeight));
-    const bool alarm_clock_down =
-        ImGui::IsItemActive();
-
-    ImGui::SameLine();
-    ImGui::Button(
-        "Discrete touch",
-        ImVec2(primary_width, kControlHeight));
-    const bool touch_down = ImGui::IsItemActive();
 
     model.set_alarm(
         alarm_down || alarm_clock_down);
@@ -417,42 +431,5 @@ void maclock_local_draw_hardware_panel(
          framebuffer_left_touch_active) ||
         touch_down);
 
-    const float secondary_width =
-        std::max(
-            150.0f,
-            (available_width -
-             style.ItemSpacing.x * 2.0f) /
-                3.0f);
-    if (ImGui::Button(
-            "Encoder -",
-            ImVec2(
-                secondary_width,
-                kControlHeight)))
-    {
-        model.encoder_delta(-1);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button(
-            "Encoder +",
-            ImVec2(
-                secondary_width,
-                kControlHeight)))
-    {
-        model.encoder_delta(1);
-    }
-    ImGui::SameLine();
-    char encoder_value[48];
-    snprintf(
-        encoder_value, sizeof(encoder_value),
-        "Encoder value: %lld",
-        static_cast<long long>(
-            model.encoder_value()));
-    ImGui::BeginDisabled();
-    ImGui::Button(
-        encoder_value,
-        ImVec2(
-            secondary_width,
-            kControlHeight));
-    ImGui::EndDisabled();
-    ImGui::Dummy(ImVec2(0.0f, 12.0f));
+    ImGui::Dummy(ImVec2(0.0f, 4.0f));
 }

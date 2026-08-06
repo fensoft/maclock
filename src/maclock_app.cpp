@@ -517,6 +517,9 @@ public:
     lv_obj_t *screensaver_canvas = nullptr;
     lv_obj_t *screensaver_photo = nullptr;
     uint8_t *screensaver_canvas_buffer = nullptr;
+    lv_draw_buf_t *screensaver_toaster_atlas = nullptr;
+    lv_draw_buf_t *screensaver_fish_atlas = nullptr;
+    lv_draw_buf_t *screensaver_error_atlas = nullptr;
     alignas(2) uint8_t screensaver_state[2200] = {};
     int16_t screensaver_x[64] = {};
     int16_t screensaver_y[64] = {};

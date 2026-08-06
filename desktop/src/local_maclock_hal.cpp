@@ -34,8 +34,8 @@ constexpr int kLogicalHeight = 224;
 constexpr int kLogicalTop = 16;
 constexpr int kDevicePanelWidth = 400;
 constexpr int kWindowHorizontalPadding = 20;
-constexpr int kWindowVerticalPadding = 180;
-constexpr int kMinimumWindowHeight = 650;
+constexpr int kWindowVerticalPadding = 213;
+constexpr int kMinimumWindowHeight = 700;
 
 struct LocalWindowSize
 {
@@ -45,13 +45,15 @@ struct LocalWindowSize
 
 LocalWindowSize window_size_for_scale(uint8_t scale)
 {
+    const uint8_t framebuffer_scale =
+        scale > 1 ? static_cast<uint8_t>(scale - 1) : scale;
     return {
-        kLogicalWidth * scale +
+        kLogicalWidth * framebuffer_scale +
             kDevicePanelWidth +
             kWindowHorizontalPadding,
         std::max(
             kMinimumWindowHeight,
-            kLogicalHeight * scale +
+            kLogicalHeight * framebuffer_scale +
                 kWindowVerticalPadding)};
 }
 
@@ -61,7 +63,9 @@ uint8_t automatic_scale(const SDL_Rect &usable)
         std::max(640, usable.w - 80);
     const int maximum_height =
         std::max(520, usable.h - 80);
-    for (int scale = 4; scale >= 1; --scale)
+    // Auto mode leaves one additional pixel of desktop scaling headroom.
+    // Explicit --scale 4 remains available when a 3x framebuffer is wanted.
+    for (int scale = 3; scale >= 1; --scale)
     {
         const LocalWindowSize size =
             window_size_for_scale(
@@ -744,7 +748,7 @@ bool LocalMaclockHal::begin()
         if (!impl_->window)
             return false;
         SDL_SetWindowMinimumSize(
-            impl_->window, 760, 600);
+            impl_->window, 760, 680);
         SDL_SetWindowPosition(
             impl_->window,
             SDL_WINDOWPOS_CENTERED,
