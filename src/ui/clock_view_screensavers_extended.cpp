@@ -5,12 +5,11 @@ namespace
 static constexpr int16_t kExtWidth = 304;
 static constexpr int16_t kExtHeight = 224;
 static constexpr uint16_t kExtStride =
-    (((kExtWidth + 7) / 8 + LV_DRAW_BUF_STRIDE_ALIGN - 1) /
+    ((kExtWidth + LV_DRAW_BUF_STRIDE_ALIGN - 1) /
      LV_DRAW_BUF_STRIDE_ALIGN) * LV_DRAW_BUF_STRIDE_ALIGN;
-static constexpr size_t kExtPaletteBytes = 8;
 static constexpr size_t kExtBufferBytes =
     LV_CANVAS_BUF_SIZE(
-        kExtWidth, kExtHeight, 1, LV_DRAW_BUF_STRIDE_ALIGN);
+        kExtWidth, kExtHeight, 8, LV_DRAW_BUF_STRIDE_ALIGN);
 
 static bool is_extended_mode(ScreensaverMode mode)
 {
@@ -20,7 +19,7 @@ static bool is_extended_mode(ScreensaverMode mode)
 
 static uint8_t *pixels(ClockView &view)
 {
-    return view.screensaver_canvas_buffer + kExtPaletteBytes;
+    return view.screensaver_canvas_buffer;
 }
 
 static void clear_canvas(ClockView &view, bool white = false)
@@ -94,12 +93,7 @@ static void put_pixel(
 {
     if (x < 0 || y < 0 || x >= kExtWidth || y >= kExtHeight)
         return;
-    uint8_t &value = pixels(view)[y * kExtStride + (x >> 3)];
-    const uint8_t mask = static_cast<uint8_t>(0x80 >> (x & 7));
-    if (white)
-        value |= mask;
-    else
-        value &= static_cast<uint8_t>(~mask);
+    pixels(view)[y * kExtStride + x] = white ? 0xFF : 0;
 }
 
 static void fill_rect(
@@ -537,13 +531,7 @@ void ClockView::initExtendedScreensavers(lv_obj_t *parent)
     screensaver_canvas = lv_canvas_create(parent);
     lv_canvas_set_buffer(
         screensaver_canvas, screensaver_canvas_buffer,
-        kExtWidth, kExtHeight, LV_COLOR_FORMAT_I1);
-    lv_canvas_set_palette(
-        screensaver_canvas, 0,
-        lv_color_to_32(lv_color_black(), LV_OPA_COVER));
-    lv_canvas_set_palette(
-        screensaver_canvas, 1,
-        lv_color_to_32(lv_color_white(), LV_OPA_COVER));
+        kExtWidth, kExtHeight, LV_COLOR_FORMAT_L8);
     lv_obj_set_pos(screensaver_canvas, 0, 0);
     lv_obj_add_flag(screensaver_canvas, LV_OBJ_FLAG_HIDDEN);
     screensaver_photo = lv_image_create(parent);

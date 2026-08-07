@@ -10,7 +10,8 @@ static lv_obj_t *create_screensaver_layer(lv_obj_t *parent)
 {
     lv_obj_t *layer = lv_obj_create(parent);
     lv_obj_remove_style_all(layer);
-    lv_obj_set_size(layer, lv_pct(100), lv_pct(100));
+    lv_obj_set_size(
+        layer, kScreensaverWidth, kScreensaverHeight);
     lv_obj_set_pos(layer, 0, 0);
     lv_obj_remove_flag(layer, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(layer, LV_OBJ_FLAG_HIDDEN);
@@ -107,6 +108,8 @@ void ClockView::initScreensavers(lv_obj_t *screen)
 {
     screensaver =
         create_clock_face_root(screen, lv_color_black());
+    lv_obj_set_size(
+        screensaver, kScreensaverWidth, kScreensaverHeight);
 
     screensaver_star_layer =
         create_screensaver_layer(screensaver);
