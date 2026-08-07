@@ -215,6 +215,25 @@ static void disconnect_wifi()
     }
     lock_state();
     g_snapshot.connected = false;
+    copy_text(g_snapshot.ip_address, "");
+    g_snapshot.rssi = 0;
+    unlock_state();
+}
+
+static void cache_station_details(bool connected)
+{
+    char ip_address[16] = "";
+    int32_t rssi = 0;
+    if (connected)
+    {
+        copy_text(ip_address, WiFi.localIP().toString());
+        rssi = WiFi.RSSI();
+    }
+
+    lock_state();
+    g_snapshot.connected = connected;
+    copy_text(g_snapshot.ip_address, ip_address);
+    g_snapshot.rssi = rssi;
     unlock_state();
 }
 
@@ -622,27 +641,12 @@ static bool synchronize_time(const WifiSettings &settings)
     return true;
 }
 
-static bool connect_station(const WifiSettings &settings)
+static void begin_station_connection(const WifiSettings &settings)
 {
     set_status("Connecting to Wi-Fi...");
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
     WiFi.begin(settings.ssid, settings.password);
-
-    const uint32_t started = millis();
-    while (WiFi.status() != WL_CONNECTED &&
-           millis() - started < 12000)
-    {
-        if (g_pause_requested || g_portal_active)
-            return false;
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-
-    const bool connected = WiFi.status() == WL_CONNECTED;
-    lock_state();
-    g_snapshot.connected = connected;
-    unlock_state();
-    return connected;
 }
 
 static void wifi_task(void *parameter)
@@ -650,6 +654,9 @@ static void wifi_task(void *parameter)
     active_wifi_service =
         static_cast<WifiService *>(parameter);
     uint32_t next_connection_attempt = 0;
+    uint32_t connection_deadline = 0;
+    bool connection_pending = false;
+    bool station_was_connected = false;
 
     for (;;)
     {
@@ -663,6 +670,8 @@ static void wifi_task(void *parameter)
             apply_backup_settings(restored);
             disconnect_wifi();
             next_connection_attempt = 0;
+            connection_pending = false;
+            station_was_connected = false;
         }
 
         if (g_pause_requested || g_portal_active)
@@ -673,6 +682,8 @@ static void wifi_task(void *parameter)
                 vTaskDelay(pdMS_TO_TICKS(100));
             g_pause_acknowledged = false;
             next_connection_attempt = 0;
+            connection_pending = false;
+            station_was_connected = false;
         }
 
         WifiSettings settings = settings_snapshot();
@@ -694,22 +705,45 @@ static void wifi_task(void *parameter)
         if (WiFi.status() != WL_CONNECTED)
         {
             const uint32_t now = millis();
+            station_was_connected = false;
+            if (connection_pending)
+            {
+                if (static_cast<int32_t>(
+                        now - connection_deadline) < 0)
+                {
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                    continue;
+                }
+                connection_pending = false;
+                disconnect_wifi();
+                set_status("Offline - retrying soon");
+                next_connection_attempt = now + kConnectRetryMs;
+                continue;
+            }
             if ((int32_t)(now - next_connection_attempt) < 0)
             {
                 vTaskDelay(pdMS_TO_TICKS(250));
                 continue;
             }
-            if (!connect_station(settings))
-            {
-                disconnect_wifi();
-                set_status("Offline - retrying soon");
-                next_connection_attempt = millis() + kConnectRetryMs;
-                continue;
-            }
-            next_connection_attempt = 0;
+            begin_station_connection(settings);
+            connection_pending = true;
+            connection_deadline = now + 12000;
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
+
+        connection_pending = false;
+        next_connection_attempt = 0;
+        if (!station_was_connected)
+        {
+            station_was_connected = true;
             g_last_forecast_ms = 0;
             g_last_ntp_ms = 0;
         }
+        // Only the Wi-Fi worker talks to the Arduino Wi-Fi driver. Calls
+        // such as localIP() and RSSI() can wait on the driver while the
+        // station is associating, so cache their values for the UI thread.
+        cache_station_details(true);
 
         if (!settings.coordinates_valid &&
             !geocode_city(settings))
@@ -1213,17 +1247,6 @@ WifiModeSnapshot WifiService::snapshot()
         }
     }
     unlock_state();
-
-    if (snapshot.connected && WiFi.status() == WL_CONNECTED)
-    {
-        copy_text(snapshot.ip_address, WiFi.localIP().toString());
-        snapshot.rssi = WiFi.RSSI();
-    }
-    else
-    {
-        copy_text(snapshot.ip_address, "");
-        snapshot.rssi = 0;
-    }
     return snapshot;
 }
 
@@ -1307,10 +1330,6 @@ bool WifiService::restoreSettings(
     else
     {
         apply_backup_settings(normalized);
-        lock_state();
-        g_snapshot.connected =
-            WiFi.status() == WL_CONNECTED;
-        unlock_state();
     }
     return true;
 }

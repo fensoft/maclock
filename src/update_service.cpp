@@ -22,6 +22,7 @@
 #include <esp_app_format.h>
 #include <esp_heap_caps.h>
 #include <esp_ota_ops.h>
+#include <mbedtls/platform.h>
 #include <miniz.h>
 #endif
 
@@ -63,6 +64,23 @@ static constexpr size_t kFirmwarePrefixSize =
     sizeof(esp_image_header_t) +
     sizeof(esp_image_segment_header_t) +
     sizeof(esp_app_desc_t);
+#endif
+
+#ifndef MACLOCK_LOCAL
+void *tls_psram_calloc(size_t count, size_t size)
+{
+    void *memory = heap_caps_calloc(
+        count, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!memory)
+        memory = heap_caps_calloc(
+            count, size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    return memory;
+}
+
+void tls_psram_free(void *memory)
+{
+    heap_caps_free(memory);
+}
 #endif
 
 enum class WorkerAction : uint8_t
@@ -1807,6 +1825,15 @@ bool start_worker(
 
 void UpdateService::begin(Preferences &preferences)
 {
+#ifndef MACLOCK_LOCAL
+    static bool tls_allocator_configured = false;
+    if (!tls_allocator_configured)
+    {
+        tls_allocator_configured =
+            mbedtls_platform_set_calloc_free(
+                tls_psram_calloc, tls_psram_free) == 0;
+    }
+#endif
     if (!state_)
         state_ = new State();
     state_->preferences = &preferences;

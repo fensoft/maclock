@@ -7,6 +7,9 @@
 #include <NetworkClient.h>
 #include <WebServer.h>
 #include <vector>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+#include <freertos/task.h>
 #if defined(ARDUINO_ARCH_ESP32) && !defined(MACLOCK_LOCAL)
 #include <WiFiClient.h>
 #include <esp_heap_caps.h>
@@ -40,6 +43,12 @@ struct ControlPanelService::State
     size_t minivmac_upload_size = 0;
     bool minivmac_upload_started = false;
     bool minivmac_bootstrap_attempted = false;
+    TaskHandle_t minivmac_bootstrap_task = nullptr;
+    SemaphoreHandle_t progress_lock = nullptr;
+    char progress_message[64] = "";
+    uint8_t progress_value = 0;
+    bool progress_dirty = false;
+    bool progress_hide_pending = false;
     File photo_upload;
     String photo_upload_path;
     String photo_upload_error;
@@ -67,6 +76,33 @@ ControlPanelService *active_control_panel = nullptr;
     (active_control_panel->state().update_upload_finished)
 #define g_update_upload_error \
     (active_control_panel->state().update_upload_error)
+
+static void queue_download_progress(
+    const char *message, uint8_t progress)
+{
+    auto &state = active_control_panel->state();
+    if (state.progress_lock)
+        xSemaphoreTake(state.progress_lock, portMAX_DELAY);
+    strlcpy(
+        state.progress_message, message ? message : "",
+        sizeof(state.progress_message));
+    state.progress_value = progress;
+    state.progress_dirty = true;
+    state.progress_hide_pending = false;
+    if (state.progress_lock)
+        xSemaphoreGive(state.progress_lock);
+}
+
+static void queue_download_hide()
+{
+    auto &state = active_control_panel->state();
+    if (state.progress_lock)
+        xSemaphoreTake(state.progress_lock, portMAX_DELAY);
+    state.progress_hide_pending = true;
+    state.progress_dirty = false;
+    if (state.progress_lock)
+        xSemaphoreGive(state.progress_lock);
+}
 
 static void send_json(JsonDocument &document, int status = 200)
 {
@@ -443,9 +479,7 @@ static bool download_to_littlefs(
     const char *url, const char *path,
     const char *progress_message)
 {
-    if (g_events)
-        g_events->showControlPanelDownload(
-            progress_message, 0);
+    queue_download_progress(progress_message, 0);
 #if defined(MACLOCK_LOCAL)
     NetworkClient client;
     HTTPClient http;
@@ -464,9 +498,7 @@ static bool download_to_littlefs(
         return false;
     }
     const String response = http.getString();
-    if (g_events)
-        g_events->showControlPanelDownload(
-            progress_message, 100);
+    queue_download_progress(progress_message, 100);
     Serial.printf(
         "[Mini vMac] Downloaded %lu bytes from %s\n",
         static_cast<unsigned long>(response.length()), url);
@@ -555,12 +587,11 @@ static bool download_to_littlefs(
                        100) /
                       total)
                 : 0;
-        if (g_events && progress != last_progress)
+        if (progress != last_progress)
         {
             last_progress = progress;
-            g_events->showControlPanelDownload(
-                progress_message,
-                static_cast<uint8_t>(progress));
+            queue_download_progress(
+                progress_message, static_cast<uint8_t>(progress));
         }
         delay(0);
     }
@@ -829,8 +860,8 @@ static void provision_minivmac_defaults()
             "http://psychonaut.bplaced.net/MinivMac/MinivMac_disks/System7.zip",
             "/System7.zip.download",
             "Downloading System 7 disk...");
-        if (downloaded && g_events)
-            g_events->showControlPanelDownload(
+        if (downloaded)
+            queue_download_progress(
                 "Installing System 7 disk...", 100);
         if (!downloaded)
             Serial.println("[Mini vMac] System 7 download failed");
@@ -846,6 +877,67 @@ static void provision_minivmac_defaults()
         LittleFS.remove("/System7.zip.download");
         LittleFS.remove("/disk1.dsk.download");
     }
+}
+
+static void minivmac_bootstrap_task(void *context)
+{
+    auto *service = static_cast<ControlPanelService *>(context);
+    active_control_panel = service;
+    provision_minivmac_defaults();
+    queue_download_hide();
+
+    auto &state = service->state();
+    state.minivmac_bootstrap_task = nullptr;
+    vTaskDelete(nullptr);
+}
+
+static void start_minivmac_bootstrap(ControlPanelService &service)
+{
+    auto &state = service.state();
+    if (state.minivmac_bootstrap_attempted ||
+        state.minivmac_bootstrap_task)
+        return;
+
+    state.minivmac_bootstrap_attempted = true;
+    if (LittleFS.exists("/vMac.ROM") &&
+        LittleFS.exists("/disk1.dsk"))
+        return;
+
+    const BaseType_t created = xTaskCreatePinnedToCore(
+        minivmac_bootstrap_task, "minivmac_assets", 12288,
+        &service, 1, &state.minivmac_bootstrap_task, 0);
+    if (created != pdPASS)
+    {
+        state.minivmac_bootstrap_task = nullptr;
+        Serial.println("[Mini vMac] Could not start asset worker");
+    }
+}
+
+static void deliver_download_progress(ControlPanelService::State &state)
+{
+    char message[64] = "";
+    uint8_t progress = 0;
+    bool dirty = false;
+    bool hide = false;
+    if (state.progress_lock)
+        xSemaphoreTake(state.progress_lock, portMAX_DELAY);
+    dirty = state.progress_dirty;
+    hide = state.progress_hide_pending;
+    if (dirty)
+    {
+        strlcpy(message, state.progress_message, sizeof(message));
+        progress = state.progress_value;
+        state.progress_dirty = false;
+    }
+    if (hide)
+        state.progress_hide_pending = false;
+    if (state.progress_lock)
+        xSemaphoreGive(state.progress_lock);
+
+    if (dirty && state.events)
+        state.events->showControlPanelDownload(message, progress);
+    if (hide && state.events)
+        state.events->hideControlPanelDownload();
 }
 
 static bool read_uint(
@@ -1866,24 +1958,20 @@ void ControlPanelService::begin(ControlPanelEventSink &events)
     if (!state_)
         state_ = new State();
     active_control_panel = this;
+    if (!state_->progress_lock)
+        state_->progress_lock = xSemaphoreCreateMutex();
     g_events = &events;
     g_configuration_archive.begin(events);
     configure_routes();
 #if defined(MACLOCK_LOCAL)
-    if (!state_->minivmac_bootstrap_attempted)
-    {
-        state_->minivmac_bootstrap_attempted = true;
-        g_events->beginControlPanelNetworkTransfer();
-        provision_minivmac_defaults();
-        g_events->hideControlPanelDownload();
-        g_events->endControlPanelNetworkTransfer();
-    }
+    start_minivmac_bootstrap(*this);
 #endif
 }
 
 void ControlPanelService::tick(const WifiModeSnapshot &wifi)
 {
     active_control_panel = this;
+    deliver_download_progress(*state_);
     if (!wifi.enabled || !wifi.connected || wifi.portal_active)
     {
         stop();
@@ -1900,18 +1988,7 @@ void ControlPanelService::tick(const WifiModeSnapshot &wifi)
         Serial.printf(
             "[Control] http://%s/ or http://maclock.local/\n",
             wifi.ip_address);
-        if (!state_->minivmac_bootstrap_attempted)
-        {
-            state_->minivmac_bootstrap_attempted = true;
-            if (g_events)
-                g_events->beginControlPanelNetworkTransfer();
-            provision_minivmac_defaults();
-            if (g_events)
-            {
-                g_events->hideControlPanelDownload();
-                g_events->endControlPanelNetworkTransfer();
-            }
-        }
+        start_minivmac_bootstrap(*this);
     }
     g_server.handleClient();
 }
@@ -1936,4 +2013,9 @@ void ControlPanelService::stop()
 bool ControlPanelService::running() const
 {
     return state_ && state_->server_running;
+}
+
+bool ControlPanelService::backgroundNetworkActive() const
+{
+    return state_ && state_->minivmac_bootstrap_task;
 }

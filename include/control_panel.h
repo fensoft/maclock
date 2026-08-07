@@ -162,6 +162,7 @@ public:
     void tick(const WifiModeSnapshot &wifi);
     void stop();
     bool running() const;
+    bool backgroundNetworkActive() const;
 
     State &state();
 

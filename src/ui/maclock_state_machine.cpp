@@ -171,22 +171,12 @@ void MaclockApp::tick()
         wifi_service.stopPortal();
     }
     const WifiModeSnapshot wifi = wifi_service.snapshot();
-    if (current_state_ == UI_STATE_WIFI_SETUP)
-    {
-        control_panel_service.stop();
-        mqtt_service.stop(false);
-    }
-    else
-    {
-        control_panel_service.tick(wifi);
-        const bool mqtt_display_allowed =
-            current_state_ != UI_STATE_ALARM_RINGING &&
-            current_state_ != UI_STATE_TIMER_FINISHED &&
-            current_state_ != UI_STATE_EMULATOR;
-        mqtt_service.tick(wifi, mqtt_display_allowed, now);
-    }
-    if (mqtt_service.displayActive())
-        full_brightness_until_ms_ = now + 2000;
+    WifiModeSnapshot service_wifi = wifi;
+    // Association and DHCP complete before the first forecast/NTP pass.
+    // Keep other TCP/TLS clients idle until that pass has released the
+    // Wi-Fi worker's network resources.
+    service_wifi.connected =
+        wifi.connected && strncmp(wifi.status, "Online", 6) == 0;
 
     const bool update_prompt_allowed =
         current_state_ == UiState::Normal &&
@@ -197,26 +187,39 @@ void MaclockApp::tick()
         boot_options_view.page == BOOT_OPTIONS_UPDATE &&
         !audio_service.running();
     const bool update_network_check_allowed =
-        update_prompt_allowed || update_page_active;
-    const bool update_check_pending =
-        update_network_check_allowed &&
-        update_service.needsNetworkCheck(wifi);
-    if (update_check_pending &&
-        !update_network_guard_active_)
-    {
-        beginControlPanelNetworkTransfer();
-        update_network_guard_active_ = true;
-    }
+        (update_prompt_allowed || update_page_active) &&
+        !control_panel_service.backgroundNetworkActive();
     update_service.tick(
-        wifi, update_prompt_allowed,
+        service_wifi, update_prompt_allowed,
         update_network_check_allowed);
-    if (update_network_guard_active_ &&
-        !update_service.networkOperationActive() &&
-        !update_service.needsNetworkCheck(wifi))
+    const bool update_network_active =
+        update_service.networkOperationActive() ||
+        update_service.needsNetworkCheck(service_wifi);
+
+    if (current_state_ == UI_STATE_WIFI_SETUP)
     {
-        endControlPanelNetworkTransfer();
-        update_network_guard_active_ = false;
+        control_panel_service.stop();
+        mqtt_service.stop(false);
     }
+    else
+    {
+        WifiModeSnapshot control_wifi = service_wifi;
+        if (update_network_active)
+            control_wifi.connected = false;
+        control_panel_service.tick(control_wifi);
+        const bool mqtt_display_allowed =
+            current_state_ != UI_STATE_ALARM_RINGING &&
+            current_state_ != UI_STATE_TIMER_FINISHED &&
+            current_state_ != UI_STATE_EMULATOR;
+        WifiModeSnapshot mqtt_wifi = service_wifi;
+        if (control_panel_service.backgroundNetworkActive() ||
+            update_network_active)
+            mqtt_wifi.connected = false;
+        mqtt_service.tick(mqtt_wifi, mqtt_display_allowed, now);
+    }
+    if (mqtt_service.displayActive())
+        full_brightness_until_ms_ = now + 2000;
+
     syncUpdatePrompt(update_prompt_allowed);
 
     if (control_preview_pending_ &&
