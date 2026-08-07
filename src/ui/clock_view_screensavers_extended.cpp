@@ -31,6 +31,9 @@ static void clear_canvas(ClockView &view, bool white = false)
 
 static void put_pixel(
     ClockView &view, int16_t x, int16_t y, bool white = true);
+static void line(
+    ClockView &view, int x0, int y0, int x1, int y1,
+    bool white = true);
 
 static bool atlas_pixel_white(
     const lv_draw_buf_t *atlas, uint32_t x, uint32_t y)
@@ -105,9 +108,35 @@ static void fill_rect(
             put_pixel(view, xx, yy, white);
 }
 
+static void draw_bubble(
+    ClockView &view, int16_t x, int16_t y, uint8_t radius)
+{
+    if (radius <= 1)
+    {
+        put_pixel(view, x, y);
+        put_pixel(view, x + 1, y);
+        put_pixel(view, x, y + 1);
+        put_pixel(view, x + 1, y + 1);
+        return;
+    }
+
+    const int16_t inner = radius - 1;
+    line(view, x - inner, y - radius, x + inner, y - radius);
+    line(view, x - inner, y + radius, x + inner, y + radius);
+    line(view, x - radius, y - inner, x - radius, y + inner);
+    line(view, x + radius, y - inner, x + radius, y + inner);
+    put_pixel(view, x - inner, y - inner);
+    put_pixel(view, x + inner, y - inner);
+    put_pixel(view, x - inner, y + inner);
+    put_pixel(view, x + inner, y + inner);
+
+    if (radius >= 3)
+        put_pixel(view, x - 1, y - 1);
+}
+
 static void line(
     ClockView &view, int x0, int y0, int x1, int y1,
-    bool white = true)
+    bool white)
 {
     const int dx = abs(x1 - x0);
     const int sx = x0 < x1 ? 1 : -1;
@@ -699,9 +728,20 @@ bool ClockView::updateExtendedScreensaver(
                         : screensaver_state[i],
                     i & 1U);
         }
-        for (uint8_t i = 0; i < 16; ++i)
-            put_pixel(*this, (i * 37) % kExtWidth,
-                      kExtHeight - ((frame + i * 17) % kExtHeight));
+        for (uint8_t i = 0; i < 18; ++i)
+        {
+            const uint8_t radius = 1 + (i % 3);
+            const uint16_t travel = kExtHeight + radius * 2 + 12;
+            const uint16_t rise =
+                (frame * (1 + (i % 3)) + i * 29) % travel;
+            const int16_t y = kExtHeight + radius - rise;
+            const int8_t drift = static_cast<int8_t>(
+                ((frame / (5 + i % 4) + i * 3) % 7)) - 3;
+            const int16_t x =
+                12 + ((i * 53 + (i % 4) * 17) % (kExtWidth - 24)) +
+                drift;
+            draw_bubble(*this, x, y, radius);
+        }
         break;
 
     case ScreensaverMode::Life:
