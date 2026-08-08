@@ -10,6 +10,11 @@
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_sdlrenderer3.h>
 
+#if defined(__APPLE__)
+#include <ApplicationServices/ApplicationServices.h>
+#include <unistd.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -78,6 +83,111 @@ uint8_t automatic_scale(const SDL_Rect &usable)
     }
     return 1;
 }
+
+#if defined(__APPLE__)
+bool display_has_fullscreen_window(
+    const SDL_Rect &display_bounds,
+    CFArrayRef windows)
+{
+    if (!windows || display_bounds.w <= 0 ||
+        display_bounds.h <= 0)
+        return false;
+
+    const CGRect display = CGRectMake(
+        display_bounds.x, display_bounds.y,
+        display_bounds.w, display_bounds.h);
+    const CGFloat display_area =
+        display.size.width * display.size.height;
+    const CFIndex count = CFArrayGetCount(windows);
+    for (CFIndex index = 0; index < count; ++index)
+    {
+        auto *window = static_cast<CFDictionaryRef>(
+            CFArrayGetValueAtIndex(windows, index));
+        int layer = 0;
+        int owner_pid = 0;
+        auto *layer_value = static_cast<CFNumberRef>(
+            CFDictionaryGetValue(window, kCGWindowLayer));
+        auto *pid_value = static_cast<CFNumberRef>(
+            CFDictionaryGetValue(window, kCGWindowOwnerPID));
+        if (!layer_value ||
+            !CFNumberGetValue(
+                layer_value, kCFNumberIntType, &layer) ||
+            layer != 0)
+            continue;
+        if (pid_value)
+            CFNumberGetValue(
+                pid_value, kCFNumberIntType, &owner_pid);
+        if (owner_pid == static_cast<int>(getpid()))
+            continue;
+
+        auto *bounds_value = static_cast<CFDictionaryRef>(
+            CFDictionaryGetValue(window, kCGWindowBounds));
+        CGRect bounds = CGRectZero;
+        if (!bounds_value ||
+            !CGRectMakeWithDictionaryRepresentation(
+                bounds_value, &bounds))
+            continue;
+        const CGRect intersection =
+            CGRectIntersection(display, bounds);
+        if (CGRectIsNull(intersection))
+            continue;
+        const CGFloat covered =
+            intersection.size.width *
+            intersection.size.height;
+        if (covered >= display_area * 0.97)
+            return true;
+    }
+    return false;
+}
+
+SDL_DisplayID preferred_window_display()
+{
+    int display_count = 0;
+    SDL_DisplayID *displays =
+        SDL_GetDisplays(&display_count);
+    if (!displays || display_count <= 0)
+        return SDL_GetPrimaryDisplay();
+
+    const SDL_DisplayID primary =
+        SDL_GetPrimaryDisplay();
+    CFArrayRef windows = CGWindowListCopyWindowInfo(
+        static_cast<CGWindowListOption>(
+            kCGWindowListOptionOnScreenOnly |
+            kCGWindowListExcludeDesktopElements),
+        kCGNullWindowID);
+    SDL_DisplayID selected = primary
+        ? primary
+        : displays[0];
+    auto display_is_free = [&](SDL_DisplayID display_id)
+    {
+        SDL_Rect bounds{};
+        return SDL_GetDisplayBounds(display_id, &bounds) &&
+               !display_has_fullscreen_window(
+                   bounds, windows);
+    };
+
+    if (!primary || !display_is_free(primary))
+    {
+        for (int index = 0; index < display_count; ++index)
+        {
+            if (display_is_free(displays[index]))
+            {
+                selected = displays[index];
+                break;
+            }
+        }
+    }
+    if (windows)
+        CFRelease(windows);
+    SDL_free(displays);
+    return selected;
+}
+#else
+SDL_DisplayID preferred_window_display()
+{
+    return SDL_GetPrimaryDisplay();
+}
+#endif
 
 void apply_classic_mac_style(ImGuiStyle &style)
 {
@@ -730,10 +840,11 @@ bool LocalMaclockHal::begin()
             return false;
         }
         SDL_Rect usable = {0, 0, 1440, 900};
-        const SDL_DisplayID primary =
-            SDL_GetPrimaryDisplay();
-        if (primary)
-            SDL_GetDisplayUsableBounds(primary, &usable);
+        const SDL_DisplayID target_display =
+            preferred_window_display();
+        if (target_display)
+            SDL_GetDisplayUsableBounds(
+                target_display, &usable);
         if (impl_->options.scale == 0)
             impl_->options.scale =
                 automatic_scale(usable);
@@ -751,8 +862,12 @@ bool LocalMaclockHal::begin()
             impl_->window, 760, 680);
         SDL_SetWindowPosition(
             impl_->window,
-            SDL_WINDOWPOS_CENTERED,
-            SDL_WINDOWPOS_CENTERED);
+            usable.x +
+                std::max(0,
+                    (usable.w - window_size.width) / 2),
+            usable.y +
+                std::max(0,
+                    (usable.h - window_size.height) / 2));
         impl_->renderer =
             SDL_CreateRenderer(impl_->window, nullptr);
         if (!impl_->renderer)

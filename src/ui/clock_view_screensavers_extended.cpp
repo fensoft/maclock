@@ -10,6 +10,7 @@ static constexpr uint16_t kExtStride =
 static constexpr size_t kExtBufferBytes =
     LV_CANVAS_BUF_SIZE(
         kExtWidth, kExtHeight, 8, LV_DRAW_BUF_STRIDE_ALIGN);
+static constexpr uint8_t kToasterSpeedStateOffset = 16;
 
 static bool is_extended_mode(ScreensaverMode mode)
 {
@@ -70,11 +71,12 @@ static void draw_atlas_sprite(
     ClockView &view, const lv_draw_buf_t *atlas,
     uint8_t variant, uint16_t cell_width, uint16_t cell_height,
     int16_t x, int16_t y, uint16_t width, uint16_t height,
-    bool mirror = false, bool white = true)
+    bool mirror = false, bool white = true, uint8_t row = 0)
 {
     if (!atlas)
         return;
     const uint32_t source_left = (variant % 10U) * cell_width;
+    const uint32_t source_top = row * cell_height;
     for (uint16_t yy = 0; yy < height; ++yy)
         for (uint16_t xx = 0; xx < width; ++xx)
         {
@@ -86,7 +88,8 @@ static void draw_atlas_sprite(
             const uint16_t source_y = static_cast<uint16_t>(
                 (static_cast<uint32_t>(yy) * cell_height) / height);
             if (atlas_pixel_white(
-                    atlas, source_left + source_x, source_y))
+                    atlas, source_left + source_x,
+                    source_top + source_y))
                 put_pixel(view, x + xx, y + yy, white);
         }
 }
@@ -596,7 +599,12 @@ bool ClockView::activateExtendedScreensaver(
         seed_particles(*this, 64);
         if (mode == ScreensaverMode::FlyingToasters)
             for (uint8_t i = 0; i < 7; ++i)
+            {
                 screensaver_state[i] = random(0, 10);
+                screensaver_state[
+                    kToasterSpeedStateOffset + i] =
+                    random(70, 131);
+            }
         if (mode == ScreensaverMode::Aquarium)
             for (uint8_t i = 0; i < 9; ++i)
                 screensaver_state[i] = random_fish_variant();
@@ -637,8 +645,23 @@ bool ClockView::updateExtendedScreensaver(
     case ScreensaverMode::FlyingToasters:
         for (uint8_t i = 0; i < 7; ++i)
         {
-            screensaver_x[i] += 2;
-            screensaver_y[i] += (i & 1) ? 1 : -1;
+            const uint8_t speed = screensaver_state[
+                kToasterSpeedStateOffset + i];
+            const uint64_t distance_before =
+                static_cast<uint64_t>(frame) * speed;
+            const uint64_t distance_after =
+                static_cast<uint64_t>(frame + 1) * speed;
+            const int16_t horizontal_step =
+                static_cast<int16_t>(
+                    distance_after * 2 / 100 -
+                    distance_before * 2 / 100);
+            const int16_t vertical_step =
+                static_cast<int16_t>(
+                    distance_after / 100 -
+                    distance_before / 100);
+            screensaver_x[i] += horizontal_step;
+            screensaver_y[i] +=
+                (i & 1) ? vertical_step : -vertical_step;
             if (screensaver_x[i] > kExtWidth + 56)
             {
                 screensaver_x[i] = -56;
@@ -650,12 +673,16 @@ bool ClockView::updateExtendedScreensaver(
             if (screensaver_toaster_atlas)
                 draw_atlas_sprite(
                     *this, screensaver_toaster_atlas,
-                    screensaver_state[i], 64, 48,
-                    x - 8, y - 10, 56, 42, true);
+                    screensaver_state[i],
+                    64, 48,
+                    x - 8, y - 10, 56, 42,
+                    true, true,
+                    static_cast<uint8_t>(
+                        ((distance_before / 100) / 5) & 1U));
             else
                 draw_toaster(
                     *this, x, y, screensaver_state[i],
-                    ((frame / 5) + i) & 1U);
+                    (((distance_before / 100) / 5) + i) & 1U);
         }
         break;
 
