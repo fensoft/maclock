@@ -50,6 +50,7 @@ static constexpr char kFirmwareName[] =
 static constexpr char kAssetsName[] =
     "maclock-lolin-s3-assets.zip";
 static constexpr char kDownloadedPrefix[] = "/downloaded/";
+static constexpr char kScreensaverPrefix[] = "/screensaver/";
 static constexpr char kAssetTemporaryPath[] =
     "/.maclock-asset.tmp";
 static constexpr uint32_t kCheckIntervalMs =
@@ -154,13 +155,17 @@ bool protected_user_path(const char *path)
         strncmp(
             path, kDownloadedPrefix,
             sizeof(kDownloadedPrefix) - 1) == 0 ||
+        strcmp(path, "/screensaver") == 0 ||
+        strncmp(
+            path, kScreensaverPrefix,
+            sizeof(kScreensaverPrefix) - 1) == 0 ||
         strcmp(path, "/vMac.ROM") == 0)
     {
         return true;
     }
 
-    // Mini vMac ROMs and disks are user-managed, potentially large,
-    // and must survive release-asset reconciliation.
+    // Uploaded sounds, slideshow photos, and Mini vMac media are
+    // user-managed and must survive release-asset reconciliation.
     return strlen(path) == strlen("/disk1.dsk") &&
            strncmp(path, "/disk", strlen("/disk")) == 0 &&
            path[5] >= '1' && path[5] <= '6' &&
