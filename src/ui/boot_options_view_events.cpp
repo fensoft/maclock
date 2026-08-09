@@ -76,6 +76,40 @@ static void update_language_selection(bool scroll_to_selected)
     }
 }
 
+static const char *clock_face_name(uint32_t face)
+{
+    static const char *const names[CLOCK_FACE_COUNT] = {
+        "Macintosh", "Compact", "Analog", "Flip",
+        "Odometer", "Mac OS 8"};
+    return face < CLOCK_FACE_COUNT ? tr(names[face]) : "";
+}
+
+static void update_clock_face_selection(bool scroll_to_selected)
+{
+    const uint32_t selected = (uint32_t)g_clock_face;
+    for (uint32_t i = 0; i < CLOCK_FACE_COUNT; ++i)
+    {
+        lv_obj_t *item = boot_options_view.clock_face_items[i];
+        if (!item)
+            continue;
+        lv_obj_t *label = lv_obj_get_child(item, 0);
+        if (label)
+            lv_label_set_text(label, clock_face_name(i));
+        if (i == selected)
+            lv_obj_add_state(item, LV_STATE_CHECKED);
+        else
+            lv_obj_remove_state(item, LV_STATE_CHECKED);
+    }
+
+    if (scroll_to_selected && selected < CLOCK_FACE_COUNT &&
+        boot_options_view.clock_face_items[selected])
+    {
+        lv_obj_scroll_to_view(
+            boot_options_view.clock_face_items[selected],
+            LV_ANIM_OFF);
+    }
+}
+
 void UiShell::updateMenuTitles()
 {
     if (!ui_shell.menu_titles)
@@ -186,15 +220,6 @@ static void update_boot_translation_maps()
     g_brightness_map[1] = tr("Lowest");
     g_brightness_map[2] = tr("Highest");
     g_brightness_map[3] = "";
-    g_clock_face_map[0] = tr("Macintosh");
-    g_clock_face_map[1] = tr("Compact");
-    g_clock_face_map[2] = "\n";
-    g_clock_face_map[3] = tr("Analog");
-    g_clock_face_map[4] = tr("Flip");
-    g_clock_face_map[5] = "\n";
-    g_clock_face_map[6] = tr("Odometer");
-    g_clock_face_map[7] = tr("Mac OS 8");
-    g_clock_face_map[8] = "";
     g_face_accent_map[0] = tr("Default");
     g_face_accent_map[1] = tr("Red");
     g_face_accent_map[2] = tr("Orange");
@@ -589,13 +614,14 @@ static void dark_mode_checkbox_event(lv_event_t *event)
 
 static void clock_face_event(lv_event_t *event)
 {
-    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    lv_obj_t *item = (lv_obj_t *)lv_event_get_target(event);
     const uint32_t selected =
-        lv_buttonmatrix_get_selected_button(options);
+        (uint32_t)(uintptr_t)lv_obj_get_user_data(item);
     if (selected >= CLOCK_FACE_COUNT)
         return;
     g_clock_face = (ClockFace)selected;
     settings_store.saveClockFace(g_clock_face);
+    update_clock_face_selection(false);
 }
 
 static void apply_face_customization_change()
@@ -674,30 +700,55 @@ static const char *screensaver_mode_text(ScreensaverMode mode)
     return tr(index < SCREENSAVER_MODE_COUNT ? names[index] : names[0]);
 }
 
-static void update_screensaver_mode_button()
+static void update_screensaver_mode_button(bool scroll_to_selected = false)
 {
-    if (boot_options_view.screensaver_option_label)
-        lv_label_set_text(
-            boot_options_view.screensaver_option_label,
-            screensaver_mode_text(g_screensaver_mode));
+    const uint8_t selected =
+        static_cast<uint8_t>(g_screensaver_mode);
+    for (uint8_t i = 0; i < SCREENSAVER_MODE_COUNT; ++i)
+    {
+        lv_obj_t *item = boot_options_view.screensaver_items[i];
+        if (!item)
+            continue;
+        lv_obj_t *label = lv_obj_get_child(item, 0);
+        if (label)
+        {
+            lv_label_set_text(
+                label,
+                screensaver_mode_text(
+                    static_cast<ScreensaverMode>(i)));
+        }
+        if (i == selected)
+            lv_obj_add_state(item, LV_STATE_CHECKED);
+        else
+            lv_obj_remove_state(item, LV_STATE_CHECKED);
+    }
+
+    if (scroll_to_selected && selected < SCREENSAVER_MODE_COUNT &&
+        boot_options_view.screensaver_items[selected])
+    {
+        lv_obj_scroll_to_view(
+            boot_options_view.screensaver_items[selected],
+            LV_ANIM_OFF);
+    }
 }
 
 static void screensaver_event(lv_event_t *event)
 {
-    (void)event;
-    uint8_t selected = static_cast<uint8_t>(g_screensaver_mode) + 1;
+    lv_obj_t *item = (lv_obj_t *)lv_event_get_target(event);
+    const uint8_t selected = static_cast<uint8_t>(
+        (uintptr_t)lv_obj_get_user_data(item));
     if (selected >= SCREENSAVER_MODE_COUNT)
-        selected = 0;
+        return;
     g_screensaver_mode = static_cast<ScreensaverMode>(selected);
     settings_store.saveScreensaverMode(g_screensaver_mode);
-    update_screensaver_mode_button();
+    update_screensaver_mode_button(false);
 }
 
 static void screensaver_delay_event(lv_event_t *event)
 {
-    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
+    lv_obj_t *item = (lv_obj_t *)lv_event_get_target(event);
     const uint32_t selected =
-        lv_buttonmatrix_get_selected_button(options);
+        (uint32_t)(uintptr_t)lv_obj_get_user_data(item);
     if (selected >=
         sizeof(g_screensaver_delays_minutes) /
             sizeof(g_screensaver_delays_minutes[0]))
@@ -707,6 +758,55 @@ static void screensaver_delay_event(lv_event_t *event)
     g_screensaver_delay_index = (uint8_t)selected;
     settings_store.saveScreensaverDelay(
         g_screensaver_delay_index);
+
+    for (uint32_t i = 0; i < kScreensaverDelayCount; ++i)
+    {
+        if (boot_options_view.screensaver_delay_items[i])
+        {
+            if (i == selected)
+            {
+                lv_obj_add_state(
+                    boot_options_view.screensaver_delay_items[i],
+                    LV_STATE_CHECKED);
+            }
+            else
+            {
+                lv_obj_remove_state(
+                    boot_options_view.screensaver_delay_items[i],
+                    LV_STATE_CHECKED);
+            }
+        }
+    }
+}
+
+static void update_screensaver_delay_selection(
+    bool scroll_to_selected)
+{
+    for (uint32_t i = 0; i < kScreensaverDelayCount; ++i)
+    {
+        lv_obj_t *item =
+            boot_options_view.screensaver_delay_items[i];
+        if (!item)
+            continue;
+        lv_obj_t *label = lv_obj_get_child(item, 0);
+        if (label)
+            lv_label_set_text(label, g_screensaver_delay_map[i]);
+        if (i == g_screensaver_delay_index)
+            lv_obj_add_state(item, LV_STATE_CHECKED);
+        else
+            lv_obj_remove_state(item, LV_STATE_CHECKED);
+    }
+
+    if (scroll_to_selected &&
+        g_screensaver_delay_index < kScreensaverDelayCount &&
+        boot_options_view.screensaver_delay_items[
+            g_screensaver_delay_index])
+    {
+        lv_obj_scroll_to_view(
+            boot_options_view.screensaver_delay_items[
+                g_screensaver_delay_index],
+            LV_ANIM_OFF);
+    }
 }
 
 static void chime_mode_event(lv_event_t *event)

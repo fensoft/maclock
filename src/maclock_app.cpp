@@ -242,6 +242,8 @@ public:
     BootDateTimeField datetime_selected = BOOT_DATETIME_HOUR;
     uint32_t datetime_last_refresh_ms = 0;
     lv_obj_t *clock_face_options;
+    lv_obj_t *clock_face_items[
+        static_cast<uint8_t>(ClockFace::Count)];
     lv_obj_t *face_accent_label;
     lv_obj_t *face_accent_options;
     lv_obj_t *face_size_label;
@@ -250,8 +252,10 @@ public:
     lv_obj_t *flip_speed_label;
     lv_obj_t *flip_speed_options;
     lv_obj_t *screensaver_options;
-    lv_obj_t *screensaver_option_label;
+    lv_obj_t *screensaver_items[
+        static_cast<uint8_t>(ScreensaverMode::Count)];
     lv_obj_t *screensaver_delay_options;
+    lv_obj_t *screensaver_delay_items[kScreensaverDelayCount];
     lv_obj_t *night_enabled_options;
     lv_obj_t *night_start_options;
     lv_obj_t *night_end_options;
@@ -689,7 +693,6 @@ static uint8_t g_floppy_sound_volume = 60;
 static const char *g_brightness_map[4] = {};
 static const char *g_date_format_map[4] = {
     "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", ""};
-static const char *g_clock_face_map[10] = {};
 static const char *g_face_accent_map[9] = {};
 static const char *g_face_size_map[4] = {};
 static const char *g_flip_speed_map[4] = {};

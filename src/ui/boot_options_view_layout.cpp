@@ -442,26 +442,23 @@ void BootOptionsView::init(lv_obj_t *screen)
     lv_obj_t *clock_face_page =
         boot_options_view.pages[BOOT_OPTIONS_CLOCK_FACE];
     boot_options_view.clock_face_options =
-        lv_buttonmatrix_create(clock_face_page);
-    lv_buttonmatrix_set_map(
-        boot_options_view.clock_face_options,
-        g_clock_face_map);
-    lv_buttonmatrix_set_button_ctrl_all(
-        boot_options_view.clock_face_options,
-        LV_BUTTONMATRIX_CTRL_CHECKABLE);
-    lv_buttonmatrix_set_button_ctrl_all(
-        boot_options_view.clock_face_options,
-        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
-    lv_buttonmatrix_set_one_checked(
-        boot_options_view.clock_face_options, true);
+        lv_list_create(clock_face_page);
     lv_obj_set_size(
         boot_options_view.clock_face_options, 260, 124);
     lv_obj_center(boot_options_view.clock_face_options);
-    style_boot_options_matrix(
+    selector_list_style_container(
         boot_options_view.clock_face_options);
-    lv_obj_add_event_cb(
-        boot_options_view.clock_face_options,
-        clock_face_event, LV_EVENT_VALUE_CHANGED, nullptr);
+    for (uint32_t i = 0; i < CLOCK_FACE_COUNT; ++i)
+    {
+        lv_obj_t *item = lv_list_add_button(
+            boot_options_view.clock_face_options, nullptr,
+            clock_face_name(i));
+        boot_options_view.clock_face_items[i] = item;
+        selector_list_style_item(item);
+        lv_obj_set_user_data(item, (void *)(uintptr_t)i);
+        lv_obj_add_event_cb(
+            item, clock_face_event, LV_EVENT_CLICKED, nullptr);
+    }
 
     lv_obj_t *face_style_page =
         boot_options_view.pages[BOOT_OPTIONS_FACE_STYLE];
@@ -596,16 +593,27 @@ void BootOptionsView::init(lv_obj_t *screen)
     lv_obj_t *screensaver_page =
         boot_options_view.pages[BOOT_OPTIONS_SCREENSAVER];
     boot_options_view.screensaver_options =
-        create_action_button(
-            screensaver_page, "", screensaver_event);
-    boot_options_view.screensaver_option_label =
-        lv_obj_get_child(boot_options_view.screensaver_options, 0);
+        lv_list_create(screensaver_page);
     lv_obj_set_size(
-        boot_options_view.screensaver_options, 260, 80);
+        boot_options_view.screensaver_options, 126, 124);
     lv_obj_align(
         boot_options_view.screensaver_options,
-        LV_ALIGN_TOP_MID, 0, 0);
-    update_screensaver_mode_button();
+        LV_ALIGN_LEFT_MID, 0, 0);
+    selector_list_style_container(
+        boot_options_view.screensaver_options);
+    for (uint8_t i = 0; i < SCREENSAVER_MODE_COUNT; ++i)
+    {
+        lv_obj_t *item = lv_list_add_button(
+            boot_options_view.screensaver_options, nullptr,
+            screensaver_mode_text(
+                static_cast<ScreensaverMode>(i)));
+        boot_options_view.screensaver_items[i] = item;
+        selector_list_style_item(item);
+        lv_obj_set_user_data(item, (void *)(uintptr_t)i);
+        lv_obj_add_event_cb(
+            item, screensaver_event, LV_EVENT_CLICKED, nullptr);
+    }
+    update_screensaver_mode_button(true);
 
     boot_options_view.screensaver_delay_label =
         lv_label_create(screensaver_page);
@@ -617,33 +625,30 @@ void BootOptionsView::init(lv_obj_t *screen)
         &lv_font_chicago_8, 0);
     lv_obj_align(
         boot_options_view.screensaver_delay_label,
-        LV_ALIGN_TOP_MID, 0, 83);
+        LV_ALIGN_TOP_RIGHT, -26, 0);
 
     boot_options_view.screensaver_delay_options =
-        lv_buttonmatrix_create(screensaver_page);
-    lv_buttonmatrix_set_map(
-        boot_options_view.screensaver_delay_options,
-        g_screensaver_delay_map);
-    lv_buttonmatrix_set_button_ctrl_all(
-        boot_options_view.screensaver_delay_options,
-        LV_BUTTONMATRIX_CTRL_CHECKABLE);
-    lv_buttonmatrix_set_button_ctrl_all(
-        boot_options_view.screensaver_delay_options,
-        LV_BUTTONMATRIX_CTRL_CLICK_TRIG);
-    lv_buttonmatrix_set_one_checked(
-        boot_options_view.screensaver_delay_options, true);
+        lv_list_create(screensaver_page);
     lv_obj_set_size(
-        boot_options_view.screensaver_delay_options, 260, 32);
+        boot_options_view.screensaver_delay_options, 126, 105);
     lv_obj_align(
         boot_options_view.screensaver_delay_options,
-        LV_ALIGN_BOTTOM_MID, 0, 0);
-    style_boot_options_matrix(
+        LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    selector_list_style_container(
         boot_options_view.screensaver_delay_options);
-    lv_obj_set_style_pad_column(
-        boot_options_view.screensaver_delay_options, 5, 0);
-    lv_obj_add_event_cb(
-        boot_options_view.screensaver_delay_options,
-        screensaver_delay_event, LV_EVENT_VALUE_CHANGED, nullptr);
+    for (uint32_t i = 0; i < kScreensaverDelayCount; ++i)
+    {
+        lv_obj_t *item = lv_list_add_button(
+            boot_options_view.screensaver_delay_options, nullptr,
+            g_screensaver_delay_map[i]);
+        boot_options_view.screensaver_delay_items[i] = item;
+        selector_list_style_item(item);
+        lv_obj_set_user_data(item, (void *)(uintptr_t)i);
+        lv_obj_add_event_cb(
+            item, screensaver_delay_event,
+            LV_EVENT_CLICKED, nullptr);
+    }
+    update_screensaver_delay_selection(true);
 
     lv_obj_t *night_schedule_page =
         boot_options_view.pages[BOOT_OPTIONS_NIGHT_SCHEDULE];
@@ -1224,13 +1229,9 @@ void BootOptionsView::show()
     update_regional_options_ui();
     update_display_options_ui();
     update_face_customization_options_ui();
-    set_checked_button(
-        boot_options_view.clock_face_options,
-        (uint32_t)g_clock_face);
-    update_screensaver_mode_button();
-    set_checked_button(
-        boot_options_view.screensaver_delay_options,
-        g_screensaver_delay_index);
+    update_clock_face_selection(true);
+    update_screensaver_mode_button(true);
+    update_screensaver_delay_selection(true);
     update_language_selection(true);
     update_night_options_ui();
     update_chime_options_ui();

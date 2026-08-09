@@ -295,9 +295,7 @@ bool MaclockApp::applyControlAppearance(
     input_service.setEncoderPosition(brightness);
     g_last_saved_encoder = brightness;
     last_encoder_save_ms_ = millis();
-    set_checked_button(
-        boot_options_view.clock_face_options,
-        static_cast<uint8_t>(face));
+    update_clock_face_selection(false);
     update_regional_options_ui();
     update_display_options_ui();
     if (language_changed)
@@ -350,9 +348,7 @@ bool MaclockApp::applyControlScreensaver(
         settings_store.saveScreensaverMode(mode);
         settings_store.saveScreensaverDelay(delay_index);
         update_screensaver_mode_button();
-        set_checked_button(
-            boot_options_view.screensaver_delay_options,
-            delay_index);
+        update_screensaver_delay_selection(false);
     }
     return true;
 }

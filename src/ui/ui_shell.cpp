@@ -128,8 +128,6 @@ static void refresh_language_ui()
     lv_buttonmatrix_set_map(
         boot_options_view.brightness_options, g_brightness_map);
     lv_buttonmatrix_set_map(
-        boot_options_view.clock_face_options, g_clock_face_map);
-    lv_buttonmatrix_set_map(
         boot_options_view.face_accent_options,
         g_face_accent_map);
     lv_buttonmatrix_set_map(
@@ -138,9 +136,6 @@ static void refresh_language_ui()
     lv_buttonmatrix_set_map(
         boot_options_view.flip_speed_options,
         g_flip_speed_map);
-    lv_buttonmatrix_set_map(
-        boot_options_view.screensaver_delay_options,
-        g_screensaver_delay_map);
     lv_buttonmatrix_set_map(
         boot_options_view.night_enabled_options, g_night_enabled_map);
     lv_buttonmatrix_set_map(
@@ -226,13 +221,9 @@ static void refresh_language_ui()
     update_regional_options_ui();
     update_display_options_ui();
     update_face_customization_options_ui();
-    set_checked_button(
-        boot_options_view.clock_face_options,
-        (uint32_t)g_clock_face);
-    update_screensaver_mode_button();
-    set_checked_button(
-        boot_options_view.screensaver_delay_options,
-        g_screensaver_delay_index);
+    update_clock_face_selection(true);
+    update_screensaver_mode_button(true);
+    update_screensaver_delay_selection(true);
     update_night_options_ui();
     update_chime_options_ui();
     update_wifi_options_ui();
