@@ -1,0 +1,53 @@
+{
+  "format": "maclock-clock-face",
+  "version": 1,
+  "name": "LCD",
+  "width": 304,
+  "height": 224,
+  "background": "#fff",
+  "random_interval_seconds": 60,
+  "objects": [
+    {
+      "id": "time",
+      "type": "text",
+      "x": 41,
+      "y": 30,
+      "width": 220,
+      "height": 56,
+      "stroke": "#000000",
+      "template": "{time}:{second}",
+      "font_family": "lv_font_seven_segment_96",
+      "font_size": 96,
+      "align": "center",
+      "visible_if": "rtc_available",
+      "random": []
+    },
+    {
+      "id": "date",
+      "type": "text",
+      "x": 58,
+      "y": 182,
+      "width": 190,
+      "height": 12,
+      "stroke": "#000000",
+      "template": "{weekday_short} {date}",
+      "font_family": "lv_font_seven_segment_24",
+      "font_size": 24,
+      "align": "left",
+      "visible_if": "rtc_available",
+      "random": []
+    },
+    {
+      "id": "line_3",
+      "type": "line",
+      "x": 8,
+      "y": 162,
+      "width": 288,
+      "height": 0,
+      "stroke": "#000000",
+      "fill": "transparent",
+      "stroke_width": 1,
+      "visible_if": ""
+    }
+  ]
+}

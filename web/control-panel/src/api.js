@@ -454,6 +454,61 @@ export async function deleteScreensaverPhoto(name) {
   return postForm("/api/screensaver/photo/delete", { name });
 }
 
+const demoClockFaces = ["compact_digital"];
+const demoClockFaceProjects = new Map();
+const demoClockFaceFonts = [
+  ["lv_font_chicago_8", 8, false], ["lv_font_chicago_24", 24, false],
+  ["lv_font_chicago_32", 32, false], ["lv_font_chicago_48", 48, false],
+  ["lv_font_chicago_digits_6", 6, true], ["lv_font_chicago_digits_10", 10, true],
+  ["lv_font_chicago_digits_40", 40, true], ["lv_font_chicago_digits_56", 56, true],
+  ["lv_font_seven_segment_24", 24, false], ["lv_font_seven_segment_48", 48, false],
+  ["lv_font_seven_segment_64", 64, false], ["lv_font_seven_segment_80", 80, false],
+  ["lv_font_seven_segment_96", 96, false],
+].map(([id, size, digitsOnly]) => ({ id, size, digitsOnly, pixelPerfect: true }));
+
+export async function fetchClockFaceFonts() {
+  if (import.meta.env.DEV) return { fonts: clone(demoClockFaceFonts) };
+  return realFetch("/api/clockface/fonts");
+}
+
+export async function fetchClockFaceGlyph(font, code) {
+  if (import.meta.env.DEV) return null;
+  return realFetch(`/api/clockface/glyph?spec=${encodeURIComponent(`${font}__${code}`)}`);
+}
+
+export async function fetchClockFaces() {
+  if (import.meta.env.DEV) return { faces: [...demoClockFaces] };
+  return realFetch("/api/clockface/list");
+}
+
+export async function loadClockFace(name) {
+  if (import.meta.env.DEV) return clone(demoClockFaceProjects.get(name));
+  const response = await fetch(`/api/clockface/project?name=${encodeURIComponent(name)}`);
+  if (!response.ok) throw new Error("Clock face could not be loaded");
+  return response.json();
+}
+
+export async function saveClockFace(name, json) {
+  if (import.meta.env.DEV) {
+    demoClockFaceProjects.set(name, clone(JSON.parse(json)));
+    if (!demoClockFaces.includes(name)) demoClockFaces.push(name);
+    return { ok: true, message: "Clock face saved" };
+  }
+  return postForm("/api/clockface/project", { name, json });
+}
+
+export async function uploadClockFaceAsset(face, name, blob) {
+  if (import.meta.env.DEV) return { ok: true, message: "Clock-face asset saved" };
+  const body = new FormData();
+  body.append("file", blob, name);
+  const response = await fetch(`/api/clockface/asset/upload?name=${encodeURIComponent(face)}`, { method: "POST", body });
+  return parseResponse(response);
+}
+
+export function clockFaceAssetUrl(face, name) {
+  return `/api/clockface/asset?name=${encodeURIComponent(name)}&face=${encodeURIComponent(face)}`;
+}
+
 export async function uploadMiniVmacFile(slot, file) {
   if (import.meta.env.DEV) {
     await new Promise((resolve) => setTimeout(resolve, 350));

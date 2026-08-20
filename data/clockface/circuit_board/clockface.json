@@ -1,0 +1,52 @@
+{
+    "format": "maclock-clock-face",
+    "version": 1,
+    "name": "Circuit Board",
+    "width": 304,
+    "height": 224,
+    "background": "#000000",
+    "random_interval_seconds": 60,
+    "objects": [
+        {
+            "id": "background",
+            "type": "image",
+            "template": "pcb.png",
+            "x": 0,
+            "y": 0,
+            "width": 304,
+            "height": 224,
+            "keep_ratio": true,
+            "visible_if": ""
+        },
+        {
+            "id": "time",
+            "type": "text",
+            "x": 42,
+            "y": 80,
+            "width": 220,
+            "height": 42,
+            "stroke": "#000000",
+            "template": "{time}",
+            "font_family": "lv_font_chicago_32",
+            "font_size": 32,
+            "align": "center",
+            "visible_if": "rtc_available",
+            "random": []
+        },
+        {
+            "id": "seconds",
+            "type": "text",
+            "x": 130,
+            "y": 121,
+            "width": 44,
+            "height": 12,
+            "stroke": "#000000",
+            "template": ":{second}",
+            "font_family": "lv_font_chicago_8",
+            "font_size": 8,
+            "align": "center",
+            "visible_if": "rtc_available",
+            "random": []
+        }
+    ]
+}

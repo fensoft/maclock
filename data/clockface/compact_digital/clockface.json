@@ -1,0 +1,23 @@
+{
+  "format": "maclock-clock-face",
+  "version": 1,
+  "name": "Compact Digital",
+  "width": 304,
+  "height": 224,
+  "background": "#ffffff",
+  "random_interval_seconds": 30,
+  "translations": {
+    "clock": { "en": "Clock", "fr": "Horloge", "es": "Reloj", "de": "Uhr", "it": "Orologio" },
+    "in": { "en": "In", "fr": "Int", "es": "Int", "de": "Innen", "it": "Int" },
+    "out": { "en": "Out", "fr": "Ext", "es": "Ext", "de": "Außen", "it": "Est" },
+    "today": { "en": "Today", "fr": "Aujourd'hui", "es": "Hoy", "de": "Heute", "it": "Oggi" }
+  },
+  "objects": [
+    {"id":"title","type":"text","x":12,"y":10,"width":280,"height":18,"stroke":"#000000","template":"{tr.clock}","font_family":"lv_font_chicago_8","font_size":8,"align":"center","visible_if":"","random":[]},
+    {"id":"main_time","type":"text","x":8,"y":42,"width":288,"height":60,"stroke":"#000000","template":"{time_seconds}","font_family":"lv_font_chicago_48","font_size":48,"align":"center","visible_if":"rtc_available","random":[]},
+    {"id":"date","type":"text","x":8,"y":112,"width":288,"height":34,"stroke":"#000000","template":"{weekday_short} {date}","font_family":"lv_font_chicago_24","font_size":24,"align":"center","visible_if":"rtc_available","random":[]},
+    {"id":"weather_status","type":"text","x":8,"y":154,"width":288,"height":12,"stroke":"#000000","template":"{city} · {weather}","font_family":"lv_font_chicago_8","font_size":8,"align":"center","visible_if":"wifi_available and weather_available","random":[]},
+    {"id":"weather","type":"text","x":8,"y":169,"width":288,"height":12,"stroke":"#000000","template":"{tr.in} {internal_temp}{temperature_unit}   {tr.out} {external_temp}{temperature_unit}   {tr.today} {external_min}-{external_max}{temperature_unit}","font_family":"lv_font_chicago_8","font_size":8,"align":"center","visible_if":"wifi_available and weather_available","random":[]},
+    {"id":"message","type":"text","x":8,"y":194,"width":288,"height":16,"stroke":"#000000","template":"Have a nice day!","font_family":"lv_font_chicago_8","font_size":8,"align":"center","visible_if":"","random":["Have a nice day!","Welcome to Maclock","Think different."]}
+  ]
+}

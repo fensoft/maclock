@@ -1,0 +1,168 @@
+{
+  "format": "maclock-clock-face",
+  "version": 1,
+  "name": "Mac OS 8",
+  "width": 304,
+  "height": 224,
+  "background": "#ffffff",
+  "random_interval_seconds": 60,
+  "translations": {
+    "menu": {
+      "en": "File  Edit  View  Special",
+      "fr": "Fichier  Édition  Présentation  Spécial",
+      "es": "Archivo  Edición  Visualización  Especial",
+      "de": "Ablage  Bearbeiten  Darstellung  Spezial",
+      "it": "Archivio  Composizione  Vista  Speciale"
+    },
+    "in": {
+      "en": "In",
+      "fr": "Int",
+      "es": "Int",
+      "de": "Innen",
+      "it": "Int"
+    },
+    "out": {
+      "en": "Out",
+      "fr": "Ext",
+      "es": "Ext",
+      "de": "Außen",
+      "it": "Est"
+    }
+  },
+  "objects": [
+    {
+      "id": "desktop",
+      "type": "image",
+      "template": "macos8_background.png",
+      "x": 0,
+      "y": 0,
+      "width": 304,
+      "height": 224,
+      "keep_ratio": true,
+      "visible_if": ""
+    },
+    {
+      "id": "menu",
+      "type": "image",
+      "template": "macos8_menu.png",
+      "x": 0,
+      "y": 0,
+      "width": 304,
+      "height": 20,
+      "keep_ratio": true,
+      "visible_if": ""
+    },
+    {
+      "id": "menu_titles",
+      "type": "text",
+      "x": 41,
+      "y": 3,
+      "width": 210,
+      "height": 10,
+      "stroke": "#000000",
+      "fill": "transparent",
+      "stroke_width": 0,
+      "template": "{tr.menu}",
+      "font_family": "lv_font_chicago_8",
+      "font_size": 8,
+      "align": "left",
+      "visible_if": "",
+      "random": []
+    },
+    {
+      "id": "floppy",
+      "type": "image",
+      "template": "macos8_floppy.png",
+      "x": 230,
+      "y": 30,
+      "width": 64,
+      "height": 44,
+      "keep_ratio": true,
+      "visible_if": "floppy_inserted"
+    },
+    {
+      "id": "clock_window",
+      "type": "image",
+      "template": "macos8_empty.png",
+      "x": 21,
+      "y": 43,
+      "width": 262,
+      "height": 138,
+      "keep_ratio": true,
+      "visible_if": ""
+    },
+    {
+      "id": "time",
+      "type": "text",
+      "x": 30,
+      "y": 60,
+      "width": 244,
+      "height": 52,
+      "stroke": "#000000",
+      "fill": "transparent",
+      "stroke_width": 0,
+      "template": "{time}",
+      "font_family": "lv_font_chicago_48",
+      "font_size": 48,
+      "align": "center",
+      "visible_if": "rtc_available",
+      "random": []
+    },
+    {
+      "id": "date",
+      "type": "text",
+      "x": 30,
+      "y": 118,
+      "width": 244,
+      "height": 24,
+      "stroke": "#000000",
+      "fill": "transparent",
+      "stroke_width": 0,
+      "template": "{weekday_short} {date}",
+      "font_family": "lv_font_chicago_24",
+      "font_size": 24,
+      "align": "center",
+      "visible_if": "rtc_available",
+      "random": []
+    },
+    {
+      "id": "weather_icon",
+      "type": "image",
+      "template": "macos8_{weather_asset}.png",
+      "x": 262,
+      "y": 160,
+      "width": 12,
+      "height": 12,
+      "keep_ratio": true,
+      "visible_if": "weather_available"
+    },
+    {
+      "id": "weather",
+      "type": "text",
+      "x": 31,
+      "y": 159,
+      "width": 225,
+      "height": 12,
+      "stroke": "#000000",
+      "fill": "transparent",
+      "stroke_width": 0,
+      "template": "{tr.in}: {internal_temp}{temperature_unit}   {tr.out}: {external_temp}{temperature_unit}",
+      "font_family": "lv_font_chicago_8",
+      "font_size": 8,
+      "align": "center",
+      "visible_if": "weather_available",
+      "random": []
+    },
+    {
+      "id": "corners",
+      "type": "image",
+      "template": "macos8_corners.png",
+      "x": 0,
+      "y": 0,
+      "width": 304,
+      "height": 224,
+      "keep_ratio": true,
+      "visible_if": ""
+    }
+  ]
+}

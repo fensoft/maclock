@@ -30,6 +30,7 @@ import {
 import MacAppIcon from "./components/MacAppIcon.vue";
 import MacButton from "./components/MacButton.vue";
 import MacWindow from "./components/MacWindow.vue";
+import FaceEditor from "./face_editor/FaceEditor.vue";
 import {
   languageCodes,
   languageOptions,
@@ -51,6 +52,7 @@ const launcherApps = [
   { id: "update", titleKey: "softwareUpdate", icon: "update" },
   { id: "backup", titleKey: "configurationBackup", icon: "backup" },
   { id: "minivmac", titleKey: "miniVmacFiles", icon: "minivmac" },
+  { id: "faceEditor", titleKey: "faceEditor", icon: "faceEditor" },
 ];
 
 const panelState = ref(null);
@@ -111,6 +113,14 @@ const faceOptions = computed(() =>
     "flipClock",
     "odometerClock",
     "macOS8",
+    "lcd",
+    "departureBoard",
+    "trainStation",
+    "pixelLandscape",
+    "paint",
+    "circuitBoard",
+    "newspaper",
+    "cassette",
   ].map((key) => t(key)),
 );
 const themeOptions = computed(() => ["light", "dark"].map((key) => t(key)));
@@ -298,6 +308,20 @@ function captureActiveAppBaseline() {
     : null;
 }
 
+function appUrlId(appId) {
+  return String(appId || "").replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
+}
+
+function appFromUrl() {
+  const value = decodeURIComponent(window.location.hash.slice(1)).toLowerCase();
+  return launcherApps.find((app) => app.id === value || appUrlId(app.id) === value)?.id || null;
+}
+
+function updateAppUrl(appId) {
+  const hash = appId ? `#${appUrlId(appId)}` : "";
+  if (window.location.hash !== hash) history.replaceState(null, "", `${window.location.pathname}${window.location.search}${hash}`);
+}
+
 async function focusActiveWindow() {
   await nextTick();
   activeWindowRef.value?.focusAndReveal();
@@ -321,6 +345,7 @@ function commitAppTransition({
 }) {
   activeApp.value = target;
   selectedApp.value = selection;
+  updateAppUrl(target);
   captureActiveAppBaseline();
   if (target) {
     focusActiveWindow();
@@ -378,6 +403,12 @@ function handleGlobalKeydown(event) {
   } else if (activeApp.value) {
     closeActiveApp();
   }
+}
+
+function handleHashChange() {
+  const appId = appFromUrl();
+  if (appId) openApp(appId);
+  else if (activeApp.value) closeActiveApp(true);
 }
 
 function handleGlobalPointerDown(event) {
@@ -1104,9 +1135,12 @@ async function confirmConfigurationRestore() {
 
 onMounted(async () => {
   await loadState();
+  const linkedApp = appFromUrl();
+  if (linkedApp) openApp(linkedApp);
   statusPoll = window.setInterval(pollStatus, 3000);
   window.addEventListener("keydown", handleGlobalKeydown);
   window.addEventListener("pointerdown", handleGlobalPointerDown, true);
+  window.addEventListener("hashchange", handleHashChange);
 });
 
 watch(
@@ -1128,6 +1162,7 @@ onBeforeUnmount(() => {
   window.clearTimeout(autoSaveTimeout);
   window.removeEventListener("keydown", handleGlobalKeydown);
   window.removeEventListener("pointerdown", handleGlobalPointerDown, true);
+  window.removeEventListener("hashchange", handleHashChange);
 });
 </script>
 
@@ -1168,7 +1203,7 @@ onBeforeUnmount(() => {
       </div>
 
       <template v-else-if="panelState">
-        <MacWindow id="welcome" :title="t('panelTitle')" wide>
+        <MacWindow v-if="!activeApp" id="welcome" :title="t('panelTitle')" wide>
           <div class="welcome-layout">
             <div class="classic-mac" aria-hidden="true">
               <div class="classic-mac__screen">
@@ -1213,6 +1248,17 @@ onBeforeUnmount(() => {
         </section>
 
         <div v-if="activeApp" class="active-window-slot">
+          <MacWindow
+            v-if="activeApp === 'faceEditor'"
+            ref="activeWindowRef"
+            :title="activeAppTitle"
+            class="mac-window--wide"
+            closable
+            :close-label="t('closeWindow', { title: activeAppTitle })"
+            @close="closeActiveApp()"
+          >
+            <FaceEditor />
+          </MacWindow>
           <MacWindow
             v-if="activeApp === 'appearance'"
             id="appearance"
