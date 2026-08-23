@@ -3,6 +3,8 @@
 #include "audio_volume.h"
 #include "brightness.h"
 
+#include <string.h>
+
 namespace
 {
 SettingsStore *g_settings_store = nullptr;
@@ -89,31 +91,28 @@ AppSettings SettingsStore::load()
             : UI_TEMPERATURE_CELSIUS;
     settings.clock_face = load_enum(
         preferences_, "clock_face",
-        ClockFace::Macintosh, ClockFace::Count);
-    settings.clock_theme = load_enum(
-        preferences_, "clock_theme",
-        ClockTheme::Light, ClockTheme::Count);
-    settings.face_customization.accent = load_enum(
-        preferences_, "face_accent",
-        FaceAccent::Default, FaceAccent::Count);
-    settings.face_customization.numeral_size = load_enum(
-        preferences_, "face_font",
-        FaceNumeralSize::Default, FaceNumeralSize::Count);
-    settings.face_customization.show_weather =
-        preferences_.getBool("show_weather", true);
+        ClockFace::None, ClockFace::Count);
+    strlcpy(
+        settings.custom_clock_face,
+        preferences_.getString("custom_face", "").c_str(),
+        sizeof(settings.custom_clock_face));
+    if (!settings.custom_clock_face[0])
+        strlcpy(settings.custom_clock_face, "macintosh",
+            sizeof(settings.custom_clock_face));
     settings.face_customization.flip_speed = load_enum(
-        preferences_, "flip_speed",
+        preferences_, "animation_speed",
         FlipAnimationSpeed::Normal,
         FlipAnimationSpeed::Count);
+    settings.face_customization.colon_blink = load_enum(
+        preferences_, "colon_blink", ColonBlinkInterval::OneSecond,
+        ColonBlinkInterval::Count);
+    settings.face_customization.continuous_seconds =
+        preferences_.getBool("continuous_seconds", false);
     settings.time_format.hour_format = load_enum(
         preferences_, "hour_format",
         HourFormat::Hour24, HourFormat::Count);
-    settings.time_format.leading_zero =
-        preferences_.getBool("lead_zero", true);
     settings.time_format.show_seconds =
-        preferences_.getBool("show_seconds", true);
-    settings.time_format.show_weekday =
-        preferences_.getBool("show_weekday", false);
+        preferences_.getBool("show_seconds", false);
     settings.screensaver_mode = load_enum(
         preferences_, "screen_mode",
         ScreensaverMode::Off, ScreensaverMode::Count);
@@ -193,21 +192,20 @@ void SettingsStore::saveClockFace(ClockFace value)
     preferences_.putUChar("clock_face", static_cast<uint8_t>(value));
 }
 
-void SettingsStore::saveClockTheme(ClockTheme value)
+void SettingsStore::saveCustomClockFace(const char *value)
 {
-    preferences_.putUChar("clock_theme", static_cast<uint8_t>(value));
+    preferences_.putString("custom_face", value ? value : "");
 }
 
 void SettingsStore::saveFaceCustomization(
     const FaceCustomizationSettings &value)
 {
     preferences_.putUChar(
-        "face_accent", static_cast<uint8_t>(value.accent));
+        "animation_speed", static_cast<uint8_t>(value.flip_speed));
     preferences_.putUChar(
-        "face_font", static_cast<uint8_t>(value.numeral_size));
-    preferences_.putBool("show_weather", value.show_weather);
-    preferences_.putUChar(
-        "flip_speed", static_cast<uint8_t>(value.flip_speed));
+        "colon_blink", static_cast<uint8_t>(value.colon_blink));
+    preferences_.putBool(
+        "continuous_seconds", value.continuous_seconds);
 }
 
 void SettingsStore::saveTimeFormat(
@@ -215,9 +213,7 @@ void SettingsStore::saveTimeFormat(
 {
     preferences_.putUChar(
         "hour_format", static_cast<uint8_t>(value.hour_format));
-    preferences_.putBool("lead_zero", value.leading_zero);
     preferences_.putBool("show_seconds", value.show_seconds);
-    preferences_.putBool("show_weekday", value.show_weekday);
 }
 
 void SettingsStore::saveScreensaverMode(ScreensaverMode value)

@@ -14,41 +14,8 @@ static const char *configured_meridiem(uint8_t hour)
 
 static const lv_font_t *configured_date_font(bool timer_active)
 {
-    return g_time_format.show_weekday && !timer_active
-               ? &lv_font_chicago_24
-               : &lv_font_chicago_32;
-}
-
-static lv_color_t configured_accent_color(
-    bool dark_surface, lv_color_t fallback)
-{
-    switch (g_face_customization.accent)
-    {
-    case FaceAccent::Red:
-        return lv_color_hex(dark_surface ? 0xFF6B6B : 0xC62828);
-    case FaceAccent::Orange:
-        return lv_color_hex(dark_surface ? 0xFFB347 : 0xB45309);
-    case FaceAccent::Green:
-        return lv_color_hex(dark_surface ? 0x4ADE80 : 0x15803D);
-    case FaceAccent::Blue:
-        return lv_color_hex(dark_surface ? 0x60A5FA : 0x1D4ED8);
-    case FaceAccent::Purple:
-        return lv_color_hex(dark_surface ? 0xC084FC : 0x7E22CE);
-    case FaceAccent::Default:
-    case FaceAccent::Count:
-        return fallback;
-    }
-    return fallback;
-}
-
-static void set_object_visible(lv_obj_t *object, bool visible)
-{
-    if (!object)
-        return;
-    if (visible)
-        lv_obj_clear_flag(object, LV_OBJ_FLAG_HIDDEN);
-    else
-        lv_obj_add_flag(object, LV_OBJ_FLAG_HIDDEN);
+    (void)timer_active;
+    return &lv_font_chicago_32;
 }
 
 static void format_configured_time(
@@ -56,24 +23,9 @@ static void format_configured_time(
 {
     const uint8_t hour =
         configured_display_hour(current.hour());
-    if (g_time_format.show_seconds)
-    {
-        snprintf(
-            text, text_size,
-            g_time_format.leading_zero
-                ? "%02u:%02u:%02u"
-                : "%u:%02u:%02u",
-            hour, current.minute(), current.second());
-    }
-    else
-    {
-        snprintf(
-            text, text_size,
-            g_time_format.leading_zero
-                ? "%02u:%02u"
-                : "%u:%02u",
-            hour, current.minute());
-    }
+    snprintf(
+        text, text_size, "%02u:%02u",
+        hour, current.minute());
 }
 
 void ClockView::updateMacintoshLabels(
@@ -90,20 +42,9 @@ void ClockView::updateMacintoshLabels(
         g_time_format.hour_format == HourFormat::Hour12;
     format_configured_time(now, buf, sizeof(buf));
     lv_label_set_text(ui_shell.time, buf);
-    const int16_t numeral_top_gap =
-        g_face_customization.numeral_size ==
-                FaceNumeralSize::Default
-            ? 0
-            : 3;
-    const int16_t numeral_left_offset =
-        g_face_customization.numeral_size ==
-                FaceNumeralSize::Large
-            ? -1
-            : 0;
     lv_obj_align(
         ui_shell.time, LV_ALIGN_TOP_MID,
-        (hour12 ? -6 : 0) + numeral_left_offset,
-        14 + 4 + numeral_top_gap);
+        hour12 ? -6 : 0, 18);
     if (hour12)
     {
         lv_label_set_text(
@@ -127,19 +68,9 @@ void ClockView::updateMacintoshLabels(
     format_display_date(now, buf, sizeof(buf));
     lv_label_set_text(ui_shell.date, buf);
 
-    if (!g_face_customization.show_weather)
-    {
-        set_object_visible(ui_shell.temp, false);
-        set_object_visible(ui_shell.gauge_icon, false);
-        set_object_visible(ui_shell.gauge_line, false);
-        set_object_visible(ui_shell.gauge_box, false);
-        return;
-    }
-
     const WifiModeSnapshot &online = snapshot.online;
     const WeatherReading &sensor = snapshot.sensor;
-    const bool macos8 =
-        g_clock_face == CLOCK_FACE_MACOS8;
+    const bool macos8 = false;
     const bool sensor_valid = sensor.valid;
     const float temperature = sensor.temperature;
     const float gauge_value = sensor.gauge_value;
@@ -152,21 +83,21 @@ void ClockView::updateMacintoshLabels(
         case WeatherCondition::Rainy:
             lv_image_set_src(
                 ui_shell.gauge_icon,
-                g_clock_face == CLOCK_FACE_MACOS8
+                false
                     ? "S:/macos8_rainy.png"
                     : "S:/rainy.png");
             break;
         case WeatherCondition::Sunny:
             lv_image_set_src(
                 ui_shell.gauge_icon,
-                g_clock_face == CLOCK_FACE_MACOS8
+                false
                     ? "S:/macos8_sunny.png"
                     : "S:/sunny.png");
             break;
         default:
             lv_image_set_src(
                 ui_shell.gauge_icon,
-                g_clock_face == CLOCK_FACE_MACOS8
+                false
                     ? "S:/macos8_cloudy.png"
                     : "S:/cloudy.png");
             break;
@@ -218,7 +149,7 @@ void ClockView::updateMacintoshLabels(
         if (online.weather_code <= 1)
             lv_image_set_src(
                 ui_shell.gauge_icon,
-                g_clock_face == CLOCK_FACE_MACOS8
+                false
                     ? "S:/macos8_sunny.png"
                     : "S:/sunny.png");
         else if (online.weather_code <= 3 ||
@@ -226,13 +157,13 @@ void ClockView::updateMacintoshLabels(
                  online.weather_code == 48)
             lv_image_set_src(
                 ui_shell.gauge_icon,
-                g_clock_face == CLOCK_FACE_MACOS8
+                false
                     ? "S:/macos8_cloudy.png"
                     : "S:/cloudy.png");
         else
             lv_image_set_src(
                 ui_shell.gauge_icon,
-                g_clock_face == CLOCK_FACE_MACOS8
+                false
                     ? "S:/macos8_rainy.png"
                     : "S:/rainy.png");
         lv_obj_add_flag(ui_shell.gauge_line, LV_OBJ_FLAG_HIDDEN);
@@ -363,28 +294,7 @@ static lv_obj_t *create_clock_face_label(
     return label;
 }
 
-static void set_analog_hand(
-    lv_obj_t *hand, lv_point_precise_t points[2],
-    float angle_degrees, float length, float tail)
-{
-    static constexpr float kDegreesToRadians =
-        3.14159265358979323846f / 180.0f;
-    static constexpr float kCenter = 84.0f;
-    const float angle = (angle_degrees - 90.0f) *
-                        kDegreesToRadians;
-    const float x = cosf(angle);
-    const float y = sinf(angle);
-    points[0].x = (lv_value_precise_t)lroundf(
-        kCenter - x * tail);
-    points[0].y = (lv_value_precise_t)lroundf(
-        kCenter - y * tail);
-    points[1].x = (lv_value_precise_t)lroundf(
-        kCenter + x * length);
-    points[1].y = (lv_value_precise_t)lroundf(
-        kCenter + y * length);
-    lv_line_set_points_mutable(hand, points, 2);
-}
-
+#if 0 // Legacy fixed Flip and Odometer faces; filesystem widgets own this now.
 static lv_obj_t *create_flip_card(
     lv_obj_t *parent, int16_t x, int16_t width,
     lv_obj_t **left_pin, lv_obj_t **right_pin)
@@ -587,7 +497,9 @@ static void update_odometer_digit(
 
 void ClockView::applyTimeFormatLayout()
 {
-    const bool show_seconds = g_time_format.show_seconds;
+    if (!clock_view.flip)
+        return;
+    const bool show_seconds = true;
     const size_t visible_digits = show_seconds ? 6 : 4;
     const int16_t card_width = show_seconds ? 38 : 56;
     static constexpr int16_t compact_positions[4] = {
@@ -701,25 +613,16 @@ void ClockView::applyTimeFormatLayout()
     if (hour12)
     {
         lv_obj_clear_flag(
-            clock_view.compact_meridiem,
-            LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(
             clock_view.flip_meridiem,
             LV_OBJ_FLAG_HIDDEN);
     }
     else
     {
         lv_obj_add_flag(
-            clock_view.compact_meridiem,
-            LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(
             clock_view.flip_meridiem,
             LV_OBJ_FLAG_HIDDEN);
     }
 
-    set_object_visible(
-        clock_view.analog_second_hand,
-        g_time_format.show_seconds);
 }
 
 static void odometer_y_animation(
@@ -926,12 +829,9 @@ static void update_flip_card(
 
 void ClockView::applyTheme()
 {
-    const bool dark = g_clock_theme == CLOCK_THEME_DARK;
-    if (ui_shell.background)
-    {
-        ui_shell.applyMacintoshAppearance(
-            g_clock_face == CLOCK_FACE_MACOS8);
-    }
+    if (!clock_view.flip)
+        return;
+    const bool dark = false;
     const lv_color_t background =
         dark ? lv_color_black() : lv_color_white();
     const lv_color_t foreground =
@@ -940,38 +840,6 @@ void ClockView::applyTheme()
         dark ? lv_color_hex(0x181818) : lv_color_black();
     const lv_color_t card_border =
         dark ? lv_color_hex(0x707070) : lv_color_black();
-
-    lv_obj_set_style_bg_color(
-        clock_view.compact, background, 0);
-    lv_obj_set_style_text_color(
-        clock_view.compact_title, foreground, 0);
-    lv_obj_set_style_text_color(
-        clock_view.compact_time, foreground, 0);
-    lv_obj_set_style_text_color(
-        clock_view.compact_meridiem, foreground, 0);
-    lv_obj_set_style_text_color(
-        clock_view.compact_date, foreground, 0);
-    lv_obj_set_style_text_color(
-        clock_view.compact_weather, foreground, 0);
-
-    lv_obj_set_style_bg_color(
-        clock_view.analog, background, 0);
-    lv_obj_set_style_bg_color(
-        clock_view.analog_dial, background, 0);
-    lv_obj_set_style_border_color(
-        clock_view.analog_dial, foreground, 0);
-    for (lv_obj_t *number : clock_view.analog_numbers)
-        lv_obj_set_style_text_color(number, foreground, 0);
-    lv_obj_set_style_line_color(
-        clock_view.analog_hour_hand, foreground, 0);
-    lv_obj_set_style_line_color(
-        clock_view.analog_minute_hand, foreground, 0);
-    lv_obj_set_style_line_color(
-        clock_view.analog_second_hand, foreground, 0);
-    lv_obj_set_style_bg_color(
-        clock_view.analog_center, foreground, 0);
-    lv_obj_set_style_text_color(
-        clock_view.analog_date, foreground, 0);
 
     lv_obj_set_style_bg_color(
         clock_view.flip, background, 0);
@@ -1037,40 +905,14 @@ void ClockView::applyTheme()
                 label, lv_color_white(), 0);
     }
 
-    applyFaceCustomization();
 }
 
 void ClockView::applyFaceCustomization()
 {
+    if (!clock_view.flip)
+        return;
     const lv_font_t *time_font = &lv_font_chicago_48;
-    const lv_font_t *analog_font = &lv_font_chicago_8;
-    switch (g_face_customization.numeral_size)
-    {
-    case FaceNumeralSize::Small:
-        time_font = &lv_font_chicago_digits_40;
-        analog_font = &lv_font_chicago_digits_6;
-        break;
-    case FaceNumeralSize::Large:
-        time_font = &lv_font_chicago_digits_56;
-        analog_font = &lv_font_chicago_digits_10;
-        break;
-    case FaceNumeralSize::Default:
-    case FaceNumeralSize::Count:
-        break;
-    }
 
-    lv_obj_set_style_text_font(ui_shell.time, time_font, 0);
-    lv_obj_set_style_text_letter_space(
-        ui_shell.time,
-        g_face_customization.numeral_size ==
-                FaceNumeralSize::Large
-            ? -1
-            : 1,
-        0);
-    lv_obj_set_style_text_font(
-        clock_view.compact_time, time_font, 0);
-    for (lv_obj_t *number : clock_view.analog_numbers)
-        lv_obj_set_style_text_font(number, analog_font, 0);
     for (FlipCardAnimation &card :
          clock_view.flip_animations)
     {
@@ -1091,30 +933,7 @@ void ClockView::applyFaceCustomization()
         reset_odometer_digit_animation(digit);
     }
 
-    const bool dark =
-        g_clock_theme == CLOCK_THEME_DARK;
-    const lv_color_t face_foreground =
-        dark ? lv_color_white() : lv_color_black();
-    const bool macos8 =
-        g_clock_face == CLOCK_FACE_MACOS8;
-    lv_obj_set_style_text_color(
-        ui_shell.time,
-        configured_accent_color(
-            macos8 ? false : dark,
-            macos8 ? lv_color_black() : face_foreground),
-        0);
-    lv_obj_set_style_text_color(
-        clock_view.compact_time,
-        configured_accent_color(dark, face_foreground), 0);
-    const lv_color_t analog_accent =
-        configured_accent_color(dark, face_foreground);
-    lv_obj_set_style_line_color(
-        clock_view.analog_second_hand, analog_accent, 0);
-    lv_obj_set_style_bg_color(
-        clock_view.analog_center, analog_accent, 0);
-
-    const lv_color_t flip_digit_accent =
-        configured_accent_color(true, lv_color_white());
+    const lv_color_t flip_digit_accent = lv_color_white();
     for (FlipCardAnimation &card :
          clock_view.flip_animations)
     {
@@ -1133,8 +952,7 @@ void ClockView::applyFaceCustomization()
             lv_obj_set_style_text_color(
                 label, flip_digit_accent, 0);
     }
-    const lv_color_t flip_face_accent =
-        configured_accent_color(dark, face_foreground);
+    const lv_color_t flip_face_accent = lv_color_black();
     for (size_t i = 0; i < 2; ++i)
     {
         lv_obj_set_style_bg_color(
@@ -1145,12 +963,12 @@ void ClockView::applyFaceCustomization()
             flip_face_accent, 0);
     }
 
-    set_object_visible(
-        clock_view.compact_weather,
-        g_face_customization.show_weather);
-    set_object_visible(
-        clock_view.analog_second_hand,
-        g_time_format.show_seconds);
 }
+
+#endif
+
+void ClockView::applyTimeFormatLayout() {}
+void ClockView::applyTheme() {}
+void ClockView::applyFaceCustomization() {}
 
 #endif

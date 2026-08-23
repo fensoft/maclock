@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stddef.h>
 
 #include "audio_volume.h"
 #include "localization.h"
@@ -38,38 +39,7 @@ enum class BootBrightness : uint8_t
 
 enum class ClockFace : uint8_t
 {
-    Macintosh,
-    Compact,
-    Analog,
-    Flip,
-    Odometer,
-    MacOS8,
-    Count
-};
-
-enum class ClockTheme : uint8_t
-{
-    Light,
-    Dark,
-    Count
-};
-
-enum class FaceAccent : uint8_t
-{
-    Default,
-    Red,
-    Orange,
-    Green,
-    Blue,
-    Purple,
-    Count
-};
-
-enum class FaceNumeralSize : uint8_t
-{
-    Small,
-    Default,
-    Large,
+    None,
     Count
 };
 
@@ -81,12 +51,19 @@ enum class FlipAnimationSpeed : uint8_t
     Count
 };
 
+enum class ColonBlinkInterval : uint8_t
+{
+    OneSecond,
+    HalfSecond,
+    None,
+    Count
+};
+
 struct FaceCustomizationSettings
 {
-    FaceAccent accent = FaceAccent::Default;
-    FaceNumeralSize numeral_size = FaceNumeralSize::Default;
-    bool show_weather = true;
     FlipAnimationSpeed flip_speed = FlipAnimationSpeed::Normal;
+    ColonBlinkInterval colon_blink = ColonBlinkInterval::OneSecond;
+    bool continuous_seconds = false;
 };
 
 enum class HourFormat : uint8_t
@@ -99,9 +76,7 @@ enum class HourFormat : uint8_t
 struct TimeFormatSettings
 {
     HourFormat hour_format = HourFormat::Hour24;
-    bool leading_zero = true;
-    bool show_seconds = true;
-    bool show_weekday = false;
+    bool show_seconds = false;
 };
 
 enum class ScreensaverMode : uint8_t
@@ -169,8 +144,9 @@ struct AppSettings
     UiLanguage language = UI_LANGUAGE_ENGLISH;
     UiDateFormat date_format = UI_DATE_FORMAT_DMY;
     UiTemperatureUnit temperature_unit = UI_TEMPERATURE_CELSIUS;
-    ClockFace clock_face = ClockFace::Macintosh;
-    ClockTheme clock_theme = ClockTheme::Light;
+    ClockFace clock_face = ClockFace::None;
+    static constexpr size_t kCustomClockFaceNameMax = 40;
+    char custom_clock_face[kCustomClockFaceNameMax] = "";
     FaceCustomizationSettings face_customization;
     TimeFormatSettings time_format;
     ScreensaverMode screensaver_mode = ScreensaverMode::Off;

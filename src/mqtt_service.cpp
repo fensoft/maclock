@@ -56,7 +56,7 @@ static constexpr const char *kScreensaverNames[] = {
     "Mystify", "Aquarium", "Game of Life", "Maze", "Error Parade",
     "Rainy Window", "Fireworks", "Photo Slideshow"};
 static constexpr const char *kClockFaceNames[] = {
-    "Macintosh", "Compact", "Analog", "Flip", "Odometer", "Mac OS 8"};
+    "Filesystem"};
 
 int option_index(
     const String &value,

@@ -23,7 +23,7 @@
     { "id": "title_bar", "type": "rectangle", "x": 53, "y": 42, "width": 200, "height": 20, "stroke": "#0b3e9a", "fill": "#2368c4", "stroke_width": 1, "visible_if": "" },
     { "id": "window_title", "type": "text", "x": 59, "y": 45, "width": 145, "height": 10, "stroke": "#ffffff", "template": "{tr.my_clock}", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "left", "visible_if": "", "random": [] },
     { "id": "close_button", "type": "rectangle", "x": 231, "y": 46, "width": 16, "height": 13, "stroke": "#ffffff", "fill": "#c13b2f", "stroke_width": 1, "visible_if": "" },
-    { "id": "close_mark", "type": "text", "x": 231, "y": 45, "width": 16, "height": 10, "stroke": "#ffffff", "template": "X", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "center", "visible_if": "", "random": [] },
+    { "id": "close_mark", "type": "text", "x": 232, "y": 45, "width": 16, "height": 10, "stroke": "#ffffff", "template": "X", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "center", "visible_if": "", "random": [] },
     { "id": "window_label", "type": "text", "x": 65, "y": 72, "width": 176, "height": 10, "stroke": "#454545", "template": "{tr.today}", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "center", "visible_if": "", "random": [] },
     { "id": "time", "type": "text", "x": 65, "y": 87, "width": 176, "height": 42, "stroke": "#174a8a", "template": "{time}", "font_family": "lv_font_chicago_32", "font_size": 32, "align": "center", "visible_if": "rtc_available", "random": [] },
     { "id": "date", "type": "text", "x": 65, "y": 132, "width": 176, "height": 12, "stroke": "#454545", "template": "{weekday_short} {date}", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "center", "visible_if": "rtc_available", "random": [] },
@@ -31,6 +31,6 @@
     { "id": "taskbar", "type": "rectangle", "x": 0, "y": 201, "width": 304, "height": 23, "stroke": "#174a8a", "fill": "#1d5fb8", "stroke_width": 1, "visible_if": "" },
     { "id": "start_button", "type": "rectangle", "x": 3, "y": 204, "width": 57, "height": 17, "stroke": "#ffffff", "fill": "#3c9d2f", "stroke_width": 1, "visible_if": "" },
     { "id": "start_label", "type": "text", "x": 8, "y": 205, "width": 46, "height": 10, "stroke": "#ffffff", "template": "{tr.start}", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "center", "visible_if": "", "random": [] },
-    { "id": "tray_time", "type": "text", "x": 250, "y": 205, "width": 47, "height": 10, "stroke": "#ffffff", "template": "{time}", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "right", "visible_if": "rtc_available", "random": [] }
+    { "id": "tray_time", "type": "text", "x": 250, "y": 205, "width": 47, "height": 10, "stroke": "#ffffff", "template": "{time_min}", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "right", "visible_if": "rtc_available", "random": [] }
   ]
 }

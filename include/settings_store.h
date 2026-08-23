@@ -16,7 +16,7 @@ public:
     void saveDateFormat(UiDateFormat value);
     void saveTemperatureUnit(UiTemperatureUnit value);
     void saveClockFace(ClockFace value);
-    void saveClockTheme(ClockTheme value);
+    void saveCustomClockFace(const char *value);
     void saveFaceCustomization(
         const FaceCustomizationSettings &value);
     void saveTimeFormat(const TimeFormatSettings &value);

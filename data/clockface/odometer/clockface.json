@@ -1,0 +1,23 @@
+{
+  "format": "maclock-clock-face",
+  "version": 1,
+  "name": "Odometer",
+  "width": 304,
+  "height": 224,
+  "background": "#080808",
+  "random_interval_seconds": 60,
+  "translations": {},
+  "objects": [
+    { "id": "title", "type": "text", "x": 12, "y": 14, "width": 280, "height": 12, "stroke": "#ffffff", "template": "ODOMETER", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "center", "visible_if": "", "random": [] },
+    { "id": "odometer_bg", "type": "odometer_background", "x": 6, "y": 38, "width": 292, "height": 62, "stroke": "#ffffff", "fill": "#242424", "stroke_width": 3, "visible_if": "" },
+    { "id": "hour_tens", "type": "odometer", "x": 20, "y": 43, "width": 36, "height": 52, "stroke": "#ffffff", "fill": "#080808", "stroke_width": 1, "template": "{hour_tens}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },
+    { "id": "hour_ones", "type": "odometer", "x": 60, "y": 43, "width": 36, "height": 52, "stroke": "#ffffff", "fill": "#080808", "stroke_width": 1, "template": "{hour_ones}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },
+    { "id": "colon_hour", "type": "colon", "x": 100, "y": 43, "width": 10, "height": 52, "stroke": "#ffffff", "fill": "transparent", "stroke_width": 0, "blink": true, "visible_if": "rtc_available" },
+    { "id": "minute_tens", "type": "odometer", "x": 114, "y": 43, "width": 36, "height": 52, "stroke": "#ffffff", "fill": "#080808", "stroke_width": 1, "template": "{minute_tens}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },
+    { "id": "minute_ones", "type": "odometer", "x": 154, "y": 43, "width": 36, "height": 52, "stroke": "#ffffff", "fill": "#080808", "stroke_width": 1, "template": "{minute_ones}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },
+    { "id": "colon_minute", "type": "colon", "x": 194, "y": 43, "width": 10, "height": 52, "stroke": "#ffffff", "fill": "transparent", "stroke_width": 0, "blink": true, "visible_if": "rtc_available" },
+    { "id": "second_tens", "type": "odometer", "x": 208, "y": 43, "width": 36, "height": 52, "stroke": "#ffffff", "fill": "#080808", "stroke_width": 1, "template": "{second_tens}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },
+    { "id": "second_ones", "type": "odometer", "x": 248, "y": 43, "width": 36, "height": 52, "stroke": "#ffffff", "fill": "#080808", "stroke_width": 1, "template": "{second_ones}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },
+    { "id": "date", "type": "text", "x": 12, "y": 178, "width": 280, "height": 24, "stroke": "#ffffff", "template": "{weekday_short} {date}", "font_family": "lv_font_chicago_24", "font_size": 24, "align": "center", "visible_if": "rtc_available", "random": [] }
+  ]
+}

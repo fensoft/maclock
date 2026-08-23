@@ -2,7 +2,7 @@
 static const BootOptionsPage
     g_boot_options_section_first[BOOT_OPTIONS_SECTION_COUNT] = {
         BOOT_OPTIONS_LANGUAGE,
-        BOOT_OPTIONS_DISPLAY,
+        BOOT_OPTIONS_CLOCK_FACE,
         BOOT_OPTIONS_CHIME,
         BOOT_OPTIONS_START};
 
@@ -76,38 +76,82 @@ static void update_language_selection(bool scroll_to_selected)
     }
 }
 
-static const char *clock_face_name(uint32_t face)
+static String filesystem_clockface_name(const String &source)
 {
-    static const char *const names[CLOCK_FACE_COUNT] = {
-        "Macintosh", "Compact", "Analog", "Flip",
-        "Odometer", "Mac OS 8"};
-    return face < CLOCK_FACE_COUNT ? tr(names[face]) : "";
+    String name;
+    for (size_t i = 0; i < source.length() && name.length() <
+         AppSettings::kCustomClockFaceNameMax - 1; ++i)
+    {
+        const char value = source[i];
+        if ((value >= 'a' && value <= 'z') ||
+            (value >= '0' && value <= '9') || value == '_' || value == '-')
+            name += value;
+        else
+            return String();
+    }
+    return name;
 }
+
+static void clock_face_event(lv_event_t *event);
 
 static void update_clock_face_selection(bool scroll_to_selected)
 {
-    const uint32_t selected = (uint32_t)g_clock_face;
-    for (uint32_t i = 0; i < CLOCK_FACE_COUNT; ++i)
+    lv_obj_clean(boot_options_view.clock_face_options);
+    boot_options_view.clock_face_count = 0;
+    File directory = LittleFS.open("/clockface");
+    if (directory && directory.isDirectory())
     {
-        lv_obj_t *item = boot_options_view.clock_face_items[i];
-        if (!item)
-            continue;
-        lv_obj_t *label = lv_obj_get_child(item, 0);
-        if (label)
-            lv_label_set_text(label, clock_face_name(i));
-        if (i == selected)
-            lv_obj_add_state(item, LV_STATE_CHECKED);
-        else
-            lv_obj_remove_state(item, LV_STATE_CHECKED);
+        for (File entry = directory.openNextFile(); entry &&
+             boot_options_view.clock_face_count < kFilesystemClockFaceMax;
+             entry = directory.openNextFile())
+        {
+            if (!entry.isDirectory())
+                continue;
+            const String path = entry.name();
+            const int slash = path.lastIndexOf("/");
+            const String name = filesystem_clockface_name(
+                slash >= 0 ? path.substring(slash + 1) : path);
+            const String project_path = String("/clockface/") +
+                name + "/clockface.json";
+            File project = name.length()
+                ? LittleFS.open(project_path.c_str(), "r") : File();
+            if (!project)
+                continue;
+            JsonDocument document;
+            const bool valid = !deserializeJson(document, project);
+            project.close();
+            if (!valid)
+                continue;
+            const uint8_t index = boot_options_view.clock_face_count++;
+            strlcpy(boot_options_view.clock_face_names[index], name.c_str(),
+                sizeof(boot_options_view.clock_face_names[index]));
+            JsonVariantConst name_value = document["name"];
+            const char *display_name = name_value.is<const char *>()
+                ? name_value.as<const char *>() : nullptr;
+            strlcpy(boot_options_view.clock_face_labels[index],
+                display_name && display_name[0] ? display_name : "Unnamed face",
+                sizeof(boot_options_view.clock_face_labels[index]));
+            lv_obj_t *item = lv_list_add_button(
+                boot_options_view.clock_face_options, nullptr,
+                boot_options_view.clock_face_labels[index]);
+            boot_options_view.clock_face_items[index] = item;
+            selector_list_style_item(item);
+            lv_obj_t *item_label = lv_obj_get_child(item, 0);
+            if (item_label)
+                lv_label_set_text(item_label,
+                    boot_options_view.clock_face_labels[index]);
+            lv_obj_set_user_data(item, (void *)(uintptr_t)index);
+            lv_obj_add_event_cb(item, clock_face_event, LV_EVENT_CLICKED, nullptr);
+            if (!strcmp(name.c_str(), app_settings.custom_clock_face))
+                lv_obj_add_state(item, LV_STATE_CHECKED);
+        }
+        directory.close();
     }
-
-    if (scroll_to_selected && selected < CLOCK_FACE_COUNT &&
-        boot_options_view.clock_face_items[selected])
-    {
-        lv_obj_scroll_to_view(
-            boot_options_view.clock_face_items[selected],
-            LV_ANIM_OFF);
-    }
+    if (scroll_to_selected)
+        for (uint8_t i = 0; i < boot_options_view.clock_face_count; ++i)
+            if (!strcmp(boot_options_view.clock_face_names[i],
+                        app_settings.custom_clock_face))
+                lv_obj_scroll_to_view(boot_options_view.clock_face_items[i], LV_ANIM_OFF);
 }
 
 void UiShell::updateMenuTitles()
@@ -129,16 +173,6 @@ void UiShell::updateBootMessage()
             ui_shell.boot_message, tr("Welcome to Macintosh."));
 }
 
-static void set_checkbox_state(lv_obj_t *checkbox, bool checked)
-{
-    if (!checkbox)
-        return;
-    if (checked)
-        lv_obj_add_state(checkbox, LV_STATE_CHECKED);
-    else
-        lv_obj_remove_state(checkbox, LV_STATE_CHECKED);
-}
-
 static void update_regional_options_ui()
 {
     set_checked_button(
@@ -156,62 +190,28 @@ static void update_regional_options_ui()
             g_temperature_unit == UI_TEMPERATURE_FAHRENHEIT
                 ? "°F"
                 : "°C");
-}
-
-static void update_display_options_ui()
-{
-    if (boot_options_view.leading_zero_checkbox)
-        lv_checkbox_set_text(
-            boot_options_view.leading_zero_checkbox,
-            tr("Initial zero"));
-    if (boot_options_view.weekday_checkbox)
-        lv_checkbox_set_text(
-            boot_options_view.weekday_checkbox,
-            tr("Day"));
-    if (boot_options_view.seconds_checkbox)
-        lv_checkbox_set_text(
-            boot_options_view.seconds_checkbox,
-            tr("Seconds"));
-    if (boot_options_view.dark_mode_checkbox)
-        lv_checkbox_set_text(
-            boot_options_view.dark_mode_checkbox,
-            tr("Dark mode"));
-    set_checkbox_state(
-        boot_options_view.leading_zero_checkbox,
-        g_time_format.leading_zero);
-    set_checkbox_state(
-        boot_options_view.weekday_checkbox,
-        g_time_format.show_weekday);
-    set_checkbox_state(
-        boot_options_view.seconds_checkbox,
-        g_time_format.show_seconds);
-    set_checkbox_state(
-        boot_options_view.dark_mode_checkbox,
-        g_clock_theme == CLOCK_THEME_DARK);
+    if (boot_options_view.regional_seconds_label)
+        lv_label_set_text(boot_options_view.regional_seconds_label,
+            g_time_format.show_seconds
+                ? "Show seconds: On"
+                : "Show seconds: Off");
 }
 
 static void update_face_customization_options_ui()
 {
-    set_checked_button(
-        boot_options_view.face_accent_options,
-        static_cast<uint32_t>(g_face_customization.accent));
-    set_checked_button(
-        boot_options_view.face_size_options,
-        static_cast<uint32_t>(
-            g_face_customization.numeral_size));
-    set_checked_button(
-        boot_options_view.flip_speed_options,
-        static_cast<uint32_t>(
-            g_face_customization.flip_speed));
-    if (boot_options_view.weather_checkbox)
-    {
-        lv_checkbox_set_text(
-            boot_options_view.weather_checkbox,
-            tr("Show weather"));
-        set_checkbox_state(
-            boot_options_view.weather_checkbox,
-            g_face_customization.show_weather);
-    }
+    static const char *const speeds[] = {"Slow", "Normal", "Fast"};
+    if (boot_options_view.flip_speed_label)
+        lv_label_set_text_fmt(boot_options_view.flip_speed_label,
+            "Animation: %s", speeds[static_cast<uint8_t>(
+                g_face_customization.flip_speed)]);
+    if (boot_options_view.colon_blink_label)
+        lv_label_set_text(boot_options_view.colon_blink_label,
+            g_face_customization.colon_blink == ColonBlinkInterval::None
+                ? "Blink: No" : "Blink: Yes");
+    if (boot_options_view.continuous_seconds_label)
+        lv_label_set_text(boot_options_view.continuous_seconds_label,
+            g_face_customization.continuous_seconds
+                ? "Continuous: Yes" : "Continuous: No");
 }
 
 static void update_boot_translation_maps()
@@ -220,22 +220,16 @@ static void update_boot_translation_maps()
     g_brightness_map[1] = tr("Lowest");
     g_brightness_map[2] = tr("Highest");
     g_brightness_map[3] = "";
-    g_face_accent_map[0] = tr("Default");
-    g_face_accent_map[1] = tr("Red");
-    g_face_accent_map[2] = tr("Orange");
-    g_face_accent_map[3] = "\n";
-    g_face_accent_map[4] = tr("Green");
-    g_face_accent_map[5] = tr("Blue");
-    g_face_accent_map[6] = tr("Purple");
-    g_face_accent_map[7] = "";
-    g_face_size_map[0] = tr("Small");
-    g_face_size_map[1] = tr("Default");
-    g_face_size_map[2] = tr("Large");
-    g_face_size_map[3] = "";
     g_flip_speed_map[0] = tr("Slow");
     g_flip_speed_map[1] = tr("Normal");
     g_flip_speed_map[2] = tr("Fast");
     g_flip_speed_map[3] = "";
+    g_colon_blink_map[0] = tr("Off");
+    g_colon_blink_map[1] = tr("On");
+    g_colon_blink_map[2] = "";
+    g_continuous_seconds_map[0] = tr("Off");
+    g_continuous_seconds_map[1] = tr("On");
+    g_continuous_seconds_map[2] = "";
     g_screensaver_delay_map[0] = tr("1 min");
     g_screensaver_delay_map[1] = tr("5 min");
     g_screensaver_delay_map[2] = tr("10 min");
@@ -529,11 +523,9 @@ static void language_event(lv_event_t *event)
 static void apply_time_format_change()
 {
     settings_store.saveTimeFormat(g_time_format);
-    clock_view.applyTimeFormatLayout();
     clock_view.last_second = -1;
     clock_view.last_update_ms = 0;
     update_regional_options_ui();
-    update_display_options_ui();
 }
 
 static void date_format_event(lv_event_t *event)
@@ -571,45 +563,11 @@ static void regional_temperature_event(lv_event_t *event)
     update_regional_options_ui();
 }
 
-static void leading_zero_checkbox_event(lv_event_t *event)
+static void regional_seconds_event(lv_event_t *event)
 {
-    lv_obj_t *checkbox =
-        (lv_obj_t *)lv_event_get_target(event);
-    g_time_format.leading_zero =
-        lv_obj_has_state(checkbox, LV_STATE_CHECKED);
+    (void)event;
+    g_time_format.show_seconds = !g_time_format.show_seconds;
     apply_time_format_change();
-}
-
-static void weekday_checkbox_event(lv_event_t *event)
-{
-    lv_obj_t *checkbox =
-        (lv_obj_t *)lv_event_get_target(event);
-    g_time_format.show_weekday =
-        lv_obj_has_state(checkbox, LV_STATE_CHECKED);
-    apply_time_format_change();
-}
-
-static void seconds_checkbox_event(lv_event_t *event)
-{
-    lv_obj_t *checkbox =
-        (lv_obj_t *)lv_event_get_target(event);
-    g_time_format.show_seconds =
-        lv_obj_has_state(checkbox, LV_STATE_CHECKED);
-    apply_time_format_change();
-}
-
-static void dark_mode_checkbox_event(lv_event_t *event)
-{
-    lv_obj_t *checkbox =
-        (lv_obj_t *)lv_event_get_target(event);
-    g_clock_theme =
-        lv_obj_has_state(checkbox, LV_STATE_CHECKED)
-            ? CLOCK_THEME_DARK
-            : CLOCK_THEME_LIGHT;
-    settings_store.saveClockTheme(g_clock_theme);
-    update_display_options_ui();
-    if (clock_view.compact)
-        clock_view.applyTheme();
 }
 
 static void clock_face_event(lv_event_t *event)
@@ -617,10 +575,14 @@ static void clock_face_event(lv_event_t *event)
     lv_obj_t *item = (lv_obj_t *)lv_event_get_target(event);
     const uint32_t selected =
         (uint32_t)(uintptr_t)lv_obj_get_user_data(item);
-    if (selected >= CLOCK_FACE_COUNT)
+    if (selected >= boot_options_view.clock_face_count)
         return;
-    g_clock_face = (ClockFace)selected;
+    g_clock_face = ClockFace::None;
+    strlcpy(app_settings.custom_clock_face,
+        boot_options_view.clock_face_names[selected],
+        sizeof(app_settings.custom_clock_face));
     settings_store.saveClockFace(g_clock_face);
+    settings_store.saveCustomClockFace(app_settings.custom_clock_face);
     update_clock_face_selection(false);
 }
 
@@ -628,63 +590,36 @@ static void apply_face_customization_change()
 {
     settings_store.saveFaceCustomization(
         g_face_customization);
-    clock_view.applyFaceCustomization();
     clock_view.last_second = -1;
     clock_view.last_update_ms = 0;
     update_face_customization_options_ui();
 }
 
-static void face_accent_event(lv_event_t *event)
-{
-    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
-    const uint32_t selected =
-        lv_buttonmatrix_get_selected_button(options);
-    if (selected >=
-        static_cast<uint8_t>(FaceAccent::Count))
-    {
-        return;
-    }
-    g_face_customization.accent =
-        static_cast<FaceAccent>(selected);
-    apply_face_customization_change();
-}
-
-static void face_size_event(lv_event_t *event)
-{
-    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
-    const uint32_t selected =
-        lv_buttonmatrix_get_selected_button(options);
-    if (selected >=
-        static_cast<uint8_t>(FaceNumeralSize::Count))
-    {
-        return;
-    }
-    g_face_customization.numeral_size =
-        static_cast<FaceNumeralSize>(selected);
-    apply_face_customization_change();
-}
-
-static void weather_checkbox_event(lv_event_t *event)
-{
-    lv_obj_t *checkbox =
-        (lv_obj_t *)lv_event_get_target(event);
-    g_face_customization.show_weather =
-        lv_obj_has_state(checkbox, LV_STATE_CHECKED);
-    apply_face_customization_change();
-}
-
 static void flip_speed_event(lv_event_t *event)
 {
-    lv_obj_t *options = (lv_obj_t *)lv_event_get_target(event);
-    const uint32_t selected =
-        lv_buttonmatrix_get_selected_button(options);
-    if (selected >=
-        static_cast<uint8_t>(FlipAnimationSpeed::Count))
-    {
-        return;
-    }
+    (void)event;
     g_face_customization.flip_speed =
-        static_cast<FlipAnimationSpeed>(selected);
+        static_cast<FlipAnimationSpeed>((static_cast<uint8_t>(
+            g_face_customization.flip_speed) + 1) %
+            static_cast<uint8_t>(FlipAnimationSpeed::Count));
+    apply_face_customization_change();
+}
+
+
+static void colon_blink_event(lv_event_t *event)
+{
+    (void)event;
+    g_face_customization.colon_blink =
+        g_face_customization.colon_blink == ColonBlinkInterval::None
+            ? ColonBlinkInterval::OneSecond : ColonBlinkInterval::None;
+    apply_face_customization_change();
+}
+
+static void continuous_seconds_event(lv_event_t *event)
+{
+    (void)event;
+    g_face_customization.continuous_seconds =
+        !g_face_customization.continuous_seconds;
     apply_face_customization_change();
 }
 
@@ -1311,9 +1246,8 @@ void BootOptionsView::setPage(BootOptionsPage page)
 
     const char *page_names[BOOT_OPTIONS_PAGE_COUNT] = {
         tr("Configuration"), tr("Language"),
-        tr("Regional"), tr("Date / Time"), tr("Display"),
-        tr("Clock Face"), tr("Face Style"),
-        tr("Face Details"), tr("Screensaver"),
+        tr("Regional"), tr("Date / Time"), tr("Clock Face"),
+        tr("Face Settings"), tr("Screensaver"),
         tr("Night Schedule"), tr("Night Screen"), tr("Chime"),
         tr("Chime Sound"), tr("Chime Volume"), tr("Quiet Hours"),
         tr("Start"), tr("Preferences"), tr("Wi-Fi"),

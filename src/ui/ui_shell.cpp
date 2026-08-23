@@ -128,15 +128,6 @@ static void refresh_language_ui()
     lv_buttonmatrix_set_map(
         boot_options_view.brightness_options, g_brightness_map);
     lv_buttonmatrix_set_map(
-        boot_options_view.face_accent_options,
-        g_face_accent_map);
-    lv_buttonmatrix_set_map(
-        boot_options_view.face_size_options,
-        g_face_size_map);
-    lv_buttonmatrix_set_map(
-        boot_options_view.flip_speed_options,
-        g_flip_speed_map);
-    lv_buttonmatrix_set_map(
         boot_options_view.night_enabled_options, g_night_enabled_map);
     lv_buttonmatrix_set_map(
         boot_options_view.night_screen_options, g_night_screen_map);
@@ -151,15 +142,7 @@ static void refresh_language_ui()
     lv_label_set_text(
         boot_options_view.screensaver_delay_label,
         tr("Start after"));
-    lv_label_set_text(
-        boot_options_view.face_accent_label,
-        tr("Accent"));
-    lv_label_set_text(
-        boot_options_view.face_size_label,
-        tr("Numeral size"));
-    lv_label_set_text(
-        boot_options_view.flip_speed_label,
-        tr("Flip speed"));
+    update_face_customization_options_ui();
     lv_label_set_text(boot_options_view.dim_from_label, tr("Dim from"));
     lv_label_set_text(boot_options_view.normal_at_label, tr("Normal at"));
     lv_label_set_text(boot_options_view.screen_off_label, tr("Screen off at"));
@@ -205,10 +188,6 @@ static void refresh_language_ui()
     ui_shell.updateBootMessage();
     ui_shell.updateMenuTitles();
     lv_label_set_text(ui_shell.clock_label, tr("Clock"));
-    lv_label_set_text(
-        clock_view.compact_title, tr("Clock"));
-    lv_label_set_text(
-        clock_view.flip_title, tr("Clock"));
     lv_label_set_text(calibration_view.label, tr("Touch the crosshair"));
 
     alarm_view.refreshLanguage();
@@ -219,7 +198,6 @@ static void refresh_language_ui()
         boot_options_view.brightness_options,
         (uint32_t)g_boot_brightness);
     update_regional_options_ui();
-    update_display_options_ui();
     update_face_customization_options_ui();
     update_clock_face_selection(true);
     update_screensaver_mode_button(true);
@@ -253,18 +231,6 @@ void UiShell::hideAll()
     lv_obj_add_flag(ui_shell.alarm_indicator, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ui_shell.white_bar, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ui_shell.black_line, LV_OBJ_FLAG_HIDDEN);
-    if (clock_view.compact)
-        lv_obj_add_flag(
-            clock_view.compact, LV_OBJ_FLAG_HIDDEN);
-    if (clock_view.analog)
-        lv_obj_add_flag(
-            clock_view.analog, LV_OBJ_FLAG_HIDDEN);
-    if (clock_view.flip)
-        lv_obj_add_flag(
-            clock_view.flip, LV_OBJ_FLAG_HIDDEN);
-    if (clock_view.odometer)
-        lv_obj_add_flag(
-            clock_view.odometer, LV_OBJ_FLAG_HIDDEN);
     if (clock_view.screensaver)
         lv_obj_add_flag(
             clock_view.screensaver, LV_OBJ_FLAG_HIDDEN);
@@ -593,19 +559,7 @@ static void format_display_date(
         break;
     }
 
-    if (!g_time_format.show_weekday)
-    {
-        snprintf(text, text_size, "%s", formatted_date);
-        return;
-    }
-
-    static const char *weekday_keys[] = {
-        "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-    const uint8_t weekday = date.dayOfTheWeek();
-    snprintf(
-        text, text_size, "%s %s",
-        tr(weekday_keys[weekday < 7 ? weekday : 0]),
-        formatted_date);
+    snprintf(text, text_size, "%s", formatted_date);
 }
 
 #endif

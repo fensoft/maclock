@@ -429,6 +429,38 @@ static void send_clockface_project()
     file.close();
 }
 
+static void send_clockface_assets()
+{
+    String name;
+    if (!requested_clockface_name(name))
+    {
+        send_result(false, "Clock face not found", 404);
+        return;
+    }
+    JsonDocument document;
+    JsonArray assets = document["assets"].to<JsonArray>();
+    File directory = LittleFS.open((String("/clockface/") + name).c_str());
+    if (!directory || !directory.isDirectory())
+    {
+        send_result(false, "Clock face not found", 404);
+        return;
+    }
+    for (File file = directory.openNextFile(); file;
+         file = directory.openNextFile())
+    {
+        if (file.isDirectory())
+            continue;
+        const String path = file.name();
+        const int slash = path.lastIndexOf("/");
+        const String asset = safe_clockface_asset_name(
+            slash >= 0 ? path.substring(slash + 1) : path);
+        if (asset.length())
+            assets.add(asset);
+    }
+    directory.close();
+    send_json(document);
+}
+
 static void save_clockface_project()
 {
     String name;
@@ -462,6 +494,35 @@ static void save_clockface_project()
     }
     file.close();
     send_result(true, "Clock face saved");
+}
+
+static void select_clockface_project()
+{
+    if (!g_events)
+    {
+        send_result(false, "Control service is unavailable", 503);
+        return;
+    }
+    String name;
+    const bool clear = g_server.arg("clear") == "1";
+    if (!clear && !requested_clockface_name(name))
+    {
+        send_result(false, "Invalid clock face name", 400);
+        return;
+    }
+    if (!clear && !LittleFS.exists(
+            (String("/clockface/") + name + "/clockface.json").c_str()))
+    {
+        send_result(false, "Clock face not found", 404);
+        return;
+    }
+    const ControlPanelSnapshot snapshot = g_events->controlPanelSnapshot();
+    const bool applied = g_events->applyControlAppearance(
+        snapshot.settings.language, snapshot.settings.clock_face,
+        snapshot.brightness,
+        snapshot.settings.face_customization, snapshot.settings.time_format,
+        clear ? "" : name.c_str());
+    send_result(applied, applied ? "Clock face selected" : "Clock face was not selected", applied ? 200 : 500);
 }
 
 static void receive_clockface_asset_upload()
@@ -1455,26 +1516,19 @@ static void send_state()
         static_cast<uint8_t>(snapshot.settings.language);
     appearance["face"] =
         static_cast<uint8_t>(snapshot.settings.clock_face);
-    appearance["theme"] =
-        static_cast<uint8_t>(snapshot.settings.clock_theme);
-    appearance["accent"] = static_cast<uint8_t>(
-        snapshot.settings.face_customization.accent);
-    appearance["fontSize"] = static_cast<uint8_t>(
-        snapshot.settings.face_customization.numeral_size);
-    appearance["weather"] =
-        snapshot.settings.face_customization.show_weather;
-    appearance["flipSpeed"] = static_cast<uint8_t>(
+    appearance["customClockFace"] = snapshot.settings.custom_clock_face;
+    appearance["animationSpeed"] = static_cast<uint8_t>(
         snapshot.settings.face_customization.flip_speed);
+    appearance["colonBlink"] = static_cast<uint8_t>(
+        snapshot.settings.face_customization.colon_blink);
+    appearance["continuousSeconds"] =
+        snapshot.settings.face_customization.continuous_seconds;
     appearance["brightness"] = snapshot.brightness;
     appearance["hourFormat"] =
         static_cast<uint8_t>(
             snapshot.settings.time_format.hour_format);
-    appearance["leadingZero"] =
-        snapshot.settings.time_format.leading_zero;
-    appearance["seconds"] =
+    appearance["showSeconds"] =
         snapshot.settings.time_format.show_seconds;
-    appearance["weekday"] =
-        snapshot.settings.time_format.show_weekday;
 
     JsonObject screensaver =
         document["screensaver"].to<JsonObject>();
@@ -1754,83 +1808,68 @@ static void apply_appearance()
 {
     uint32_t language = 0;
     uint32_t face = 0;
-    uint32_t theme = 0;
     uint32_t brightness = 0;
     uint32_t hour_format = 0;
-    uint32_t leading_zero = 0;
-    uint32_t seconds = 0;
-    uint32_t weekday = 0;
+    uint32_t show_seconds = 0;
     FaceCustomizationSettings face_customization;
-    if (g_events)
-    {
-        face_customization =
-            g_events->controlPanelSnapshot()
-                .settings.face_customization;
-    }
-    uint32_t accent =
-        static_cast<uint8_t>(face_customization.accent);
-    uint32_t font_size =
-        static_cast<uint8_t>(face_customization.numeral_size);
-    uint32_t weather = face_customization.show_weather ? 1 : 0;
+    String custom_clock_face;
     uint32_t flip_speed =
         static_cast<uint8_t>(face_customization.flip_speed);
+    uint32_t colon_blink =
+        static_cast<uint8_t>(face_customization.colon_blink);
+    uint32_t continuous_seconds =
+        face_customization.continuous_seconds ? 1 : 0;
     if (!read_uint(
             "language", 0, UI_LANGUAGE_COUNT - 1, language) ||
         !read_uint(
             "face", 0,
             static_cast<uint8_t>(ClockFace::Count) - 1, face) ||
-        !read_uint(
-            "theme", 0,
-            static_cast<uint8_t>(ClockTheme::Count) - 1, theme) ||
         !read_uint("brightness", 0, kBrightnessMax, brightness) ||
+         !read_uint(
+             "hourFormat", 0,
+             static_cast<uint8_t>(HourFormat::Count) - 1,
+             hour_format) ||
+         !read_uint("showSeconds", 0, 1, show_seconds) ||
         !read_uint(
-            "hourFormat", 0,
-            static_cast<uint8_t>(HourFormat::Count) - 1,
-            hour_format) ||
-        !read_uint("leadingZero", 0, 1, leading_zero) ||
-        !read_uint("seconds", 0, 1, seconds) ||
-        !read_uint("weekday", 0, 1, weekday) ||
-        !read_optional_uint(
-            "accent", 0,
-            static_cast<uint8_t>(FaceAccent::Count) - 1,
-            accent) ||
-        !read_optional_uint(
-            "fontSize", 0,
-            static_cast<uint8_t>(FaceNumeralSize::Count) - 1,
-            font_size) ||
-        !read_optional_uint("weather", 0, 1, weather) ||
-        !read_optional_uint(
-            "flipSpeed", 0,
-            static_cast<uint8_t>(
-                FlipAnimationSpeed::Count) -
-                1,
-            flip_speed))
+            "animationSpeed", 0,
+             static_cast<uint8_t>(
+                 FlipAnimationSpeed::Count) -
+                 1,
+            flip_speed) ||
+         !read_uint("colonBlink", 0,
+             static_cast<uint8_t>(ColonBlinkInterval::Count) - 1,
+             colon_blink) ||
+         !read_uint("continuousSeconds", 0, 1, continuous_seconds))
     {
         send_result(false, "Invalid appearance settings", 400);
+        return;
+    }
+    if (g_server.hasArg("customClockFace"))
+        custom_clock_face = safe_clockface_name(g_server.arg("customClockFace"));
+    if (g_server.hasArg("customClockFace") &&
+        g_server.arg("customClockFace").length() && !custom_clock_face.length())
+    {
+        send_result(false, "Invalid custom clock face", 400);
         return;
     }
 
     TimeFormatSettings time_format;
     time_format.hour_format =
         static_cast<HourFormat>(hour_format);
-    time_format.leading_zero = leading_zero != 0;
-    time_format.show_seconds = seconds != 0;
-    time_format.show_weekday = weekday != 0;
-    face_customization.accent =
-        static_cast<FaceAccent>(accent);
-    face_customization.numeral_size =
-        static_cast<FaceNumeralSize>(font_size);
-    face_customization.show_weather = weather != 0;
+    time_format.show_seconds = show_seconds != 0;
     face_customization.flip_speed =
         static_cast<FlipAnimationSpeed>(flip_speed);
+    face_customization.colon_blink =
+        static_cast<ColonBlinkInterval>(colon_blink);
+    face_customization.continuous_seconds = continuous_seconds != 0;
     const bool applied = g_events &&
         g_events->applyControlAppearance(
             static_cast<UiLanguage>(language),
             static_cast<ClockFace>(face),
-            static_cast<ClockTheme>(theme),
             static_cast<uint8_t>(brightness),
             face_customization,
-            time_format);
+            time_format,
+            custom_clock_face.c_str());
     send_result(
         applied,
         applied ? "Appearance updated" : "Appearance was not updated",
@@ -2180,7 +2219,9 @@ static void configure_routes()
     g_server.on("/api/clockface/fonts", HTTP_GET, send_clockface_fonts);
     g_server.on("/api/clockface/glyph", HTTP_GET, send_clockface_glyph);
     g_server.on("/api/clockface/project", HTTP_GET, send_clockface_project);
+    g_server.on("/api/clockface/assets", HTTP_GET, send_clockface_assets);
     g_server.on("/api/clockface/project", HTTP_POST, save_clockface_project);
+    g_server.on("/api/clockface/select", HTTP_POST, select_clockface_project);
     g_server.on("/api/clockface/asset", HTTP_GET, send_clockface_asset);
     g_server.on(
         "/api/clockface/asset/upload", HTTP_POST,

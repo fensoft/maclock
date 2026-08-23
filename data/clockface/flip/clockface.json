@@ -1,0 +1,23 @@
+{
+  "format": "maclock-clock-face",
+  "version": 1,
+  "name": "Flip",
+  "width": 304,
+  "height": 224,
+  "background": "#ffffff",
+  "random_interval_seconds": 60,
+  "translations": {},
+  "objects": [
+    { "id": "title", "type": "text", "x": 12, "y": 13, "width": 280, "height": 12, "stroke": "#000000", "template": "CLOCK", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "center", "visible_if": "", "random": [] },
+    { "id": "flip_bg", "type": "flip_background", "x": 6, "y": 38, "width": 292, "height": 62, "stroke": "#000000", "fill": "#ececec", "stroke_width": 2, "visible_if": "" },
+    { "id": "hour_tens", "type": "flip", "x": 20, "y": 43, "width": 36, "height": 52, "stroke": "#000000", "fill": "#181818", "stroke_width": 1, "template": "{hour_tens}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },
+    { "id": "hour_ones", "type": "flip", "x": 60, "y": 43, "width": 36, "height": 52, "stroke": "#000000", "fill": "#181818", "stroke_width": 1, "template": "{hour_ones}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },
+    { "id": "colon_hour", "type": "colon", "x": 100, "y": 43, "width": 10, "height": 52, "stroke": "#000000", "fill": "transparent", "stroke_width": 0, "blink": true, "visible_if": "rtc_available" },
+    { "id": "minute_tens", "type": "flip", "x": 114, "y": 43, "width": 36, "height": 52, "stroke": "#000000", "fill": "#181818", "stroke_width": 1, "template": "{minute_tens}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },
+    { "id": "minute_ones", "type": "flip", "x": 154, "y": 43, "width": 36, "height": 52, "stroke": "#000000", "fill": "#181818", "stroke_width": 1, "template": "{minute_ones}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },
+    { "id": "colon_minute", "type": "colon", "x": 194, "y": 43, "width": 10, "height": 52, "stroke": "#000000", "fill": "transparent", "stroke_width": 0, "blink": true, "visible_if": "rtc_available" },
+    { "id": "second_tens", "type": "flip", "x": 208, "y": 43, "width": 36, "height": 52, "stroke": "#000000", "fill": "#181818", "stroke_width": 1, "template": "{second_tens}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },
+    { "id": "second_ones", "type": "flip", "x": 248, "y": 43, "width": 36, "height": 52, "stroke": "#000000", "fill": "#181818", "stroke_width": 1, "template": "{second_ones}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },
+    { "id": "date", "type": "text", "x": 12, "y": 184, "width": 280, "height": 18, "stroke": "#000000", "template": "{weekday_short} {date}", "font_family": "lv_font_chicago_24", "font_size": 24, "align": "center", "visible_if": "rtc_available", "random": [] }
+  ]
+}

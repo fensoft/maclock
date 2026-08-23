@@ -111,9 +111,10 @@ public:
         bool &network_changed) = 0;
     virtual bool applyControlAppearance(
         UiLanguage language,
-        ClockFace face, ClockTheme theme, uint8_t brightness,
+        ClockFace face, uint8_t brightness,
         const FaceCustomizationSettings &face_customization,
-        const TimeFormatSettings &time_format) = 0;
+        const TimeFormatSettings &time_format,
+        const char *custom_clock_face) = 0;
     virtual bool applyControlScreensaver(
         ScreensaverMode mode, uint8_t delay_index,
         bool launch_now) = 0;

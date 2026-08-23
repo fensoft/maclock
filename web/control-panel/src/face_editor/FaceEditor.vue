@@ -1,17 +1,19 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { clockFaceAssetUrl, fetchClockFaceFonts, fetchClockFaceGlyph, fetchClockFaces, loadClockFace, saveClockFace, uploadClockFaceAsset } from "../api";
+import { clockFaceAssetUrl, fetchClockFaceFonts, fetchClockFaceGlyph, fetchClockFaces, listClockFaceAssets, loadClockFace, saveClockFace, selectClockFace, uploadClockFaceAsset } from "../api";
 
 const W = 304;
 const H = 224;
 const canvas = ref(null);
 const preview = ref(null);
 const upload = ref(null);
+const archiveUpload = ref(null);
 const selected = ref(-1);
 const status = ref("");
 const selectedPlaceholder = ref("time");
 const previewLanguage = ref("en");
 const savedFaces = ref([]);
+const savedFaceOptions = ref([]);
 const selectedFace = ref("compact_digital");
 const LAST_FACE_KEY = "maclock.face-editor.last-face";
 const lvglFonts = ref([]);
@@ -28,18 +30,18 @@ const project = ref({
   width: W, height: H, background: "#ffffff", random_interval_seconds: 60, translations: {}, objects: [],
 });
 const values = reactive({
-  time: "10:42", time_seconds: "10:42:37", hour: "10", hour12: "10", minute: "42", second: "37", meridiem: "AM",
+  time_min: "10:42", time_seconds: "10:42:37", hour: "10", hour12: "10", hour_tens: "1", hour_ones: "0", minute: "42", minute_tens: "4", minute_ones: "2", second: "37", second_tens: "3", second_ones: "7", meridiem: "AM",
   date: "09/08/2026", date_iso: "2026-08-09", weekday: "Sunday", weekday_short: "Sun", day: "09", month: "08", month_name: "August", month_short: "Aug", year: "2026", face_name: "Compact Digital",
   internal_temp: "21.5", external_temp: "18.2", external_min: "12.1", external_max: "23.8", temperature_unit: "°C", pressure: "1013", humidity: "48", weather: "Sunny", weather_asset: "sunny", city: "Paris", wifi_ssid: "Mac Host Network", wifi_rssi: "-42", alarm_next: "07:30", alarm_label: "Wake up", timer_remaining: "24:59",
-  rtc_available: true, weather_available: true, wifi_available: true, external_sensor_available: true, timer_active: false, floppy_inserted: true,
+  rtc_available: true, weather_available: true, wifi_available: true, external_sensor_available: true, timer_active: false, floppy_inserted: true, show_time_seconds: false,
 });
-const objectTypes = ["rectangle", "circle", "line", "text", "image"];
+const objectTypes = ["rectangle", "circle", "line", "text", "image", "flip", "odometer", "odometer_background", "flip_background", "colon"];
 const alignments = ["left", "center", "right"];
 const object = computed(() => project.value.objects[selected.value] || null);
 const availabilityValues = computed(() => Object.keys(values).filter((key) => typeof values[key] === "boolean" && key !== "floppy_inserted"));
 const placeholders = computed(() => Object.keys(values));
 const translationEntries = computed(() => Object.entries(project.value.translations || {}));
-const placeholderOptions = computed(() => [...placeholders.value.map((key) => ({ key, label: `{${key}}` })), ...translationEntries.value.map(([key]) => ({ key: `tr.${key}`, label: `{tr.${key}}` }))]);
+const placeholderOptions = computed(() => [...placeholders.value.map((key) => ({ key, label: `{${key}} (${values[key]})` })), ...translationEntries.value.map(([key, translations]) => ({ key: `tr.${key}`, label: `{tr.${key}} (${translations?.[previewLanguage.value] || translations?.en || ""})` }))]);
 const visibleRules = computed({
   get: () => {
     const expression = object.value?.visible_if?.trim();
@@ -68,9 +70,18 @@ const objectText = computed({
 
 function makeObject(type) {
   const n = project.value.objects.length + 1;
-  const base = { id: `${type}_${n}`, type, x: 32, y: 32, width: 100, height: 40, stroke: "#000000", fill: "transparent", stroke_width: 1, visible_if: "" };
-  if (type === "text") Object.assign(base, { template: "{time}", font_family: "lv_font_chicago_8", font_size: 8, align: "left", random: [] });
+  const base = { id: `${type}_${n}`, type, x: 32, y: 32, width: 100, height: 40, stroke: "#000000", fill: "transparent", stroke_width: 1, border_radius: 0, visible_if: "" };
+  if (type === "line") Object.assign(base, { angle: "", max: 60 });
+  if (type === "flip" || type === "odometer") Object.assign(base, { template: "{hour}:{minute}:{second}", font_family: "lv_font_chicago_48", font_size: 48, align: "center" });
+  if (type === "text") Object.assign(base, { template: "{time_min}", font_family: "lv_font_chicago_8", font_size: 8, align: "left", random: [] });
   project.value.objects.push(base); selected.value = project.value.objects.length - 1; render();
+}
+function newObject() {
+  const type = window.prompt(`Object type: ${objectTypes.join(", ")}`, "rectangle");
+  if (!type) return;
+  const normalized = type.trim().toLowerCase();
+  if (!objectTypes.includes(normalized)) { status.value = "Unknown object type."; return; }
+  if (normalized === "image") upload.value?.click(); else makeObject(normalized);
 }
 function removeObject() { if (object.value) { project.value.objects.splice(selected.value, 1); selected.value = Math.min(selected.value, project.value.objects.length - 1); render(); } }
 function duplicateObject() { if (!object.value) return; const copy = structuredClone(object.value); copy.id += "_copy"; copy.x += 6; copy.y += 6; project.value.objects.splice(selected.value + 1, 0, copy); selected.value++; render(); }
@@ -110,7 +121,7 @@ function pixelText(ctx, item) {
     for (const entry of run) {
       const glyph = entry.glyph; if (!glyph) { x += fallback; continue; }
       const top = Math.round((Number(item.y) || 0) + lineIndex * glyph.lineHeight + glyph.lineHeight - glyph.baseLine - glyph.height - glyph.offsetY);
-      for (let y = 0; y < glyph.height; y += 1) for (let px = 0; px < glyph.width; px += 1) if (glyph.pixels[y * glyph.width + px] === "1") { ctx.fillStyle = `rgb(${rgb[0]} ${rgb[1]} ${rgb[2]})`; ctx.fillRect(Math.round(x + glyph.offsetX + px), top + y, 1, 1); }
+      for (let y = 0; y < glyph.height; y += 1) for (let px = 0; px < glyph.width; px += 1) if (glyph.pixels[y * glyph.width + px] === "1") { ctx.fillStyle = `rgb(${rgb[0]} ${rgb[1]} ${rgb[2]})`; ctx.fillRect(Math.floor(x + glyph.offsetX + px), top + y, 1, 1); }
       x += glyph.advance;
     }
   });
@@ -118,6 +129,16 @@ function pixelText(ctx, item) {
 function objectBounds(item) {
   const x = Number(item.x) || 0, y = Number(item.y) || 0;
   const w = Number(item.width) || 0, h = Number(item.height) || 0;
+  if (item.type === "line" && item.angle && Number(item.max) > 0) {
+    const value = Number(format(String(item.angle)));
+    if (Number.isFinite(value)) {
+      const radians = value / Number(item.max) * Math.PI * 2;
+      const length = Math.abs(h || w);
+      const endX = x + Math.round(Math.sin(radians) * length);
+      const endY = y - Math.round(Math.cos(radians) * length);
+      return { x: Math.min(x, endX), y: Math.min(y, endY), w: Math.abs(endX - x), h: Math.abs(endY - y) };
+    }
+  }
   if (item.type !== "text") return { x, y, w, h };
 
   const font = item.font_family || "lv_font_chicago_8";
@@ -133,9 +154,9 @@ function objectBounds(item) {
     for (const glyph of run) {
       if (!glyph) { cursor += fallback; continue; }
       const top = Math.round(y + lineIndex * glyph.lineHeight + glyph.lineHeight - glyph.baseLine - glyph.height - glyph.offsetY);
-      minX = Math.min(minX, Math.round(cursor + glyph.offsetX));
+      minX = Math.min(minX, Math.floor(cursor + glyph.offsetX));
       minY = Math.min(minY, top);
-      maxX = Math.max(maxX, Math.round(cursor + glyph.offsetX) + glyph.width);
+      maxX = Math.max(maxX, Math.floor(cursor + glyph.offsetX) + glyph.width);
       maxY = Math.max(maxY, top + glyph.height);
       cursor += glyph.advance;
     }
@@ -166,10 +187,15 @@ function render() {
     if (item.editor?.hidden || !isVisible(item.visible_if)) return;
     const x = Number(item.x) || 0, y = Number(item.y) || 0, w = Number(item.width) || 0, h = Number(item.height) || 0;
     ctx.lineWidth = Number(item.stroke_width) || 1; ctx.strokeStyle = item.stroke || "#000"; ctx.fillStyle = item.fill || "transparent";
-    if (item.type === "rectangle") { if (item.fill && item.fill !== "transparent") ctx.fillRect(x, y, w, h); ctx.strokeRect(x + 0.5, y + 0.5, Math.max(0, w - 1), Math.max(0, h - 1)); }
+    if (item.type === "rectangle") { if (Number(item.border_radius) > 0) { ctx.beginPath(); ctx.roundRect(x, y, w, h, Number(item.border_radius)); if (item.fill && item.fill !== "transparent") ctx.fill(); ctx.stroke(); } else { if (item.fill && item.fill !== "transparent") ctx.fillRect(x, y, w, h); ctx.strokeRect(x + 0.5, y + 0.5, Math.max(0, w - 1), Math.max(0, h - 1)); } }
     else if (item.type === "circle") { ctx.beginPath(); ctx.ellipse(x + w / 2, y + h / 2, Math.abs(w / 2), Math.abs(h / 2), 0, 0, Math.PI * 2); if (item.fill && item.fill !== "transparent") ctx.fill(); ctx.stroke(); }
-    else if (item.type === "line") { ctx.beginPath(); ctx.moveTo(x + 0.5, y + 0.5); ctx.lineTo(x + w + 0.5, y + h + 0.5); ctx.stroke(); }
+    else if (item.type === "odometer_background") { ctx.beginPath(); ctx.roundRect(x, y, w, h, Number(item.border_radius) || 6); if (item.fill && item.fill !== "transparent") ctx.fill(); ctx.stroke(); }
+    else if (item.type === "flip_background") { if (item.fill && item.fill !== "transparent") ctx.fillRect(x, y, w, h); ctx.strokeRect(x + 0.5, y + 0.5, Math.max(0, w - 1), Math.max(0, h - 1)); }
+    else if (item.type === "line") { const value = Number(format(String(item.angle || ""))); const rotated = item.angle && Number.isFinite(value) && Number(item.max) > 0; const radians = rotated ? value / Number(item.max) * Math.PI * 2 : 0; const length = Math.abs(h || w); const endX = rotated ? x + Math.round(Math.sin(radians) * length) : x + w; const endY = rotated ? y - Math.round(Math.cos(radians) * length) : y + h; ctx.beginPath(); ctx.moveTo(x + 0.5, y + 0.5); ctx.lineTo(endX + 0.5, endY + 0.5); ctx.stroke(); }
     else if (item.type === "text") pixelText(ctx, item);
+    else if (item.type === "flip") { const text = format(randomText(item)); const half = Math.floor((h - 6) / 2); ctx.fillStyle = "#55544e"; ctx.beginPath(); ctx.roundRect(x, y, w, h, 6); ctx.fill(); ctx.strokeStyle = "#77766e"; ctx.stroke(); ctx.fillStyle = "#1d1d1d"; ctx.fillRect(x + 2, y + 2, w - 4, half); ctx.fillStyle = "#101010"; ctx.fillRect(x + 2, y + 4 + half, w - 4, half); ctx.fillStyle = "#b1afa4"; ctx.beginPath(); ctx.roundRect(x + 1, y + Math.floor(h / 2) - 3, 4, 6, 2); ctx.fill(); ctx.beginPath(); ctx.roundRect(x + w - 5, y + Math.floor(h / 2) - 3, 4, 6, 2); ctx.fill(); pixelText(ctx, { ...item, y: y + Math.floor((h - (Number(item.font_size) || 48)) / 2) - 4, template: text, random: [], stroke: "#ffffff" }); }
+    else if (item.type === "flip" || item.type === "odometer") { const fallback = item.type === "flip" ? "#181818" : "#080808"; const fill = item.fill && item.fill !== "transparent" ? item.fill : fallback; const text = format(randomText(item)); const cellWidth = text.length ? w / text.length : w; const textY = y + Math.floor((h - (Number(item.font_size) || 48)) / 2) - 6 + (item.type === "odometer" ? 2 : 0); ctx.fillStyle = fill; if (item.type === "odometer" || Number(item.border_radius) > 0) { ctx.beginPath(); ctx.roundRect(x, y, w, h, Number(item.border_radius) || (item.type === "odometer" ? 6 : 0)); ctx.fill(); if (item.type !== "odometer" || text.length > 1) ctx.stroke(); } else { ctx.fillRect(x, y, w, h); ctx.strokeRect(x + 0.5, y + 0.5, Math.max(0, w - 1), Math.max(0, h - 1)); } if (item.type === "flip") { ctx.beginPath(); ctx.moveTo(x, y + h / 2 + 0.5); ctx.lineTo(x + w, y + h / 2 + 0.5); ctx.stroke(); } [...text].forEach((character, index) => { let textX = x + index * cellWidth, textWidth = cellWidth; let clipped = false; if (item.type === "odometer" && /\d/.test(character)) { const windowWidth = cellWidth - 2; const windowX = textX + (cellWidth - windowWidth) / 2; ctx.beginPath(); ctx.roundRect(windowX, y, windowWidth, h, 2); ctx.stroke(); ctx.save(); ctx.beginPath(); ctx.roundRect(windowX, y, windowWidth, h, 2); ctx.clip(); textX = windowX; textWidth = windowWidth; clipped = true; } pixelText(ctx, { ...item, x: textX, y: textY, width: textWidth, template: character, random: [], stroke: "#ffffff" }); if (clipped) ctx.restore(); }); }
+    else if (item.type === "colon") { if (!item.blink || tick.value % 2) { ctx.fillStyle = item.stroke || "#ffffff"; [h / 3 - 2, h * 2 / 3 - 2].forEach((dotY) => { ctx.beginPath(); ctx.arc(x + w / 2, y + dotY + 2, 2, 0, Math.PI * 2); ctx.fill(); }); } }
     else if (item.type === "image") { ensureImage(item); if (images.has(item.id)) ctx.drawImage(images.get(item.id), x, y, w, h); }
   });
   if (object.value) { const bounds = objectBounds(object.value); ctx.save(); ctx.setLineDash([2, 2]); ctx.strokeStyle = "#147ef5"; ctx.strokeRect(bounds.x - 2, bounds.y - 2, bounds.w + 4, bounds.h + 4); ctx.restore(); }
@@ -199,6 +225,12 @@ function fileToDataUrl(file) { return new Promise((resolve, reject) => { const r
 function loadImage(source) { return new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = source; }); }
 function projectJson() { return JSON.stringify({ ...project.value, objects: project.value.objects.map(({ assetName, ratio, source, editor, ...item }) => item.type === "image" ? { ...item, template: item.template || source || "" } : item) }, null, 2); }
 function download(name, blob) { const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000); }
+function crc32(bytes) { let crc = 0xFFFFFFFF; for (const byte of bytes) { crc ^= byte; for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xEDB88320 & -(crc & 1)); } return (crc ^ 0xFFFFFFFF) >>> 0; }
+function zipEntries(entries) { const encoder = new TextEncoder(); const chunks = []; const central = []; let offset = 0; const u16 = (value) => Uint8Array.of(value & 255, (value >>> 8) & 255); const u32 = (value) => Uint8Array.of(value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255); const join = (parts) => { const size = parts.reduce((sum, part) => sum + part.length, 0); const data = new Uint8Array(size); let at = 0; parts.forEach((part) => { data.set(part, at); at += part.length; }); return data; }; entries.forEach(({ name, data }) => { const nameBytes = encoder.encode(name); const crc = crc32(data); const local = join([u32(0x04034B50), u16(20), u16(0), u16(0), u16(0), u16(0), u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0), nameBytes, data]); chunks.push(local); central.push(join([u32(0x02014B50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0), u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset), nameBytes])); offset += local.length; }); const centralData = join(central); return new Blob([...chunks, centralData, join([u32(0x06054B50), u16(0), u16(0), u16(entries.length), u16(entries.length), u32(centralData.length), u32(offset), u16(0)])], { type: "application/zip" }); }
+function unzipEntries(buffer) { const data = new Uint8Array(buffer); const view = new DataView(buffer); const decoder = new TextDecoder(); const files = new Map(); let offset = 0; while (offset + 4 <= data.length && view.getUint32(offset, true) === 0x04034B50) { const method = view.getUint16(offset + 8, true); const size = view.getUint32(offset + 18, true); const nameLength = view.getUint16(offset + 26, true); const extraLength = view.getUint16(offset + 28, true); if (method !== 0) throw new Error("Compressed ZIP files are not supported"); const start = offset + 30 + nameLength + extraLength; files.set(decoder.decode(data.slice(offset + 30, offset + 30 + nameLength)), data.slice(start, start + size)); offset = start + size; } return files; }
+async function exportJson() { try { await navigator.clipboard.writeText(projectJson()); status.value = "JSON copied to clipboard."; } catch { status.value = "Clipboard export is unavailable."; } }
+async function exportArchive() { if (!selectedFace.value) { status.value = "Open a saved clock face before exporting its archive."; return; } try { const assets = (await listClockFaceAssets(selectedFace.value)).assets || []; const entries = [{ name: "clockface.json", data: new TextEncoder().encode(projectJson()) }]; for (const asset of assets) { const response = await fetch(clockFaceAssetUrl(selectedFace.value, asset)); if (!response.ok) throw new Error(); entries.push({ name: asset, data: new Uint8Array(await response.arrayBuffer()) }); } download(`${selectedFace.value}.zip`, zipEntries(entries)); status.value = `Exported ${entries.length} archive files.`; } catch { status.value = "Clock-face archive export failed."; } }
+async function importArchive(event) { const file = event.target.files?.[0]; if (!file) return; try { const entries = unzipEntries(await file.arrayBuffer()); const json = entries.get("clockface.json"); if (!json) throw new Error(); const parsed = JSON.parse(new TextDecoder().decode(json)); if (parsed.width !== W || parsed.height !== H) throw new Error(); const name = window.prompt("Import archive as", safeFaceName(parsed.name)); if (name === null) return; const face = safeFaceName(name); await saveClockFace(face, JSON.stringify(parsed)); for (const [asset, data] of entries) if (asset !== "clockface.json" && asset.endsWith(".png")) await uploadClockFaceAsset(face, asset, new Blob([data], { type: "image/png" })); await refreshSavedFaces(); selectedFace.value = face; await openFromMaclock(); status.value = `Imported ${entries.size} archive files.`; } catch { status.value = "That is not a supported Maclock face ZIP archive."; } finally { event.target.value = ""; } }
 async function writePng(handle, item) { const image = images.get(item.id); if (!image) return; const out = document.createElement("canvas"); out.width = image.naturalWidth; out.height = image.naturalHeight; out.getContext("2d").drawImage(image, 0, 0); const writable = await (await handle.getFileHandle(item.assetName || `${item.id}.png`, { create: true })).createWritable(); await writable.write(await new Promise((resolve) => out.toBlob(resolve, "image/png"))); await writable.close(); }
 async function saveProject() {
   const base = (project.value.name || "clock_face").replace(/[^\w.-]+/g, "_");
@@ -207,7 +239,7 @@ async function saveProject() {
   }
   download(`${base}.json`, new Blob([projectJson()], { type: "application/json" })); status.value = "JSON downloaded. Use Chrome or Edge to export its PNG asset folder too.";
 }
-async function refreshSavedFaces() { try { const result = await fetchClockFaces(); savedFaces.value = result.faces || []; if (!savedFaces.value.includes(selectedFace.value) && savedFaces.value.length) selectedFace.value = savedFaces.value[0]; } catch { status.value = "Could not list clock faces from Maclock."; } }
+async function refreshSavedFaces() { try { const result = await fetchClockFaces(); savedFaces.value = result.faces || []; savedFaceOptions.value = await Promise.all(savedFaces.value.map(async (id) => { const face = await loadClockFace(id); return { id, name: face.name || id }; })); if (!savedFaces.value.includes(selectedFace.value) && savedFaces.value.length) selectedFace.value = savedFaces.value[0]; } catch { status.value = "Could not list clock faces from Maclock."; } }
 async function openFromMaclock() {
   try {
     const loaded = await loadClockFace(selectedFace.value); project.value = loaded; images.clear(); imageUrls.clear(); localImageTemplates.clear();
@@ -247,7 +279,15 @@ async function saveAsToMaclock() {
   project.value.name = name.trim() || project.value.name;
   await saveToMaclock(name);
 }
+async function useOnMaclock() {
+  if (!selectedFace.value) return;
+  try { await selectClockFace(selectedFace.value); status.value = `Using ${selectedFace.value} on Maclock.`; } catch { status.value = "Maclock could not select this clock face."; }
+}
+async function useBuiltInFace() {
+  try { await selectClockFace("", true); status.value = "Using the built-in clock face."; } catch { status.value = "Maclock could not restore the built-in clock face."; }
+}
 async function loadProject(event) { const file = event.target.files?.[0]; if (!file) return; try { const parsed = JSON.parse(await file.text()); if (parsed.width !== W || parsed.height !== H) throw new Error(); project.value = parsed; selected.value = parsed.objects.length ? 0 : -1; images.clear(); status.value = "Project loaded. Re-import image layers to preview local assets."; render(); } catch { status.value = "That is not a 304×224 Maclock face JSON file."; } event.target.value = ""; }
+async function importJson() { try { const parsed = JSON.parse(await navigator.clipboard.readText()); if (parsed.width !== W || parsed.height !== H) throw new Error(); project.value = parsed; selected.value = parsed.objects.length ? 0 : -1; status.value = "JSON imported from clipboard. Existing face assets were preserved."; render(); } catch { status.value = "Clipboard does not contain a 304×224 Maclock face JSON project."; } }
 let timer = 0;
 let previewResizeObserver = null;
 function updatePreviewScale() {
@@ -265,27 +305,25 @@ watch(project, () => nextTick(render), { deep: true });
 
 <template>
   <section class="face-editor">
-    <div class="face-editor__toolbar"><button @click="newProject">New</button><select v-model="selectedFace" @change="openFromMaclock"><option value="" disabled>Saved clock faces</option><option v-for="face in savedFaces" :key="face" :value="face">{{ face }}</option></select><button @click="openFromMaclock" :disabled="!selectedFace">Open</button><button @click="saveToMaclock">Save</button><button @click="saveAsToMaclock">Save As…</button><span>{{ status }}</span></div>
+    <div class="face-editor__toolbar"><button @click="newProject">New</button><select v-model="selectedFace" @change="openFromMaclock"><option value="" disabled>Saved clock faces</option><option v-for="face in savedFaceOptions" :key="face.id" :value="face.id">{{ face.name }}</option></select><button @click="openFromMaclock" :disabled="!selectedFace">Open</button><button @click="saveToMaclock">Save</button><button @click="saveAsToMaclock">Save As…</button><button @click="exportArchive" :disabled="!selectedFace">Export archive</button><button @click="archiveUpload?.click()">Import archive</button><button @click="exportJson">Export JSON</button><button @click="importJson">Import JSON</button><button @click="useOnMaclock" :disabled="!selectedFace">Use on Maclock</button><button @click="useBuiltInFace">Use built-in</button><span>{{ status }}</span></div>
     <div class="face-editor__layout">
       <aside>
         <strong>Layers</strong>
         <button v-for="(item, index) in project.objects" :key="item.id" class="face-editor__layer" :class="{ selected: selected === index }" @click="selected = index; render()">{{ item.id }} <small>{{ item.type }}</small></button>
-        <div class="face-editor__actions"><button @click="makeObject('rectangle')">+ Rectangle</button><button @click="makeObject('circle')">+ Circle</button><button @click="makeObject('line')">+ Line</button><button @click="makeObject('text')">+ Text</button><button @click="upload?.click()">+ Image</button></div>
-        <input ref="upload" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/svg+xml" @change="addImage">
+        <div class="face-editor__actions"><button @click="newObject">New</button></div>
+        <input ref="upload" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/svg+xml" @change="addImage"><input ref="archiveUpload" class="visually-hidden" type="file" accept="application/zip,.zip" @change="importArchive">
         <div class="face-editor__layer-controls"><button :disabled="!object || selected === 0" @click="moveObject(-1)">Bring back</button><button :disabled="!object || selected === project.objects.length - 1" @click="moveObject(1)">Bring forward</button><button :disabled="!object" @click="toggleObjectFlag('locked')">{{ object?.editor?.locked ? 'Unlock' : 'Lock' }}</button><button :disabled="!object" @click="toggleObjectFlag('hidden')">{{ object?.editor?.hidden ? 'Show' : 'Hide' }}</button><button :disabled="!object" @click="duplicateObject">Duplicate</button><button :disabled="!object" @click="removeObject">Delete</button></div>
       </aside>
       <div ref="preview" class="face-editor__preview"><canvas ref="canvas" width="304" height="224" :style="{ width: `${W * previewScale}px`, height: `${H * previewScale}px` }" @pointerdown="beginDrag" @pointermove="moveDrag" @pointerup="endDrag" @pointercancel="endDrag" /></div>
       <aside class="face-editor__properties">
-        <details><summary>Face</summary><div class="face-editor__section"><label>Name <input v-model="project.name"></label><label>Background <input v-model="project.background"></label><label>Random every (seconds) <input v-model.number="project.random_interval_seconds" type="number" min="1"></label></div></details>
+        <details><summary>Face</summary><div class="face-editor__section"><label>Name <input v-model="project.name"></label><label>Id <input :value="selectedFace" readonly></label><label>Background <input v-model="project.background"></label><label>Random every (seconds) <input v-model.number="project.random_interval_seconds" type="number" min="1"></label></div></details>
         <details><summary>Translations</summary><div class="face-editor__section"><p class="face-editor__hint">Use <code>{tr.key}</code> in text layers. English is the fallback.</p><div v-for="([key, entry]) in translationEntries" :key="key" class="face-editor__translation"><strong>{{ key }}</strong><button type="button" title="Remove translation" @click="removeTranslation(key)">−</button><label>EN <input v-model="entry.en"></label><label>FR <input v-model="entry.fr"></label><label>ES <input v-model="entry.es"></label><label>DE <input v-model="entry.de"></label><label>IT <input v-model="entry.it"></label></div><button type="button" @click="addTranslation">+ Add translation</button></div></details>
         <details><summary>Preview availability</summary><fieldset class="face-editor__availability"><label v-for="key in availabilityValues" :key="key"><input v-model="values[key]" type="checkbox" @change="render"> {{ valueLabel(key) }}</label><label><input v-model="values.floppy_inserted" type="checkbox" @change="render"> Floppy inserted</label><label>Weather <select :value="values.weather_asset" @change="setPreviewWeather($event.target.value)"><option value="sunny">Sunny</option><option value="cloudy">Cloudy</option><option value="rainy">Rainy</option></select></label><label>Language <select v-model="previewLanguage"><option value="en">English</option><option value="fr">French</option><option value="es">Spanish</option><option value="de">Deutsch</option><option value="it">Italian</option></select></label></fieldset></details>
         <template v-if="object">
-          <details><summary>Object · {{ object.id }}</summary><div class="face-editor__section"><label>Id <input v-model="object.id"></label><label>Type <select v-model="object.type"><option v-for="type in objectTypes" :key="type">{{ type }}</option></select></label><label>X <input v-model.number="object.x" type="number"></label><label>Y <input v-model.number="object.y" type="number"></label><label>Width <input v-model.number="object.width" type="number" @change="resizeImage('width')"></label><label>Height <input v-model.number="object.height" type="number" @change="resizeImage('height')"></label></div></details>
-          <details><summary>Appearance</summary><div class="face-editor__section"><label>Stroke <input v-model="object.stroke" placeholder="#000000"></label><label>Fill <select v-model="object.fill"><option value="transparent">Transparent</option><option value="#ffffff">White</option><option value="#000000">Black</option></select></label><label>Stroke width <input v-model.number="object.stroke_width" type="number" min="0"></label></div></details>
+            <details><summary>Object · {{ object.id }}</summary><div class="face-editor__section"><label>Id <input v-model="object.id"></label><label>Type <select v-model="object.type"><option v-for="type in objectTypes" :key="type">{{ type }}</option></select></label><label>X <input v-model.number="object.x" type="number"></label><label>Y <input v-model.number="object.y" type="number"></label><label>Width <input v-model.number="object.width" type="number" @change="resizeImage('width')"></label><label>Height <input v-model.number="object.height" type="number" @change="resizeImage('height')"></label><label v-if="object.type === 'line'">Angle <input v-model="object.angle" placeholder="{hour}" @input="render"></label><label v-if="object.type === 'line'">Max <input v-model.number="object.max" type="number" min="1" @input="render"></label><label v-if="object.type === 'colon'"><input v-model="object.blink" type="checkbox"> Blink</label></div></details>
+            <details><summary>Appearance</summary><div class="face-editor__section"><label>Stroke <input v-model="object.stroke" placeholder="#000000"></label><label>Fill <select v-model="object.fill"><option value="transparent">Transparent</option><option value="#ffffff">White</option><option value="#000000">Black</option></select></label><label>Stroke width <input v-model.number="object.stroke_width" type="number" min="0"></label><label v-if="!['line', 'text', 'image', 'colon'].includes(object.type)">Border radius <input v-model.number="object.border_radius" type="number" min="0"></label></div></details>
           <details><summary>Visible when…</summary><div class="face-editor__section"><p class="face-editor__hint">All conditions must match. No condition means always visible.</p><div v-for="(rule, index) in visibleRules" :key="index" class="face-editor__rule"><select :value="rule.key" @change="updateVisibleRule(index, 'key', $event.target.value)"><option v-for="placeholder in placeholders" :key="placeholder" :value="placeholder">{{ valueLabel(placeholder) }}</option></select><select :value="rule.operator" @change="updateVisibleRule(index, 'operator', $event.target.value)"><option value="==">is</option><option value="!=">is not</option></select><select v-if="typeof values[rule.key] === 'boolean'" :value="rule.value" @change="updateVisibleRule(index, 'value', $event.target.value)"><option value="true">available / yes</option><option value="false">unavailable / no</option></select><input v-else :value="rule.value" @input="updateVisibleRule(index, 'value', $event.target.value)" :placeholder="String(values[rule.key] ?? '')"><button type="button" title="Remove condition" @click="removeVisibleRule(index)">−</button></div><button type="button" @click="addVisibleRule">+ Add condition</button></div></details>
-          <template v-if="object.type === 'text'">
-            <details><summary>Text</summary><div class="face-editor__section"><label>Template <input v-model="object.template" placeholder="{time}"></label><div class="face-editor__placeholder"><select v-model="selectedPlaceholder"><option v-for="placeholder in placeholderOptions" :key="placeholder.key" :value="placeholder.key">{{ placeholder.label }}</option></select><button type="button" @click="insertPlaceholder">Insert</button></div><label>LVGL pixel font <select v-model="object.font_family" @change="selectFont"><option v-for="font in lvglFonts" :key="font.id" :value="font.id">{{ font.id }} · {{ font.size }} px{{ font.digitsOnly ? ' · digits' : '' }}</option></select></label><label>Font size <input v-model.number="object.font_size" type="number" min="1" @change="render"></label><label>Alignment <select v-model="object.align"><option v-for="alignment in alignments" :key="alignment">{{ alignment }}</option></select></label><label>Random text (one per line) <textarea v-model="randomLines" rows="5" spellcheck="false"></textarea></label></div></details>
-          </template>
+          <details v-if="['text', 'flip', 'odometer'].includes(object.type)"><summary>Text</summary><div class="face-editor__section"><label>Template <input v-model="object.template" placeholder="{time_min}"></label><div class="face-editor__placeholder"><select v-model="selectedPlaceholder"><option v-for="placeholder in placeholderOptions" :key="placeholder.key" :value="placeholder.key">{{ placeholder.label }}</option></select><button type="button" @click="insertPlaceholder">Insert</button></div><label>LVGL pixel font <select v-model="object.font_family" @change="selectFont"><option v-for="font in lvglFonts" :key="font.id" :value="font.id">{{ font.id }} · {{ font.size }} px{{ font.digitsOnly ? ' · digits' : '' }}</option></select></label><label>Font size <input v-model.number="object.font_size" type="number" min="1" @change="render"></label><label>Alignment <select v-model="object.align"><option v-for="alignment in alignments" :key="alignment">{{ alignment }}</option></select></label><label v-if="object.type === 'text'">Random text (one per line) <textarea v-model="randomLines" rows="5" spellcheck="false"></textarea></label></div></details>
           <template v-if="object.type === 'image'">
             <details><summary>Image</summary><div class="face-editor__section"><label>PNG template <input v-model="object.template" :placeholder="object.source || 'image.png'"></label><div class="face-editor__placeholder"><select v-model="selectedPlaceholder"><option v-for="placeholder in placeholderOptions" :key="placeholder.key" :value="placeholder.key">{{ placeholder.label }}</option></select><button type="button" @click="insertImagePlaceholder">Insert</button></div><label>Asset filename <input v-model="object.assetName"></label><label><input v-model="object.keep_ratio" type="checkbox"> Keep image ratio</label></div></details>
           </template>

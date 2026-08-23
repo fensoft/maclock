@@ -13,9 +13,11 @@ import {
   deleteSound,
   exportConfiguration,
   fetchMiniVmacFiles,
+  fetchClockFaces,
   fetchScreensaverPhotos,
   fetchState,
   fetchStatus,
+  loadClockFace,
   importSoundUrl,
   miniVmacDownloadUrl,
   postForm,
@@ -79,6 +81,15 @@ const screensaverPhotos = ref([]);
 const screensaverPhotoInput = ref(null);
 const restoreConfirmation = ref(false);
 const pendingBackupFile = ref(null);
+const faceOptions = ref([]);
+const colonBlinkEnabled = computed({
+  get: () => panelState.value?.appearance?.colonBlink !== 2,
+  set: (enabled) => {
+    if (panelState.value?.appearance) {
+      panelState.value.appearance.colonBlink = enabled ? 0 : 2;
+    }
+  },
+});
 let statusPoll = 0;
 let noticeTimeout = 0;
 let autoSaveTimeout = 0;
@@ -104,24 +115,6 @@ const activeAppEntry = computed(
 );
 const activeAppTitle = computed(() =>
   activeAppEntry.value ? t(activeAppEntry.value.titleKey) : "",
-);
-const faceOptions = computed(() =>
-  [
-    "macintosh",
-    "compactDigital",
-    "analog",
-    "flipClock",
-    "odometerClock",
-    "macOS8",
-    "lcd",
-    "departureBoard",
-    "trainStation",
-    "pixelLandscape",
-    "paint",
-    "circuitBoard",
-    "newspaper",
-    "cassette",
-  ].map((key) => t(key)),
 );
 const themeOptions = computed(() => ["light", "dark"].map((key) => t(key)));
 const accentSwatches = [
@@ -234,6 +227,11 @@ function editableSnapshot(appId) {
       return copyFields(panelState.value.appearance, [
         "language",
         "face",
+        "customClockFace",
+        "animationSpeed",
+        "colonBlink",
+        "continuousSeconds",
+        "showSeconds",
         "theme",
         "accent",
         "fontSize",
@@ -566,13 +564,23 @@ function saveAppearance() {
     "/api/appearance",
     {
       ...appearance,
-      leadingZero: appearance.leadingZero ? 1 : 0,
-      seconds: appearance.seconds ? 1 : 0,
-      weekday: appearance.weekday ? 1 : 0,
-      weather: appearance.weather ? 1 : 0,
+      continuousSeconds: appearance.continuousSeconds ? 1 : 0,
+      showSeconds: appearance.showSeconds ? 1 : 0,
     },
     t("appearanceSaved"),
   );
+}
+
+async function loadFaceOptions() {
+  try {
+    const faces = (await fetchClockFaces()).faces || [];
+    faceOptions.value = await Promise.all(faces.map(async (id) => {
+      const project = await loadClockFace(id);
+      return { id, name: project.name || id };
+    }));
+  } catch {
+    faceOptions.value = [];
+  }
 }
 
 function saveLocation() {
@@ -1135,6 +1143,7 @@ async function confirmConfigurationRestore() {
 
 onMounted(async () => {
   await loadState();
+  await loadFaceOptions();
   const linkedApp = appFromUrl();
   if (linkedApp) openApp(linkedApp);
   statusPoll = window.setInterval(pollStatus, 3000);
@@ -1286,85 +1295,21 @@ onBeforeUnmount(() => {
 
               <label class="field">
                 <span>{{ t("clockFace") }}</span>
-                <select v-model.number="panelState.appearance.face">
+                <select v-model="panelState.appearance.customClockFace">
                   <option
-                    v-for="(name, index) in faceOptions"
-                    :key="name"
-                    :value="index"
+                    v-for="face in faceOptions"
+                    :key="face.id"
+                    :value="face.id"
                   >
-                    {{ name }}
+                    {{ face.name }}
                   </option>
                 </select>
               </label>
 
-              <fieldset class="radio-box">
-                <legend>{{ t("theme") }}</legend>
-                <label
-                  v-for="(name, index) in themeOptions"
-                  :key="name"
-                  class="classic-radio"
-                >
-                  <input
-                    v-model.number="panelState.appearance.theme"
-                    type="radio"
-                    :value="index"
-                  />
-                  <span>{{ name }}</span>
-                </label>
-              </fieldset>
-
-              <fieldset class="accent-box">
-                <legend>{{ t("accentColor") }}</legend>
-                <label
-                  v-for="(accent, index) in accentOptions"
-                  :key="accent.name"
-                  class="accent-option"
-                >
-                  <input
-                    v-model.number="panelState.appearance.accent"
-                    type="radio"
-                    :value="index"
-                  />
-                  <span
-                    class="accent-swatch"
-                    :style="{ background: accent.swatch }"
-                    aria-hidden="true"
-                  ></span>
-                  <span>{{ accent.name }}</span>
-                </label>
-              </fieldset>
-
-              <fieldset class="radio-box">
-                <legend>{{ t("numeralSize") }}</legend>
-                <label
-                  v-for="(name, index) in numeralSizeOptions"
-                  :key="name"
-                  class="classic-radio"
-                >
-                  <input
-                    v-model.number="panelState.appearance.fontSize"
-                    type="radio"
-                    :value="index"
-                  />
-                  <span>{{ name }}</span>
-                </label>
-              </fieldset>
-
-              <fieldset class="radio-box">
-                <legend>{{ t("flipSpeed") }}</legend>
-                <label
-                  v-for="(name, index) in flipSpeedOptions"
-                  :key="name"
-                  class="classic-radio"
-                >
-                  <input
-                    v-model.number="panelState.appearance.flipSpeed"
-                    type="radio"
-                    :value="index"
-                  />
-                  <span>{{ name }}</span>
-                </label>
-              </fieldset>
+              <label class="field"><span>Animation speed</span><select v-model.number="panelState.appearance.animationSpeed"><option value="0">Slow</option><option value="1">Normal</option><option value="2">Fast</option></select></label>
+              <label class="check-line"><input v-model="colonBlinkEnabled" type="checkbox"><span>Colon blink</span></label>
+              <label class="check-line"><input v-model="panelState.appearance.continuousSeconds" type="checkbox"><span>Continuous seconds</span></label>
+              <label class="check-line"><input v-model="panelState.appearance.showSeconds" type="checkbox"><span>Show seconds</span></label>
 
               <fieldset class="radio-box">
                 <legend>{{ t("hourFormat") }}</legend>
@@ -1382,37 +1327,6 @@ onBeforeUnmount(() => {
                 </label>
               </fieldset>
 
-              <label class="check-line">
-                <input
-                  v-model="panelState.appearance.leadingZero"
-                  type="checkbox"
-                />
-                <span>{{ t("leadingZero") }}</span>
-              </label>
-
-              <label class="check-line">
-                <input
-                  v-model="panelState.appearance.seconds"
-                  type="checkbox"
-                />
-                <span>{{ t("showSeconds") }}</span>
-              </label>
-
-              <label class="check-line">
-                <input
-                  v-model="panelState.appearance.weekday"
-                  type="checkbox"
-                />
-                <span>{{ t("showWeekday") }}</span>
-              </label>
-
-              <label class="check-line">
-                <input
-                  v-model="panelState.appearance.weather"
-                  type="checkbox"
-                />
-                <span>{{ t("showWeather") }}</span>
-              </label>
 
               <label class="field">
                 <span class="field-line">

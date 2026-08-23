@@ -13,14 +13,20 @@
       "es": "Archivo  Edición  Visualización  Especial",
       "de": "Ablage  Bearbeiten  Darstellung  Spezial",
       "it": "Archivio  Composizione  Vista  Speciale"
-    }
+    },
+    "in": { "en": "In", "fr": "Int", "es": "Int", "de": "Innen", "it": "Int" },
+    "out": { "en": "Out", "fr": "Ext", "es": "Ext", "de": "Außen", "it": "Est" },
+    "today": { "en": "Today", "fr": "Aujourd'hui", "es": "Hoy", "de": "Heute", "it": "Oggi" }
   },
   "objects": [
     { "id": "background", "type": "image", "template": "background.png", "x": 0, "y": 0, "width": 304, "height": 224, "keep_ratio": true, "visible_if": "" },
     { "id": "paint_canvas", "type": "image", "template": "paint.png", "x": 0, "y": 0, "width": 304, "height": 224, "keep_ratio": true, "visible_if": "" },
     { "id": "menu", "type": "image", "template": "menu.png", "x": 0, "y": 0, "width": 304, "height": 20, "keep_ratio": true, "visible_if": "" },
     { "id": "menu_titles", "type": "text", "x": 41, "y": 3, "width": 210, "height": 10, "stroke": "#000000", "template": "{tr.menu}", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "left", "visible_if": "", "random": [] },
-    { "id": "time", "type": "text", "x": 42, "y": 79, "width": 220, "height": 42, "stroke": "#000000", "template": "{time}", "font_family": "lv_font_chicago_32", "font_size": 32, "align": "center", "visible_if": "rtc_available", "random": [] },
-    { "id": "seconds", "type": "text", "x": 166, "y": 110, "width": 40, "height": 12, "stroke": "#000000", "template": ":{second}", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "center", "visible_if": "rtc_available", "random": [] }
+    { "id": "time", "type": "text", "x": 82, "y": 60, "width": 210, "height": 42, "stroke": "#000000", "template": "{time}", "font_family": "lv_font_chicago_32", "font_size": 32, "align": "center", "visible_if": "rtc_available", "random": [] },
+    { "id": "date", "type": "text", "x": 82, "y": 103, "width": 210, "height": 12, "stroke": "#000000", "template": "{weekday_short} {date}", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "center", "visible_if": "rtc_available", "random": [] },
+    { "id": "weather_icon", "type": "image", "template": "{weather_asset}.png", "x": 275, "y": 147, "width": 12, "height": 12, "keep_ratio": true, "visible_if": "weather_available" },
+    { "id": "weather_wifi", "type": "text", "x": 92, "y": 131, "width": 194, "height": 24, "stroke": "#000000", "template": "{tr.in}: {internal_temp}{temperature_unit}  {tr.out}: {external_temp}{temperature_unit}{newline}{tr.today}: {external_min}-{external_max}{temperature_unit}", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "center", "visible_if": "wifi_available and weather_available", "random": [] },
+    { "id": "weather_local", "type": "text", "x": 92, "y": 147, "width": 194, "height": 12, "stroke": "#000000", "template": "{tr.in}: {internal_temp}{temperature_unit}", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "center", "visible_if": "!wifi_available and weather_available", "random": [] }
   ]
 }

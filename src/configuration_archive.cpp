@@ -18,7 +18,7 @@ namespace
 {
 static constexpr char kArchiveFormat[] =
     "maclock-configuration";
-static constexpr uint8_t kArchiveVersion = 1;
+static constexpr uint8_t kArchiveVersion = 2;
 static constexpr char kConfigurationEntry[] =
     "configuration.json";
 static constexpr char kDownloadedPrefix[] =
@@ -344,24 +344,18 @@ static void serialize_configuration(
         configuration.settings.temperature_unit);
     settings["clockFace"] = static_cast<uint8_t>(
         configuration.settings.clock_face);
-    settings["clockTheme"] = static_cast<uint8_t>(
-        configuration.settings.clock_theme);
-    settings["faceAccent"] = static_cast<uint8_t>(
-        configuration.settings.face_customization.accent);
-    settings["faceNumeralSize"] = static_cast<uint8_t>(
-        configuration.settings.face_customization.numeral_size);
-    settings["showWeather"] =
-        configuration.settings.face_customization.show_weather;
-    settings["flipSpeed"] = static_cast<uint8_t>(
+    settings["customClockFace"] =
+        configuration.settings.custom_clock_face;
+    settings["animationSpeed"] = static_cast<uint8_t>(
         configuration.settings.face_customization.flip_speed);
+    settings["colonBlink"] = static_cast<uint8_t>(
+        configuration.settings.face_customization.colon_blink);
+    settings["continuousSeconds"] =
+        configuration.settings.face_customization.continuous_seconds;
     settings["hourFormat"] = static_cast<uint8_t>(
         configuration.settings.time_format.hour_format);
-    settings["leadingZero"] =
-        configuration.settings.time_format.leading_zero;
     settings["showSeconds"] =
         configuration.settings.time_format.show_seconds;
-    settings["showWeekday"] =
-        configuration.settings.time_format.show_weekday;
     settings["screensaverMode"] = static_cast<uint8_t>(
         configuration.settings.screensaver_mode);
     settings["screensaverDelay"] =
@@ -528,36 +522,18 @@ static bool deserialize_configuration(
         goto invalid_settings;
     configuration.settings.clock_face =
         static_cast<ClockFace>(value);
+    if (settings["customClockFace"].is<const char *>())
+    {
+        const char *custom_face = settings["customClockFace"];
+        if (strlen(custom_face) >=
+            sizeof(configuration.settings.custom_clock_face))
+            goto invalid_settings;
+        strlcpy(
+            configuration.settings.custom_clock_face, custom_face,
+            sizeof(configuration.settings.custom_clock_face));
+    }
     if (!read_json_uint(
-            settings["clockTheme"], 0,
-            static_cast<uint8_t>(ClockTheme::Count) - 1,
-            value))
-        goto invalid_settings;
-    configuration.settings.clock_theme =
-        static_cast<ClockTheme>(value);
-    if (!read_json_uint(
-            settings["faceAccent"], 0,
-            static_cast<uint8_t>(FaceAccent::Count) - 1,
-            value))
-        goto invalid_settings;
-    configuration.settings.face_customization.accent =
-        static_cast<FaceAccent>(value);
-    if (!read_json_uint(
-            settings["faceNumeralSize"], 0,
-            static_cast<uint8_t>(
-                FaceNumeralSize::Count) -
-                1,
-            value))
-        goto invalid_settings;
-    configuration.settings.face_customization.numeral_size =
-        static_cast<FaceNumeralSize>(value);
-    if (!read_json_bool(
-            settings["showWeather"], boolean))
-        goto invalid_settings;
-    configuration.settings.face_customization.show_weather =
-        boolean;
-    if (!read_json_uint(
-            settings["flipSpeed"], 0,
+            settings["animationSpeed"], 0,
             static_cast<uint8_t>(
                 FlipAnimationSpeed::Count) -
                 1,
@@ -565,6 +541,21 @@ static bool deserialize_configuration(
         goto invalid_settings;
     configuration.settings.face_customization.flip_speed =
         static_cast<FlipAnimationSpeed>(value);
+    if (!settings["colonBlink"].isNull())
+    {
+        if (!read_json_uint(settings["colonBlink"], 0,
+                static_cast<uint8_t>(ColonBlinkInterval::Count) - 1, value))
+            goto invalid_settings;
+        configuration.settings.face_customization.colon_blink =
+            static_cast<ColonBlinkInterval>(value);
+    }
+    if (!settings["continuousSeconds"].isNull())
+    {
+        if (!read_json_uint(settings["continuousSeconds"], 0, 1, value))
+            goto invalid_settings;
+        configuration.settings.face_customization.continuous_seconds =
+            value != 0;
+    }
     if (!read_json_uint(
             settings["hourFormat"], 0,
             static_cast<uint8_t>(HourFormat::Count) - 1,
@@ -572,21 +563,12 @@ static bool deserialize_configuration(
         goto invalid_settings;
     configuration.settings.time_format.hour_format =
         static_cast<HourFormat>(value);
-    if (!read_json_bool(
-            settings["leadingZero"], boolean))
-        goto invalid_settings;
-    configuration.settings.time_format.leading_zero =
-        boolean;
-    if (!read_json_bool(
-            settings["showSeconds"], boolean))
-        goto invalid_settings;
-    configuration.settings.time_format.show_seconds =
-        boolean;
-    if (!read_json_bool(
-            settings["showWeekday"], boolean))
-        goto invalid_settings;
-    configuration.settings.time_format.show_weekday =
-        boolean;
+    if (!settings["showSeconds"].isNull())
+    {
+        if (!read_json_uint(settings["showSeconds"], 0, 1, value))
+            goto invalid_settings;
+        configuration.settings.time_format.show_seconds = value != 0;
+    }
     if (!read_json_uint(
             settings["screensaverMode"], 0,
             static_cast<uint8_t>(

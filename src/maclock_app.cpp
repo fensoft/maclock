@@ -20,6 +20,7 @@
 #include "TouchSensor.h"
 #include <Wire.h>
 #include <LittleFS.h>
+#include <ArduinoJson.h>
 #include <math.h>
 #include "datetime_ui.h"
 #include "alarm_ui.h"
@@ -50,6 +51,11 @@ LV_FONT_DECLARE(lv_font_chicago_digits_6);
 LV_FONT_DECLARE(lv_font_chicago_digits_10);
 LV_FONT_DECLARE(lv_font_chicago_digits_40);
 LV_FONT_DECLARE(lv_font_chicago_digits_56);
+LV_FONT_DECLARE(lv_font_seven_segment_24);
+LV_FONT_DECLARE(lv_font_seven_segment_48);
+LV_FONT_DECLARE(lv_font_seven_segment_64);
+LV_FONT_DECLARE(lv_font_seven_segment_80);
+LV_FONT_DECLARE(lv_font_seven_segment_96);
 
 static MaclockApp *active_app = nullptr;
 
@@ -159,10 +165,8 @@ enum BootOptionsPage
     BOOT_OPTIONS_LANGUAGE,
     BOOT_OPTIONS_REGIONAL,
     BOOT_OPTIONS_DATETIME,
-    BOOT_OPTIONS_DISPLAY,
     BOOT_OPTIONS_CLOCK_FACE,
-    BOOT_OPTIONS_FACE_STYLE,
-    BOOT_OPTIONS_FACE_DETAILS,
+    BOOT_OPTIONS_FACE_SETTINGS,
     BOOT_OPTIONS_SCREENSAVER,
     BOOT_OPTIONS_NIGHT_SCHEDULE,
     BOOT_OPTIONS_NIGHT_SCREEN,
@@ -199,6 +203,8 @@ enum BootDateTimeField : uint8_t
     BOOT_DATETIME_FIELD_COUNT
 };
 
+static constexpr size_t kFilesystemClockFaceMax = 32;
+
 class BootOptionsView
 {
 public:
@@ -227,12 +233,10 @@ public:
     lv_obj_t *date_format_options;
     lv_obj_t *regional_hour_button;
     lv_obj_t *regional_hour_label;
-    lv_obj_t *leading_zero_checkbox;
     lv_obj_t *regional_temperature_button;
     lv_obj_t *regional_temperature_label;
-    lv_obj_t *weekday_checkbox;
-    lv_obj_t *seconds_checkbox;
-    lv_obj_t *dark_mode_checkbox;
+    lv_obj_t *regional_seconds_button;
+    lv_obj_t *regional_seconds_label;
     lv_obj_t *datetime_fields;
     lv_obj_t *datetime_minus;
     lv_obj_t *datetime_plus;
@@ -242,15 +246,16 @@ public:
     BootDateTimeField datetime_selected = BOOT_DATETIME_HOUR;
     uint32_t datetime_last_refresh_ms = 0;
     lv_obj_t *clock_face_options;
-    lv_obj_t *clock_face_items[
-        static_cast<uint8_t>(ClockFace::Count)];
-    lv_obj_t *face_accent_label;
-    lv_obj_t *face_accent_options;
-    lv_obj_t *face_size_label;
-    lv_obj_t *face_size_options;
-    lv_obj_t *weather_checkbox;
+    lv_obj_t *clock_face_items[kFilesystemClockFaceMax] = {};
+    char clock_face_names[kFilesystemClockFaceMax][AppSettings::kCustomClockFaceNameMax] = {};
+    char clock_face_labels[kFilesystemClockFaceMax][64] = {};
+    uint8_t clock_face_count = 0;
     lv_obj_t *flip_speed_label;
     lv_obj_t *flip_speed_options;
+    lv_obj_t *colon_blink_label;
+    lv_obj_t *colon_blink_options;
+    lv_obj_t *continuous_seconds_label;
+    lv_obj_t *continuous_seconds_options;
     lv_obj_t *screensaver_options;
     lv_obj_t *screensaver_items[
         static_cast<uint8_t>(ScreensaverMode::Count)];
@@ -304,33 +309,6 @@ public:
     lv_obj_t *calibration_label;
 };
 
-static constexpr ClockFace CLOCK_FACE_MACINTOSH =
-    ClockFace::Macintosh;
-static constexpr ClockFace CLOCK_FACE_COMPACT =
-    ClockFace::Compact;
-static constexpr ClockFace CLOCK_FACE_ANALOG =
-    ClockFace::Analog;
-static constexpr ClockFace CLOCK_FACE_FLIP =
-    ClockFace::Flip;
-static constexpr ClockFace CLOCK_FACE_ODOMETER =
-    ClockFace::Odometer;
-static constexpr ClockFace CLOCK_FACE_MACOS8 =
-    ClockFace::MacOS8;
-static constexpr uint8_t CLOCK_FACE_COUNT =
-    static_cast<uint8_t>(ClockFace::Count);
-
-static bool is_macintosh_desktop_face(ClockFace face)
-{
-    return face == CLOCK_FACE_MACINTOSH ||
-           face == CLOCK_FACE_MACOS8;
-}
-
-static constexpr ClockTheme CLOCK_THEME_LIGHT =
-    ClockTheme::Light;
-static constexpr ClockTheme CLOCK_THEME_DARK =
-    ClockTheme::Dark;
-static constexpr uint8_t CLOCK_THEME_COUNT =
-    static_cast<uint8_t>(ClockTheme::Count);
 
 static constexpr ScreensaverMode SCREENSAVER_OFF =
     ScreensaverMode::Off;
@@ -343,8 +321,6 @@ static constexpr size_t kScreensaverStarCount = 24;
 static constexpr size_t kScreensaverMatrixColumnCount = 12;
 static constexpr size_t kScreensaverPipeSegmentCount = 32;
 static constexpr size_t kScreensaverFlyingClockCount = 5;
-static constexpr size_t kFlipDigitCount = 6;
-static constexpr size_t kOdometerDigitCount = 6;
 
 struct FlipCardAnimation
 {
@@ -365,15 +341,42 @@ struct FlipCardAnimation
     bool animating;
 };
 
-struct OdometerDigitAnimation
+enum class CustomFaceWidgetType : uint8_t
 {
-    lv_obj_t *window;
-    lv_obj_t *current_label;
-    lv_obj_t *next_label;
-    char displayed[2];
-    char pending[2];
-    bool initialized;
-    bool animating;
+    None,
+    Flip,
+    Odometer,
+    Colon
+};
+
+struct CustomFaceWidget
+{
+    CustomFaceWidgetType type = CustomFaceWidgetType::None;
+    lv_obj_t *root = nullptr;
+    lv_obj_t *current[12] = {};
+    lv_obj_t *next[12] = {};
+    FlipCardAnimation flip_cards[12] = {};
+    const lv_font_t *font = nullptr;
+    lv_color_t stroke = lv_color_white();
+    lv_text_align_t align = LV_TEXT_ALIGN_CENTER;
+    char template_text[64] = {};
+    char displayed[64] = {};
+    int16_t width = 0;
+    int16_t height = 0;
+    int16_t text_y = 0;
+    uint8_t character_count = 0;
+    bool blink = false;
+};
+
+struct CustomFaceDynamicLine
+{
+    lv_obj_t *object = nullptr;
+    lv_point_precise_t points[2] = {};
+    char angle_template[32] = {};
+    float maximum = 0.0f;
+    int16_t x = 0;
+    int16_t y = 0;
+    int16_t length = 0;
 };
 
 struct ClockRenderSnapshot
@@ -422,41 +425,23 @@ public:
         const ClockRenderSnapshot &snapshot);
     void updateMacintoshLabels(
         const ClockRenderSnapshot &snapshot);
+    bool showCustomFace(const ClockRenderSnapshot &snapshot);
+    void updateCustomFace(const ClockRenderSnapshot &snapshot);
+    void refreshCustomFaceWidgets(const ClockRenderSnapshot &snapshot);
+    void refreshCustomFaceLines(const ClockRenderSnapshot &snapshot);
+    void hideCustomFace();
 
-    lv_obj_t *compact;
-    lv_obj_t *compact_title;
-    lv_obj_t *compact_time;
-    lv_obj_t *compact_meridiem;
-    lv_obj_t *compact_date;
-    lv_obj_t *compact_weather;
-    lv_obj_t *analog;
-    lv_obj_t *analog_dial;
-    lv_obj_t *analog_numbers[12];
-    lv_obj_t *analog_hour_hand;
-    lv_obj_t *analog_minute_hand;
-    lv_obj_t *analog_second_hand;
-    lv_obj_t *analog_center;
-    lv_point_precise_t analog_hour_points[2];
-    lv_point_precise_t analog_minute_points[2];
-    lv_point_precise_t analog_second_points[2];
-    lv_obj_t *analog_date;
-    lv_obj_t *flip;
-    lv_obj_t *flip_cards[kFlipDigitCount];
-    lv_obj_t *flip_digits[kFlipDigitCount];
-    lv_obj_t *flip_colons[2];
-    lv_obj_t *flip_colon_tops[2];
-    lv_obj_t *flip_colon_bottoms[2];
-    lv_obj_t *flip_title;
-    lv_obj_t *flip_meridiem;
-    lv_obj_t *flip_date;
-    FlipCardAnimation flip_animations[kFlipDigitCount];
-    lv_obj_t *odometer;
-    lv_obj_t *odometer_panel;
-    lv_obj_t *odometer_title;
-    lv_obj_t *odometer_meridiem;
-    lv_obj_t *odometer_date;
-    OdometerDigitAnimation
-        odometer_animations[kOdometerDigitCount];
+    lv_obj_t *custom_face;
+    lv_obj_t *custom_error;
+    char custom_loaded_name[AppSettings::kCustomClockFaceNameMax];
+    char custom_image_paths[64][96];
+    lv_point_precise_t custom_line_points[64][2];
+    CustomFaceWidget custom_widgets[8];
+    size_t custom_widget_count = 0;
+    CustomFaceDynamicLine custom_lines[32];
+    size_t custom_line_count = 0;
+    bool custom_loaded = false;
+    uint32_t custom_last_refresh_ms = 0;
     lv_obj_t *screensaver;
     lv_obj_t *screensaver_star_layer;
     lv_obj_t *screensaver_stars[kScreensaverStarCount];
@@ -653,7 +638,6 @@ static lv_timer_t *g_cursor_timer = nullptr;
 #define g_date_format (app_settings.date_format)
 #define g_temperature_unit (app_settings.temperature_unit)
 #define g_clock_face (app_settings.clock_face)
-#define g_clock_theme (app_settings.clock_theme)
 #define g_face_customization \
     (app_settings.face_customization)
 #define g_time_format (app_settings.time_format)
@@ -693,9 +677,9 @@ static uint8_t g_floppy_sound_volume = 60;
 static const char *g_brightness_map[4] = {};
 static const char *g_date_format_map[4] = {
     "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", ""};
-static const char *g_face_accent_map[9] = {};
-static const char *g_face_size_map[4] = {};
 static const char *g_flip_speed_map[4] = {};
+static const char *g_colon_blink_map[3] = {};
+static const char *g_continuous_seconds_map[3] = {};
 static const uint8_t g_screensaver_delays_minutes[] = {
     1, 5, 10, 30};
 static const char *g_screensaver_delay_map[7] = {};
@@ -1068,6 +1052,7 @@ static void maybe_start_chime(const DateTime &current)
 #include "ui/boot_options_view_layout.cpp"
 #include "ui/ui_shell.cpp"
 #include "ui/clock_view_common.cpp"
+#include "ui/clock_view_custom.cpp"
 #include "ui/clock_view_faces.cpp"
 #include "ui/clock_view_screensavers.cpp"
 #include "ui/clock_view_screensavers_extended.cpp"

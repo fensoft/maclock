@@ -488,6 +488,11 @@ export async function loadClockFace(name) {
   return response.json();
 }
 
+export async function listClockFaceAssets(name) {
+  if (import.meta.env.DEV) return { assets: [] };
+  return realFetch(`/api/clockface/assets?name=${encodeURIComponent(name)}`);
+}
+
 export async function saveClockFace(name, json) {
   if (import.meta.env.DEV) {
     demoClockFaceProjects.set(name, clone(JSON.parse(json)));
@@ -495,6 +500,11 @@ export async function saveClockFace(name, json) {
     return { ok: true, message: "Clock face saved" };
   }
   return postForm("/api/clockface/project", { name, json });
+}
+
+export async function selectClockFace(name, clear = false) {
+  if (import.meta.env.DEV) return { ok: true, message: clear ? "Built-in face selected" : "Clock face selected" };
+  return postForm("/api/clockface/select", clear ? { clear: 1 } : { name });
 }
 
 export async function uploadClockFaceAsset(face, name, blob) {

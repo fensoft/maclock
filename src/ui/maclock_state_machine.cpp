@@ -164,6 +164,8 @@ void MaclockApp::tick()
         state_start_ms_ = now;
         requested_state_ = UiState::None;
     }
+    if (current_state_ != UI_STATE_NORMAL)
+        clock_view.hideCustomFace();
 
     if (last_state_ == UI_STATE_WIFI_SETUP &&
         current_state_ != UI_STATE_WIFI_SETUP)
@@ -594,11 +596,7 @@ void MaclockApp::tick()
 
         if (!clock_view.last_update_ms || now - clock_view.last_update_ms >= 100)
         {
-            if (is_macintosh_desktop_face(g_clock_face) &&
-                inputs.floppy)
-                lv_obj_clear_flag(ui_shell.icon, LV_OBJ_FLAG_HIDDEN);
-            else
-                lv_obj_add_flag(ui_shell.icon, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(ui_shell.icon, LV_OBJ_FLAG_HIDDEN);
             clock_view.update(make_clock_snapshot(now));
             lv_timer_handler();
             clock_view.last_update_ms = now;

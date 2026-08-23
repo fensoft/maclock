@@ -27,6 +27,13 @@
       "es": "Ext",
       "de": "Außen",
       "it": "Est"
+    },
+    "today": {
+      "en": "Today",
+      "fr": "Aujourd'hui",
+      "es": "Hoy",
+      "de": "Heute",
+      "it": "Oggi"
     }
   },
   "objects": [
@@ -120,18 +127,33 @@
       "visible_if": "weather_available"
     },
     {
-      "id": "weather",
+      "id": "weather_wifi",
       "type": "text",
       "x": 25,
       "y": 164,
       "width": 241,
       "height": 12,
       "stroke": "#000000",
-      "template": "{tr.in}: {internal_temp}{temperature_unit}   {tr.out}: {external_temp}{temperature_unit}",
+      "template": "{tr.in}: {internal_temp}{temperature_unit}   {tr.out}: {external_temp}{temperature_unit}   {tr.today}: {external_min}-{external_max}{temperature_unit}",
       "font_family": "lv_font_chicago_8",
       "font_size": 8,
       "align": "center",
-      "visible_if": "weather_available",
+      "visible_if": "wifi_available and weather_available",
+      "random": []
+    },
+    {
+      "id": "weather_local",
+      "type": "text",
+      "x": 25,
+      "y": 164,
+      "width": 241,
+      "height": 12,
+      "stroke": "#000000",
+      "template": "{tr.in}: {internal_temp}{temperature_unit}",
+      "font_family": "lv_font_chicago_8",
+      "font_size": 8,
+      "align": "center",
+      "visible_if": "!wifi_available and weather_available",
       "random": []
     },
     {

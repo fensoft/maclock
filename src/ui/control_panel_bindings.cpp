@@ -171,10 +171,10 @@ bool MaclockApp::applyControlConfiguration(
     if (!applyControlAppearance(
             configuration.settings.language,
             configuration.settings.clock_face,
-            configuration.settings.clock_theme,
             configuration.brightness,
             configuration.settings.face_customization,
-            configuration.settings.time_format) ||
+            configuration.settings.time_format,
+            configuration.settings.custom_clock_face) ||
         !applyControlScreensaver(
             configuration.settings.screensaver_mode,
             configuration.settings.screensaver_delay_index,
@@ -255,22 +255,16 @@ bool MaclockApp::applyControlConfiguration(
 
 bool MaclockApp::applyControlAppearance(
     UiLanguage language,
-    ClockFace face, ClockTheme theme, uint8_t brightness,
+    ClockFace face, uint8_t brightness,
     const FaceCustomizationSettings &face_customization,
-    const TimeFormatSettings &time_format)
+    const TimeFormatSettings &time_format,
+    const char *custom_clock_face)
 {
     if (language >= UI_LANGUAGE_COUNT ||
         static_cast<uint8_t>(face) >=
             static_cast<uint8_t>(ClockFace::Count) ||
-        static_cast<uint8_t>(theme) >=
-            static_cast<uint8_t>(ClockTheme::Count) ||
         static_cast<uint8_t>(time_format.hour_format) >=
             static_cast<uint8_t>(HourFormat::Count) ||
-        static_cast<uint8_t>(face_customization.accent) >=
-            static_cast<uint8_t>(FaceAccent::Count) ||
-        static_cast<uint8_t>(
-            face_customization.numeral_size) >=
-            static_cast<uint8_t>(FaceNumeralSize::Count) ||
         static_cast<uint8_t>(face_customization.flip_speed) >=
             static_cast<uint8_t>(
                 FlipAnimationSpeed::Count) ||
@@ -283,29 +277,29 @@ bool MaclockApp::applyControlAppearance(
         app_settings.language != language;
     app_settings.language = language;
     app_settings.clock_face = face;
-    app_settings.clock_theme = theme;
     app_settings.face_customization = face_customization;
     app_settings.time_format = time_format;
+    strlcpy(
+        app_settings.custom_clock_face,
+        custom_clock_face ? custom_clock_face : "",
+        sizeof(app_settings.custom_clock_face));
     settings_store.saveLanguage(language);
     settings_store.saveClockFace(face);
-    settings_store.saveClockTheme(theme);
     settings_store.saveFaceCustomization(face_customization);
     settings_store.saveTimeFormat(time_format);
+    settings_store.saveCustomClockFace(app_settings.custom_clock_face);
     settings_store.saveBrightness(brightness);
     input_service.setEncoderPosition(brightness);
     g_last_saved_encoder = brightness;
     last_encoder_save_ms_ = millis();
     update_clock_face_selection(false);
     update_regional_options_ui();
-    update_display_options_ui();
     if (language_changed)
     {
         localization_set_language(language);
         refresh_language_ui();
     }
 
-    clock_view.applyTimeFormatLayout();
-    clock_view.applyTheme();
     if (current_state_ == UiState::Normal)
     {
         clock_view.last_second = -1;
@@ -688,13 +682,13 @@ bool MaclockApp::setMqttClockFace(uint8_t face)
     return applyControlAppearance(
         app_settings.language,
         static_cast<ClockFace>(face),
-        app_settings.clock_theme,
         static_cast<uint8_t>(
             constrain(
                 input_service.encoderPosition(),
                 0, kBrightnessMax)),
         app_settings.face_customization,
-        app_settings.time_format);
+        app_settings.time_format,
+        "");
 }
 
 void MaclockApp::rebootMqttDevice()
