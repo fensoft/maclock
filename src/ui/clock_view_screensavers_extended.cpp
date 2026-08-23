@@ -543,6 +543,18 @@ static void draw_photo(ClockView &view)
 }
 } // namespace
 
+#include "screensavers/flying_toasters.cpp"
+#include "screensavers/marquee.cpp"
+#include "screensavers/digital_rain_clock.cpp"
+#include "screensavers/mystify.cpp"
+#include "screensavers/aquarium.cpp"
+#include "screensavers/life.cpp"
+#include "screensavers/maze.cpp"
+#include "screensavers/error_parade.cpp"
+#include "screensavers/rainy_window.cpp"
+#include "screensavers/fireworks.cpp"
+#include "screensavers/photo_slideshow.cpp"
+
 void ClockView::initExtendedScreensavers(lv_obj_t *parent)
 {
     screensaver_toaster_atlas =
@@ -597,29 +609,14 @@ bool ClockView::activateExtendedScreensaver(
         screensaver_extended_frame = 0;
         memset(screensaver_state, 0, sizeof(screensaver_state));
         seed_particles(*this, 64);
-        if (mode == ScreensaverMode::FlyingToasters)
-            for (uint8_t i = 0; i < 7; ++i)
-            {
-                screensaver_state[i] = random(0, 10);
-                screensaver_state[
-                    kToasterSpeedStateOffset + i] =
-                    random(70, 131);
-            }
-        if (mode == ScreensaverMode::Aquarium)
-            for (uint8_t i = 0; i < 9; ++i)
-                screensaver_state[i] = random_fish_variant();
-        if (mode == ScreensaverMode::ErrorParade)
-            for (uint8_t i = 0; i < 5; ++i)
-                screensaver_state[i] = random(0, 10);
+        reset_flying_toasters(*this, mode);
+        reset_aquarium(*this, mode);
+        reset_error_parade(*this, mode);
         screensaver_photo_transition = 0;
         screensaver_photo_due_ms = millis() + 10000;
-        if (mode == ScreensaverMode::Life)
-            for (size_t i = 0; i < 38U * 28U; ++i)
-                screensaver_state[i] = random(0, 3) == 0;
-        if (mode == ScreensaverMode::Maze)
-            generate_maze(*this);
-        if (mode == ScreensaverMode::PhotoSlideshow)
-            screensaver_photo_loaded = load_next_photo(*this);
+        reset_life(*this, mode);
+        reset_maze(*this, mode);
+        reset_photo_slideshow(*this, mode);
     }
     return true;
 }
@@ -640,333 +637,23 @@ bool ClockView::updateExtendedScreensaver(
     const uint32_t frame = screensaver_extended_frame++;
     clear_canvas(*this);
 
+    bool updated = false;
     switch (screensaver_active_mode)
     {
-    case ScreensaverMode::FlyingToasters:
-        for (uint8_t i = 0; i < 7; ++i)
-        {
-            const uint8_t speed = screensaver_state[
-                kToasterSpeedStateOffset + i];
-            const uint64_t distance_before =
-                static_cast<uint64_t>(frame) * speed;
-            const uint64_t distance_after =
-                static_cast<uint64_t>(frame + 1) * speed;
-            const int16_t horizontal_step =
-                static_cast<int16_t>(
-                    distance_after * 2 / 100 -
-                    distance_before * 2 / 100);
-            const int16_t vertical_step =
-                static_cast<int16_t>(
-                    distance_after / 100 -
-                    distance_before / 100);
-            screensaver_x[i] += horizontal_step;
-            screensaver_y[i] +=
-                (i & 1) ? vertical_step : -vertical_step;
-            if (screensaver_x[i] > kExtWidth + 56)
-            {
-                screensaver_x[i] = -56;
-                screensaver_state[i] = random(0, 10);
-            }
-            if (screensaver_y[i] < -20) screensaver_y[i] = kExtHeight;
-            if (screensaver_y[i] > kExtHeight) screensaver_y[i] = -20;
-            const int x = screensaver_x[i], y = screensaver_y[i];
-            if (screensaver_toaster_atlas)
-                draw_atlas_sprite(
-                    *this, screensaver_toaster_atlas,
-                    screensaver_state[i],
-                    64, 48,
-                    x - 8, y - 10, 56, 42,
-                    true, true,
-                    static_cast<uint8_t>(
-                        ((distance_before / 100) / 5) & 1U));
-            else
-                draw_toaster(
-                    *this, x, y, screensaver_state[i],
-                    (((distance_before / 100) / 5) + i) & 1U);
-        }
-        break;
-
-    case ScreensaverMode::Marquee:
-    {
-        char text[32];
-        snprintf(text, sizeof(text), "MACLOCK %02u:%02u",
-                 snapshot.current.hour(), snapshot.current.minute());
-        const int width = static_cast<int>(strlen(text)) * 18;
-        const int x = kExtWidth - static_cast<int>((frame * 2) %
-                                                   (kExtWidth + width));
-        draw_text(*this, x, 96, text, 3);
-        line(*this, 0, 82, kExtWidth - 1, 82);
-        line(*this, 0, 142, kExtWidth - 1, 142);
-        break;
+    case ScreensaverMode::FlyingToasters: updated = update_flying_toasters(*this, frame); break;
+    case ScreensaverMode::Marquee: updated = update_marquee(*this, snapshot, frame); break;
+    case ScreensaverMode::DigitalRainClock: updated = update_digital_rain_clock(*this, snapshot); break;
+    case ScreensaverMode::Mystify: updated = update_mystify(*this); break;
+    case ScreensaverMode::Aquarium: updated = update_aquarium(*this, frame); break;
+    case ScreensaverMode::Life: updated = update_life(*this, frame); break;
+    case ScreensaverMode::Maze: updated = update_maze(*this, frame); break;
+    case ScreensaverMode::ErrorParade: updated = update_error_parade(*this, frame); break;
+    case ScreensaverMode::RainyWindow: updated = update_rainy_window(*this, snapshot); break;
+    case ScreensaverMode::Fireworks: updated = update_fireworks(*this, frame); break;
+    case ScreensaverMode::PhotoSlideshow: updated = update_photo_slideshow(*this, frame); break;
+    default: return false;
     }
-
-    case ScreensaverMode::DigitalRainClock:
-        for (uint8_t i = 0; i < 38; ++i)
-        {
-            screensaver_y[i] += 2 + (i % 4);
-            if (screensaver_y[i] > kExtHeight + 20)
-                screensaver_y[i] = -random(10, 100);
-            for (uint8_t tail = 0; tail < 5; ++tail)
-                put_pixel(*this, i * 8 + 2,
-                          screensaver_y[i] - tail * 4);
-        }
-        draw_time(*this, snapshot.current, 43, 83, 6);
-        break;
-
-    case ScreensaverMode::Mystify:
-        for (uint8_t i = 0; i < 4; ++i)
-        {
-            screensaver_x[i] += screensaver_dx[i] * 2;
-            screensaver_y[i] += screensaver_dy[i] * 2;
-            if (screensaver_x[i] <= 2 || screensaver_x[i] >= 301)
-                screensaver_dx[i] = -screensaver_dx[i];
-            if (screensaver_y[i] <= 2 || screensaver_y[i] >= 221)
-                screensaver_dy[i] = -screensaver_dy[i];
-            line(*this, screensaver_x[i], screensaver_y[i],
-                 screensaver_x[(i + 1) & 3], screensaver_y[(i + 1) & 3]);
-        }
-        break;
-
-    case ScreensaverMode::Aquarium:
-        for (uint8_t i = 0; i < 9; ++i)
-        {
-            screensaver_x[i] += (i & 1) ? 1 : -1;
-            if (screensaver_x[i] < -48)
-            {
-                screensaver_x[i] = kExtWidth + 48;
-                screensaver_state[i] = random_fish_variant();
-            }
-            if (screensaver_x[i] > kExtWidth + 48)
-            {
-                screensaver_x[i] = -48;
-                screensaver_state[i] = random_fish_variant();
-            }
-            const int x = screensaver_x[i], y = 15 + i * 22;
-            if (screensaver_fish_atlas)
-                draw_atlas_sprite(
-                    *this, screensaver_fish_atlas,
-                    screensaver_state[i], 64, 48,
-                    x - 8, y - 8, 48, 36, i & 1U);
-            else
-                draw_fish(
-                    *this, x, y,
-                    screensaver_state[i] >= 6
-                        ? screensaver_state[i] + 1
-                        : screensaver_state[i],
-                    i & 1U);
-        }
-        for (uint8_t i = 0; i < 18; ++i)
-        {
-            const uint8_t radius = 1 + (i % 3);
-            const uint16_t travel = kExtHeight + radius * 2 + 12;
-            const uint16_t rise =
-                (frame * (1 + (i % 3)) + i * 29) % travel;
-            const int16_t y = kExtHeight + radius - rise;
-            const int8_t drift = static_cast<int8_t>(
-                ((frame / (5 + i % 4) + i * 3) % 7)) - 3;
-            const int16_t x =
-                12 + ((i * 53 + (i % 4) * 17) % (kExtWidth - 24)) +
-                drift;
-            draw_bubble(*this, x, y, radius);
-        }
-        break;
-
-    case ScreensaverMode::Life:
-        if ((frame & 3) == 0)
-        {
-            uint8_t *current = screensaver_state;
-            uint8_t *next = screensaver_state + 38 * 28;
-            for (int y = 0; y < 28; ++y)
-                for (int x = 0; x < 38; ++x)
-                {
-                    uint8_t neighbors = 0;
-                    for (int dy = -1; dy <= 1; ++dy)
-                        for (int dx = -1; dx <= 1; ++dx)
-                            if ((dx || dy) &&
-                                current[((y + dy + 28) % 28) * 38 +
-                                        ((x + dx + 38) % 38)])
-                                ++neighbors;
-                    next[y * 38 + x] =
-                        neighbors == 3 ||
-                        (neighbors == 2 && current[y * 38 + x]);
-                }
-            memcpy(current, next, 38 * 28);
-        }
-        for (int y = 0; y < 28; ++y)
-            for (int x = 0; x < 38; ++x)
-                if (screensaver_state[y * 38 + x])
-                    fill_rect(*this, x * 8 + 1, y * 8 + 1, 6, 6);
-        break;
-
-    case ScreensaverMode::Maze:
-    {
-        const uint8_t *walls = screensaver_state;
-        const uint16_t *solution = reinterpret_cast<const uint16_t *>(
-            screensaver_state + kMazeCells * 2 +
-            kMazeCells * sizeof(uint16_t) * 2);
-        for (uint16_t cell = 0; cell < kMazeCells; ++cell)
-        {
-            const int x = (cell % kMazeColumns) * 16;
-            const int y = (cell / kMazeColumns) * 16;
-            if (walls[cell] & 1U) line(*this, x, y, x + 15, y);
-            if (walls[cell] & 2U) line(*this, x + 15, y, x + 15, y + 15);
-            if (walls[cell] & 4U) line(*this, x, y + 15, x + 15, y + 15);
-            if (walls[cell] & 8U) line(*this, x, y, x, y + 15);
-        }
-        const uint16_t length =
-            static_cast<uint16_t>(screensaver_x[63]);
-        const uint16_t progress = min<uint16_t>(
-            length, static_cast<uint16_t>(frame / 2 + 1));
-        for (uint16_t i = 0; i < progress; ++i)
-        {
-            const uint16_t cell = solution[i];
-            fill_rect(*this, (cell % kMazeColumns) * 16 + 6,
-                      (cell / kMazeColumns) * 16 + 6, 4, 4);
-        }
-        if (progress == length && frame > length * 2 + 90)
-        {
-            generate_maze(*this);
-            screensaver_extended_frame = 0;
-        }
-        break;
-    }
-
-    case ScreensaverMode::ErrorParade:
-        for (uint8_t i = 0; i < 5; ++i)
-        {
-            constexpr int kErrorWidth = 84;
-            constexpr int kErrorTravel = kExtWidth + kErrorWidth;
-            const int x = static_cast<int>(
-                (screensaver_x[i] + frame * (i + 1)) % kErrorTravel) -
-                kErrorWidth;
-            const int y = 12 + ((screensaver_y[i] + frame) % 145);
-            if (screensaver_error_atlas)
-            {
-                const uint8_t variant = static_cast<uint8_t>(
-                    (screensaver_state[i] +
-                     (frame * (i + 1)) / 220) % 10);
-                fill_rect(*this, x, y, 84, 54);
-                line(*this, x + 1, y + 1, x + 82, y + 1, false);
-                line(*this, x + 1, y + 1, x + 1, y + 52, false);
-                line(*this, x + 82, y + 1, x + 82, y + 52, false);
-                line(*this, x + 1, y + 52, x + 82, y + 52, false);
-                line(*this, x + 2, y + 12, x + 81, y + 12, false);
-                line(*this, x + 5, y + 3, x + 12, y + 3, false);
-                line(*this, x + 5, y + 10, x + 12, y + 10, false);
-                line(*this, x + 5, y + 3, x + 5, y + 10, false);
-                line(*this, x + 12, y + 3, x + 12, y + 10, false);
-                for (int stripe_y = 3; stripe_y <= 9; stripe_y += 2)
-                {
-                    line(*this, x + 16, y + stripe_y,
-                         x + 25, y + stripe_y, false);
-                    line(*this, x + 58, y + stripe_y,
-                         x + 79, y + stripe_y, false);
-                }
-                draw_text(*this, x + 28, y + 3, "ERROR", 1, false);
-                draw_atlas_sprite(
-                    *this, screensaver_error_atlas,
-                    variant, 40, 40, x + 3, y + 13, 40, 40,
-                    false, false);
-                line(*this, x + 53, y + 36, x + 77, y + 36, false);
-                line(*this, x + 53, y + 48, x + 77, y + 48, false);
-                line(*this, x + 53, y + 36, x + 53, y + 48, false);
-                line(*this, x + 77, y + 36, x + 77, y + 48, false);
-                draw_text(*this, x + 59, y + 39, "OK", 1, false);
-            }
-            else
-            {
-                fill_rect(*this, x, y, 84, 54);
-                fill_rect(*this, x + 2, y + 2, 80, 50, false);
-                line(*this, x + 2, y + 12, x + 81, y + 12);
-                fill_rect(*this, x + 8, y + 20, 10, 10);
-                draw_text(*this, x + 25, y + 22, "ERROR", 1);
-                fill_rect(*this, x + 49, y + 39, 25, 9);
-                fill_rect(*this, x + 50, y + 40, 23, 7, false);
-                draw_text(*this, x + 55, y + 40, "OK", 1);
-            }
-        }
-        break;
-
-    case ScreensaverMode::RainyWindow:
-        for (uint8_t i = 0; i < 48; ++i)
-        {
-            screensaver_y[i] += 2 + (i % 5);
-            if (screensaver_y[i] >= kExtHeight)
-            {
-                screensaver_y[i] = -random(1, 80);
-                screensaver_x[i] = random(0, kExtWidth);
-            }
-            line(*this, screensaver_x[i], screensaver_y[i],
-                 screensaver_x[i] - 2, screensaver_y[i] + 7);
-        }
-        draw_time(*this, snapshot.current, 67, 91, 5);
-        break;
-
-    case ScreensaverMode::Fireworks:
-    {
-        static constexpr uint8_t kBurstFrames = 72;
-        for (uint8_t burst = 0; burst < 3; ++burst)
-        {
-            const uint32_t shifted = frame + burst * 24;
-            const uint8_t phase = shifted % kBurstFrames;
-            const uint32_t sequence = shifted / kBurstFrames;
-            const int center_x = 38 +
-                static_cast<int>((sequence * 83 + burst * 67) % 228);
-            const int center_y = 28 +
-                static_cast<int>((sequence * 47 + burst * 31) % 104);
-
-            if (phase < 14)
-            {
-                const int rocket_y = kExtHeight - 1 -
-                    (kExtHeight - center_y) * phase / 14;
-                line(*this, center_x, rocket_y,
-                     center_x, min(kExtHeight - 1, rocket_y + 7));
-                continue;
-            }
-
-            const uint8_t age = phase - 14;
-            if (age >= 48)
-                continue;
-            const int radius = 2 + age;
-            const uint8_t particle_step = age < 28 ? 1 : 2;
-            for (uint8_t i = 0; i < 32; i += particle_step)
-            {
-                const float angle = i * 6.2831853f / 32.0f;
-                const int gravity = age * age / 180;
-                const int x = center_x + cosf(angle) * radius;
-                const int y = center_y + sinf(angle) * radius + gravity;
-                put_pixel(*this, x, y);
-                if (age > 4 && (i & 1) == 0)
-                    put_pixel(*this,
-                              center_x + cosf(angle) * (radius - 3),
-                              center_y + sinf(angle) * (radius - 3) +
-                                  (age - 3) * (age - 3) / 180);
-            }
-        }
-        break;
-    }
-
-    case ScreensaverMode::PhotoSlideshow:
-        if (millis() >= screensaver_photo_due_ms)
-        {
-            screensaver_photo_loaded = load_next_photo(*this);
-            screensaver_photo_transition = 0;
-            screensaver_photo_due_ms = millis() + 10000;
-        }
-        if (screensaver_photo_transition < 16 && (frame & 1) == 0)
-            ++screensaver_photo_transition;
-        if (!screensaver_photo_loaded)
-        {
-            lv_obj_clear_flag(screensaver_canvas, LV_OBJ_FLAG_HIDDEN);
-            draw_photo(*this);
-        }
-        else
-            draw_photo(*this);
-        break;
-
-    default:
-        return false;
-    }
+    if (!updated) return false;
 
     if (screensaver_active_mode != ScreensaverMode::PhotoSlideshow ||
         !screensaver_photo_loaded)

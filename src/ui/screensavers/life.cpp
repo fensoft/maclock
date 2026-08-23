@@ -1,0 +1,4 @@
+#ifdef MACLOCK_COMBINED_SOURCE
+static void reset_life(ClockView &view, ScreensaverMode mode) { if (mode == ScreensaverMode::Life) for (size_t i = 0; i < 38U * 28U; ++i) view.screensaver_state[i] = random(0, 3) == 0; }
+static bool update_life(ClockView &view, uint32_t frame) { uint8_t *current = view.screensaver_state; if (!(frame & 3)) { uint8_t *next = current + 38 * 28; for (int y = 0; y < 28; ++y) for (int x = 0; x < 38; ++x) { uint8_t n = 0; for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) if ((dx || dy) && current[((y + dy + 28) % 28) * 38 + ((x + dx + 38) % 38)]) ++n; next[y * 38 + x] = n == 3 || (n == 2 && current[y * 38 + x]); } memcpy(current, next, 38 * 28); } for (int y = 0; y < 28; ++y) for (int x = 0; x < 38; ++x) if (current[y * 38 + x]) fill_rect(view, x * 8 + 1, y * 8 + 1, 6, 6); return true; }
+#endif

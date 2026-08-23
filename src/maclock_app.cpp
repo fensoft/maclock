@@ -4,7 +4,6 @@
 #include "maclock_app.h"
 #include "src/draw/lv_image_decoder_private.h"
 #include "AudioFileSourceLittleFS.h"
-#include "AudioGeneratorOpus.h"
 #include "AudioOutputI2S.h"
 #include "AudioGeneratorMP3.h"
 #include "es8311.h"
