@@ -55,8 +55,6 @@ static constexpr const char *kScreensaverNames[] = {
     "Flying Toasters", "Marquee Message", "Digital Rain Clock",
     "Mystify", "Aquarium", "Game of Life", "Maze", "Error Parade",
     "Rainy Window", "Fireworks", "Photo Slideshow"};
-static constexpr const char *kClockFaceNames[] = {
-    "Filesystem"};
 
 int option_index(
     const String &value,
@@ -282,7 +280,6 @@ void publish_status(MqttService::State &state)
         state.snapshot.do_not_disturb ? "ON" : "OFF";
     document["timer_active"] = state.snapshot.timer_active;
     document["screensaver"] = state.snapshot.screensaver;
-    document["clock_face"] = state.snapshot.clock_face;
     document["wifi_rssi"] = state.snapshot.wifi_rssi;
     document["firmware_version"] =
         state.snapshot.firmware_version;
@@ -314,7 +311,6 @@ void publish_discovery(MqttService::State &state)
     char timer_cancel[80];
     char screensaver[80];
     char screensaver_launch[80];
-    char clock_face[80];
     char reboot[80];
     build_topic(availability, sizeof(availability), state, "availability");
     build_topic(status, sizeof(status), state, "status");
@@ -332,7 +328,6 @@ void publish_discovery(MqttService::State &state)
     build_topic(
         screensaver_launch, sizeof(screensaver_launch),
         state, "screensaver/launch");
-    build_topic(clock_face, sizeof(clock_face), state, "clock_face/set");
     build_topic(reboot, sizeof(reboot), state, "reboot");
 
     JsonDocument document;
@@ -517,21 +512,6 @@ void publish_discovery(MqttService::State &state)
     launch_component["cmd_t"] = screensaver_launch;
     launch_component["icon"] = "mdi:monitor-play";
 
-    JsonObject face_component =
-        components["clock_face"].to<JsonObject>();
-    face_component["p"] = "select";
-    face_component["name"] = "Clock face";
-    face_component["unique_id"] =
-        String(state.snapshot.device_id) + "_clock_face";
-    face_component["cmd_t"] = clock_face;
-    face_component["stat_t"] = status;
-    face_component["val_tpl"] = "{{ value_json.clock_face }}";
-    face_component["icon"] = "mdi:clock-digital";
-    JsonArray face_options =
-        face_component["options"].to<JsonArray>();
-    for (const char *name : kClockFaceNames)
-        face_options.add(name);
-
     JsonObject reboot_component =
         components["reboot"].to<JsonObject>();
     reboot_component["p"] = "button";
@@ -633,7 +613,6 @@ void process_inbound(MqttService::State &state, uint32_t now_ms)
     char timer_cancel_topic[80];
     char screensaver_topic[80];
     char screensaver_launch_topic[80];
-    char clock_face_topic[80];
     char reboot_topic[80];
     build_topic(beacon_topic, sizeof(beacon_topic), state, "beacon/set");
     build_topic(
@@ -667,9 +646,6 @@ void process_inbound(MqttService::State &state, uint32_t now_ms)
     build_topic(
         screensaver_launch_topic, sizeof(screensaver_launch_topic),
         state, "screensaver/launch");
-    build_topic(
-        clock_face_topic, sizeof(clock_face_topic),
-        state, "clock_face/set");
     build_topic(reboot_topic, sizeof(reboot_topic), state, "reboot");
 
     if (topic == sound_topic)
@@ -768,22 +744,6 @@ void process_inbound(MqttService::State &state, uint32_t now_ms)
         }
         return;
     }
-    if (topic == clock_face_topic)
-    {
-        const int selected = option_index(
-            payload, kClockFaceNames,
-            sizeof(kClockFaceNames) / sizeof(kClockFaceNames[0]));
-        if (selected < 0 || !state.events ||
-            !state.events->setMqttClockFace(
-                static_cast<uint8_t>(selected)))
-        {
-            set_last(state, "", "rejected", "Invalid clock face");
-            return;
-        }
-        copy_text(state.snapshot.clock_face, kClockFaceNames[selected]);
-        state.status_dirty = true;
-        return;
-    }
     if (topic == reboot_topic)
     {
         if (state.events)
@@ -871,7 +831,7 @@ bool connect_client(MqttService::State &state, uint32_t now_ms)
     char sound_topic[80];
     char volume_topic[80];
     char backlight_topic[80];
-    char control_topics[9][80];
+    char control_topics[8][80];
     build_topic(beacon_topic, sizeof(beacon_topic), state, "beacon/set");
     build_topic(
         notification_topic, sizeof(notification_topic),
@@ -886,8 +846,7 @@ bool connect_client(MqttService::State &state, uint32_t now_ms)
     static constexpr const char *kControlSuffixes[] = {
         "sound/stop", "notification/dismiss",
         "do_not_disturb/set", "timer/start", "timer/cancel",
-        "screensaver/set", "screensaver/launch",
-        "clock_face/set", "reboot"};
+        "screensaver/set", "screensaver/launch", "reboot"};
     for (size_t i = 0;
          i < sizeof(kControlSuffixes) / sizeof(kControlSuffixes[0]);
          ++i)
@@ -988,13 +947,6 @@ void MqttService::begin(
                           sizeof(kScreensaverNames[0])
             ? kScreensaverNames[screensaver]
             : kScreensaverNames[0]);
-    const uint8_t face = preferences.getUChar("clock_face", 0);
-    copy_text(
-        state_->snapshot.clock_face,
-        face < sizeof(kClockFaceNames) /
-                   sizeof(kClockFaceNames[0])
-            ? kClockFaceNames[face]
-            : kClockFaceNames[0]);
     copy_text(
         state_->snapshot.firmware_version, MACLOCK_VERSION);
 #ifndef MACLOCK_LOCAL

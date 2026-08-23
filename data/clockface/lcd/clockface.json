@@ -15,7 +15,7 @@
       "width": 288,
       "height": 56,
       "stroke": "#000000",
-      "template": "{time}",
+      "template": "{time_min}",
       "font_family": "lv_font_seven_segment_96",
       "font_size": 96,
       "align": "center",

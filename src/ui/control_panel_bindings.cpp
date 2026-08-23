@@ -170,7 +170,6 @@ bool MaclockApp::applyControlConfiguration(
 
     if (!applyControlAppearance(
             configuration.settings.language,
-            configuration.settings.clock_face,
             configuration.brightness,
             configuration.settings.face_customization,
             configuration.settings.time_format,
@@ -255,14 +254,12 @@ bool MaclockApp::applyControlConfiguration(
 
 bool MaclockApp::applyControlAppearance(
     UiLanguage language,
-    ClockFace face, uint8_t brightness,
+    uint8_t brightness,
     const FaceCustomizationSettings &face_customization,
     const TimeFormatSettings &time_format,
     const char *custom_clock_face)
 {
     if (language >= UI_LANGUAGE_COUNT ||
-        static_cast<uint8_t>(face) >=
-            static_cast<uint8_t>(ClockFace::Count) ||
         static_cast<uint8_t>(time_format.hour_format) >=
             static_cast<uint8_t>(HourFormat::Count) ||
         static_cast<uint8_t>(face_customization.flip_speed) >=
@@ -276,7 +273,6 @@ bool MaclockApp::applyControlAppearance(
     const bool language_changed =
         app_settings.language != language;
     app_settings.language = language;
-    app_settings.clock_face = face;
     app_settings.face_customization = face_customization;
     app_settings.time_format = time_format;
     strlcpy(
@@ -284,7 +280,6 @@ bool MaclockApp::applyControlAppearance(
         custom_clock_face ? custom_clock_face : "",
         sizeof(app_settings.custom_clock_face));
     settings_store.saveLanguage(language);
-    settings_store.saveClockFace(face);
     settings_store.saveFaceCustomization(face_customization);
     settings_store.saveTimeFormat(time_format);
     settings_store.saveCustomClockFace(app_settings.custom_clock_face);
@@ -673,22 +668,6 @@ bool MaclockApp::setMqttScreensaver(
         static_cast<ScreensaverMode>(mode),
         app_settings.screensaver_delay_index,
         launch);
-}
-
-bool MaclockApp::setMqttClockFace(uint8_t face)
-{
-    if (face >= static_cast<uint8_t>(ClockFace::Count))
-        return false;
-    return applyControlAppearance(
-        app_settings.language,
-        static_cast<ClockFace>(face),
-        static_cast<uint8_t>(
-            constrain(
-                input_service.encoderPosition(),
-                0, kBrightnessMax)),
-        app_settings.face_customization,
-        app_settings.time_format,
-        "");
 }
 
 void MaclockApp::rebootMqttDevice()

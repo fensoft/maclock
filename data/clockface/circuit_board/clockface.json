@@ -45,7 +45,7 @@
             "font_family": "lv_font_chicago_8",
             "font_size": 8,
             "align": "center",
-            "visible_if": "rtc_available",
+            "visible_if": "show_time_seconds",
             "random": []
         }
     ]

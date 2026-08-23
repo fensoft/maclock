@@ -53,7 +53,7 @@ public:
         bool &network_changed) override;
     bool applyControlAppearance(
         UiLanguage language,
-        ClockFace face, uint8_t brightness,
+        uint8_t brightness,
         const FaceCustomizationSettings &face_customization,
         const TimeFormatSettings &time_format,
         const char *custom_clock_face) override;
@@ -103,7 +103,6 @@ public:
     bool controlMqttTimer(bool start) override;
     bool setMqttScreensaver(
         uint8_t mode, bool launch) override;
-    bool setMqttClockFace(uint8_t face) override;
     void rebootMqttDevice() override;
     bool mqttTimerActive() const override;
 

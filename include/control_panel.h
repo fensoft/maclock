@@ -111,7 +111,7 @@ public:
         bool &network_changed) = 0;
     virtual bool applyControlAppearance(
         UiLanguage language,
-        ClockFace face, uint8_t brightness,
+        uint8_t brightness,
         const FaceCustomizationSettings &face_customization,
         const TimeFormatSettings &time_format,
         const char *custom_clock_face) = 0;

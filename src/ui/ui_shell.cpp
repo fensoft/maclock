@@ -211,26 +211,9 @@ static void refresh_language_ui()
 
 void UiShell::hideAll()
 {
-    lv_obj_add_flag(ui_shell.background, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.corners, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ui_shell.disk_missing_1, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ui_shell.disk_missing_2, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ui_shell.boot, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.menu, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.menu_titles, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.menu_right, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.icon, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.clock, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.clock_label, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.time, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.date, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.temp, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.gauge_icon, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.gauge_line, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.gauge_box, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.alarm_indicator, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.white_bar, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ui_shell.black_line, LV_OBJ_FLAG_HIDDEN);
     if (clock_view.screensaver)
         lv_obj_add_flag(
             clock_view.screensaver, LV_OBJ_FLAG_HIDDEN);

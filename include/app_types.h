@@ -37,12 +37,6 @@ enum class BootBrightness : uint8_t
     Highest
 };
 
-enum class ClockFace : uint8_t
-{
-    None,
-    Count
-};
-
 enum class FlipAnimationSpeed : uint8_t
 {
     Slow,
@@ -144,7 +138,6 @@ struct AppSettings
     UiLanguage language = UI_LANGUAGE_ENGLISH;
     UiDateFormat date_format = UI_DATE_FORMAT_DMY;
     UiTemperatureUnit temperature_unit = UI_TEMPERATURE_CELSIUS;
-    ClockFace clock_face = ClockFace::None;
     static constexpr size_t kCustomClockFaceNameMax = 40;
     char custom_clock_face[kCustomClockFaceNameMax] = "";
     FaceCustomizationSettings face_customization;

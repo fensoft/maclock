@@ -409,9 +409,6 @@ public:
     void init(lv_obj_t *screen);
     void show(const ClockRenderSnapshot &snapshot);
     void update(const ClockRenderSnapshot &snapshot);
-    void applyTheme();
-    void applyFaceCustomization();
-    void applyTimeFormatLayout();
     void initScreensavers(lv_obj_t *screen);
     void showScreensaver(ScreensaverMode mode);
     void updateScreensaver(
@@ -422,8 +419,6 @@ public:
     bool activateExtendedScreensaver(
         ScreensaverMode mode, bool reset);
     bool updateExtendedScreensaver(
-        const ClockRenderSnapshot &snapshot);
-    void updateMacintoshLabels(
         const ClockRenderSnapshot &snapshot);
     bool showCustomFace(const ClockRenderSnapshot &snapshot);
     void updateCustomFace(const ClockRenderSnapshot &snapshot);
@@ -637,7 +632,6 @@ static lv_timer_t *g_cursor_timer = nullptr;
 #define g_boot_brightness (app_settings.boot_brightness)
 #define g_date_format (app_settings.date_format)
 #define g_temperature_unit (app_settings.temperature_unit)
-#define g_clock_face (app_settings.clock_face)
 #define g_face_customization \
     (app_settings.face_customization)
 #define g_time_format (app_settings.time_format)
@@ -677,9 +671,6 @@ static uint8_t g_floppy_sound_volume = 60;
 static const char *g_brightness_map[4] = {};
 static const char *g_date_format_map[4] = {
     "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", ""};
-static const char *g_flip_speed_map[4] = {};
-static const char *g_colon_blink_map[3] = {};
-static const char *g_continuous_seconds_map[3] = {};
 static const uint8_t g_screensaver_delays_minutes[] = {
     1, 5, 10, 30};
 static const char *g_screensaver_delay_map[7] = {};

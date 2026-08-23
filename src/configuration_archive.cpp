@@ -342,8 +342,6 @@ static void serialize_configuration(
         configuration.settings.date_format);
     settings["temperatureUnit"] = static_cast<uint8_t>(
         configuration.settings.temperature_unit);
-    settings["clockFace"] = static_cast<uint8_t>(
-        configuration.settings.clock_face);
     settings["customClockFace"] =
         configuration.settings.custom_clock_face;
     settings["animationSpeed"] = static_cast<uint8_t>(
@@ -515,13 +513,6 @@ static bool deserialize_configuration(
         goto invalid_settings;
     configuration.settings.temperature_unit =
         static_cast<UiTemperatureUnit>(value);
-    if (!read_json_uint(
-            settings["clockFace"], 0,
-            static_cast<uint8_t>(ClockFace::Count) - 1,
-            value))
-        goto invalid_settings;
-    configuration.settings.clock_face =
-        static_cast<ClockFace>(value);
     if (settings["customClockFace"].is<const char *>())
     {
         const char *custom_face = settings["customClockFace"];

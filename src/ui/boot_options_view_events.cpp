@@ -220,16 +220,6 @@ static void update_boot_translation_maps()
     g_brightness_map[1] = tr("Lowest");
     g_brightness_map[2] = tr("Highest");
     g_brightness_map[3] = "";
-    g_flip_speed_map[0] = tr("Slow");
-    g_flip_speed_map[1] = tr("Normal");
-    g_flip_speed_map[2] = tr("Fast");
-    g_flip_speed_map[3] = "";
-    g_colon_blink_map[0] = tr("Off");
-    g_colon_blink_map[1] = tr("On");
-    g_colon_blink_map[2] = "";
-    g_continuous_seconds_map[0] = tr("Off");
-    g_continuous_seconds_map[1] = tr("On");
-    g_continuous_seconds_map[2] = "";
     g_screensaver_delay_map[0] = tr("1 min");
     g_screensaver_delay_map[1] = tr("5 min");
     g_screensaver_delay_map[2] = tr("10 min");
@@ -577,11 +567,9 @@ static void clock_face_event(lv_event_t *event)
         (uint32_t)(uintptr_t)lv_obj_get_user_data(item);
     if (selected >= boot_options_view.clock_face_count)
         return;
-    g_clock_face = ClockFace::None;
     strlcpy(app_settings.custom_clock_face,
         boot_options_view.clock_face_names[selected],
         sizeof(app_settings.custom_clock_face));
-    settings_store.saveClockFace(g_clock_face);
     settings_store.saveCustomClockFace(app_settings.custom_clock_face);
     update_clock_face_selection(false);
 }

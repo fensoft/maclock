@@ -89,9 +89,6 @@ AppSettings SettingsStore::load()
         saved_temperature_unit < UI_TEMPERATURE_UNIT_COUNT
             ? static_cast<UiTemperatureUnit>(saved_temperature_unit)
             : UI_TEMPERATURE_CELSIUS;
-    settings.clock_face = load_enum(
-        preferences_, "clock_face",
-        ClockFace::None, ClockFace::Count);
     strlcpy(
         settings.custom_clock_face,
         preferences_.getString("custom_face", "").c_str(),
@@ -185,11 +182,6 @@ void SettingsStore::saveDateFormat(UiDateFormat value)
 void SettingsStore::saveTemperatureUnit(UiTemperatureUnit value)
 {
     preferences_.putUChar("temp_unit", static_cast<uint8_t>(value));
-}
-
-void SettingsStore::saveClockFace(ClockFace value)
-{
-    preferences_.putUChar("clock_face", static_cast<uint8_t>(value));
 }
 
 void SettingsStore::saveCustomClockFace(const char *value)

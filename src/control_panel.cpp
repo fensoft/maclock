@@ -518,8 +518,7 @@ static void select_clockface_project()
     }
     const ControlPanelSnapshot snapshot = g_events->controlPanelSnapshot();
     const bool applied = g_events->applyControlAppearance(
-        snapshot.settings.language, snapshot.settings.clock_face,
-        snapshot.brightness,
+        snapshot.settings.language, snapshot.brightness,
         snapshot.settings.face_customization, snapshot.settings.time_format,
         clear ? "" : name.c_str());
     send_result(applied, applied ? "Clock face selected" : "Clock face was not selected", applied ? 200 : 500);
@@ -1478,7 +1477,6 @@ static void append_mqtt_json(
     mqtt["doNotDisturb"] = snapshot.do_not_disturb;
     mqtt["timerActive"] = snapshot.timer_active;
     mqtt["screensaver"] = snapshot.screensaver;
-    mqtt["clockFace"] = snapshot.clock_face;
     mqtt["wifiRssi"] = snapshot.wifi_rssi;
     mqtt["firmwareVersion"] = snapshot.firmware_version;
     mqtt["temperatureValid"] = snapshot.temperature_valid;
@@ -1514,8 +1512,6 @@ static void send_state()
         snapshot.touchscreen_present;
     appearance["language"] =
         static_cast<uint8_t>(snapshot.settings.language);
-    appearance["face"] =
-        static_cast<uint8_t>(snapshot.settings.clock_face);
     appearance["customClockFace"] = snapshot.settings.custom_clock_face;
     appearance["animationSpeed"] = static_cast<uint8_t>(
         snapshot.settings.face_customization.flip_speed);
@@ -1807,7 +1803,6 @@ static void reboot_after_update()
 static void apply_appearance()
 {
     uint32_t language = 0;
-    uint32_t face = 0;
     uint32_t brightness = 0;
     uint32_t hour_format = 0;
     uint32_t show_seconds = 0;
@@ -1821,9 +1816,6 @@ static void apply_appearance()
         face_customization.continuous_seconds ? 1 : 0;
     if (!read_uint(
             "language", 0, UI_LANGUAGE_COUNT - 1, language) ||
-        !read_uint(
-            "face", 0,
-            static_cast<uint8_t>(ClockFace::Count) - 1, face) ||
         !read_uint("brightness", 0, kBrightnessMax, brightness) ||
          !read_uint(
              "hourFormat", 0,
@@ -1865,7 +1857,6 @@ static void apply_appearance()
     const bool applied = g_events &&
         g_events->applyControlAppearance(
             static_cast<UiLanguage>(language),
-            static_cast<ClockFace>(face),
             static_cast<uint8_t>(brightness),
             face_customization,
             time_format,

@@ -116,29 +116,6 @@ const activeAppEntry = computed(
 const activeAppTitle = computed(() =>
   activeAppEntry.value ? t(activeAppEntry.value.titleKey) : "",
 );
-const themeOptions = computed(() => ["light", "dark"].map((key) => t(key)));
-const accentSwatches = [
-  "linear-gradient(135deg, #fff 0 50%, #000 50%)",
-  "#c62828",
-  "#b45309",
-  "#15803d",
-  "#1d4ed8",
-  "#7e22ce",
-];
-const accentOptions = computed(() =>
-  ["defaultOption", "red", "orange", "green", "blue", "purple"].map(
-    (key, index) => ({
-      name: t(key),
-      swatch: accentSwatches[index],
-    }),
-  ),
-);
-const numeralSizeOptions = computed(() =>
-  ["small", "defaultOption", "large"].map((key) => t(key)),
-);
-const flipSpeedOptions = computed(() =>
-  ["slow", "normal", "fast"].map((key) => t(key)),
-);
 const hourFormatOptions = computed(() =>
   ["hour24", "hour12"].map((key) => t(key)),
 );

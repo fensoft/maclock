@@ -15,7 +15,6 @@ public:
     void saveLanguage(UiLanguage value);
     void saveDateFormat(UiDateFormat value);
     void saveTemperatureUnit(UiTemperatureUnit value);
-    void saveClockFace(ClockFace value);
     void saveCustomClockFace(const char *value);
     void saveFaceCustomization(
         const FaceCustomizationSettings &value);

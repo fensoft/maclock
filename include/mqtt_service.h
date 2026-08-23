@@ -55,7 +55,6 @@ struct MqttSnapshot
     bool do_not_disturb = false;
     bool timer_active = false;
     char screensaver[20] = "Off";
-    char clock_face[16] = "Macintosh";
     int32_t wifi_rssi = 0;
     char firmware_version[32] = "";
     bool temperature_valid = false;
@@ -75,7 +74,6 @@ public:
     virtual bool controlMqttTimer(bool start) = 0;
     virtual bool setMqttScreensaver(
         uint8_t mode, bool launch) = 0;
-    virtual bool setMqttClockFace(uint8_t face) = 0;
     virtual void rebootMqttDevice() = 0;
     virtual bool mqttTimerActive() const = 0;
 };
