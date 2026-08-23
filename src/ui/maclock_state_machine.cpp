@@ -596,7 +596,8 @@ void MaclockApp::tick()
 
         if (!clock_view.last_update_ms || now - clock_view.last_update_ms >= 100)
         {
-            lv_obj_add_flag(ui_shell.icon, LV_OBJ_FLAG_HIDDEN);
+            if (ui_shell.icon)
+                lv_obj_add_flag(ui_shell.icon, LV_OBJ_FLAG_HIDDEN);
             clock_view.update(make_clock_snapshot(now));
             lv_timer_handler();
             clock_view.last_update_ms = now;

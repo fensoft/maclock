@@ -187,7 +187,8 @@ static void refresh_language_ui()
         wifi_service.snapshot().status);
     ui_shell.updateBootMessage();
     ui_shell.updateMenuTitles();
-    lv_label_set_text(ui_shell.clock_label, tr("Clock"));
+    if (ui_shell.clock_label)
+        lv_label_set_text(ui_shell.clock_label, tr("Clock"));
     lv_label_set_text(calibration_view.label, tr("Touch the crosshair"));
 
     alarm_view.refreshLanguage();

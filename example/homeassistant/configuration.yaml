@@ -1,0 +1,5 @@
+default_config:
+
+mqtt:
+  broker: mqtt
+  port: 1883

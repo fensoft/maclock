@@ -3,6 +3,33 @@ void UiShell::init()
 {
     lv_obj_t *scr = lv_screen_active();
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+    ui_shell.background = lv_image_create(scr);
+    ui_shell.background_buf = load_png_once("S:/background.png");
+    set_image_src(ui_shell.background, ui_shell.background_buf,
+        "S:/background.png");
+    lv_obj_center(ui_shell.background);
+
+    ui_shell.corners = lv_image_create(scr);
+    ui_shell.corners_buf = load_png_once("S:/corners.png");
+    set_image_src(ui_shell.corners, ui_shell.corners_buf,
+        "S:/corners.png");
+    lv_obj_center(ui_shell.corners);
+
+    ui_shell.white_bar = lv_obj_create(scr);
+    lv_obj_remove_flag(ui_shell.white_bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_style_all(ui_shell.white_bar);
+    lv_obj_set_size(ui_shell.white_bar, lv_pct(100), 19);
+    lv_obj_set_pos(ui_shell.white_bar, 0, 0);
+    lv_obj_set_style_bg_color(ui_shell.white_bar, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(ui_shell.white_bar, LV_OPA_COVER, 0);
+
+    ui_shell.black_line = lv_obj_create(scr);
+    lv_obj_remove_flag(ui_shell.black_line, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_style_all(ui_shell.black_line);
+    lv_obj_set_size(ui_shell.black_line, lv_pct(100), 1);
+    lv_obj_set_pos(ui_shell.black_line, 0, 19);
+    lv_obj_set_style_bg_color(ui_shell.black_line, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(ui_shell.black_line, LV_OPA_COVER, 0);
     ui_shell.disk_missing_1_buf = load_png_once("S:/disk_missing_1.png");
     ui_shell.disk_missing_2_buf = load_png_once("S:/disk_missing_2.png");
     ui_shell.boot_buf = load_png_once("S:/boot.png");
