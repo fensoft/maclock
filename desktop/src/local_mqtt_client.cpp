@@ -145,6 +145,19 @@ bool LocalMqttClient::loop()
         return false;
     if (state_ == ConnectionState::TcpConnecting)
     {
+        fd_set writable;
+        FD_ZERO(&writable);
+        FD_SET(socket_, &writable);
+        timeval timeout{};
+        const int ready = select(
+            socket_ + 1, nullptr, &writable, nullptr, &timeout);
+        if (ready == 0)
+            return true;
+        if (ready < 0)
+        {
+            fail("Unable to inspect broker connection");
+            return false;
+        }
         int socket_error = 0;
         socklen_t size = sizeof(socket_error);
         if (getsockopt(socket_, SOL_SOCKET, SO_ERROR, &socket_error, &size) != 0)

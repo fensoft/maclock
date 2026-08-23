@@ -970,19 +970,6 @@ void MqttService::begin(
 #else
     copy_text(state_->snapshot.device_id, "maclock_simulator");
     state_->client.onMessage(mqtt_message_received);
-    if (!preferences.isKey("mqtt_host"))
-    {
-        state_->settings.enabled = true;
-        copy_text(state_->settings.host, "127.0.0.1");
-        state_->settings.port = 1883;
-        state_->settings.username[0] = '\0';
-        state_->password[0] = '\0';
-        preferences.putBool("mqtt_on", true);
-        preferences.putString("mqtt_host", state_->settings.host);
-        preferences.putUShort("mqtt_port", state_->settings.port);
-        preferences.putString("mqtt_user", "");
-        preferences.putString("mqtt_pass", "");
-    }
 #endif
     snprintf(
         state_->snapshot.topic_base,
