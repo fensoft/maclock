@@ -6,12 +6,14 @@
 #include "brightness.h"
 #include "maclock_version.h"
 #include "sound_selector.h"
+#include <WiFi.h>
 
 #ifndef MACLOCK_LOCAL
 #include <Esp.h>
 #include <MQTT.h>
 #include <NetworkClient.h>
-#include <WiFi.h>
+#else
+#include "local_mqtt_client.h"
 #endif
 
 struct MqttService::State
@@ -34,14 +36,17 @@ struct MqttService::State
 #ifndef MACLOCK_LOCAL
     NetworkClient network;
     MQTTClient client{768, 12288};
+#else
+    LocalMqttClient client;
+#endif
     bool connected = false;
+    bool connecting = false;
     uint32_t next_retry_ms = 0;
     uint32_t retry_delay_ms = 1000;
     uint32_t discovery_due_ms = 0;
     bool inbound_ready = false;
     String inbound_topic;
     String inbound_payload;
-#endif
 };
 
 namespace
@@ -104,11 +109,7 @@ void refresh_snapshot(MqttService::State &state)
 {
     state.snapshot.settings = state.settings;
     state.snapshot.password_set = state.password[0] != '\0';
-#ifndef MACLOCK_LOCAL
     state.snapshot.connected = state.connected;
-#else
-    state.snapshot.connected = false;
-#endif
     copy_text(
         state.snapshot.display_state,
         state.has_current
@@ -233,7 +234,6 @@ bool parse_message(
     return true;
 }
 
-#ifndef MACLOCK_LOCAL
 void build_topic(
     char *destination, size_t size,
     const MqttService::State &state,
@@ -752,7 +752,7 @@ void process_inbound(MqttService::State &state, uint32_t now_ms)
     }
     if (topic == volume_topic)
     {
-        const long requested = payload.toInt();
+        const long requested = strtol(payload.c_str(), nullptr, 10);
         if (requested < 10 || requested > 100)
         {
             set_last(state, "", "rejected", "Invalid sound volume");
@@ -768,7 +768,7 @@ void process_inbound(MqttService::State &state, uint32_t now_ms)
     }
     if (topic == backlight_topic)
     {
-        const long requested = payload.toInt();
+        const long requested = strtol(payload.c_str(), nullptr, 10);
         if (requested < 0 || requested > kBrightnessMax)
         {
             set_last(state, "", "rejected", "Invalid backlight level");
@@ -795,43 +795,20 @@ void process_inbound(MqttService::State &state, uint32_t now_ms)
         queue_message(state, message);
 }
 
-bool connect_client(MqttService::State &state, uint32_t now_ms)
+void connected_client(MqttService::State &state)
 {
-    state.network.setConnectionTimeout(250);
-    state.client.begin(
-        state.settings.host,
-        static_cast<int>(state.settings.port),
-        state.network);
-    state.client.setOptions(30, true, 1000);
-    char availability[80];
-    build_topic(availability, sizeof(availability), state, "availability");
-    state.client.setWill(availability, "offline", true, 1);
-    const String client_id =
-        String("maclock-") + state.snapshot.device_id + "-client";
-    const bool connected = state.client.connect(
-        client_id.c_str(),
-        state.settings.username,
-        state.password);
-    state.connected = connected;
-    state.snapshot.connected = connected;
-    if (!connected)
-    {
-        copy_text(state.snapshot.status, "Connection failed");
-        state.next_retry_ms = now_ms + state.retry_delay_ms;
-        state.retry_delay_ms = min<uint32_t>(
-            state.retry_delay_ms * 2, kMqttMaximumRetryMs);
-        return false;
-    }
-
-    state.retry_delay_ms = kMqttInitialRetryMs;
-    state.next_retry_ms = 0;
+    state.connected = true;
+    state.connecting = false;
+    state.snapshot.connected = true;
     copy_text(state.snapshot.status, "Connected");
+    char availability[80];
     char beacon_topic[80];
     char notification_topic[80];
     char sound_topic[80];
     char volume_topic[80];
     char backlight_topic[80];
     char control_topics[8][80];
+    build_topic(availability, sizeof(availability), state, "availability");
     build_topic(beacon_topic, sizeof(beacon_topic), state, "beacon/set");
     build_topic(
         notification_topic, sizeof(notification_topic),
@@ -867,9 +844,42 @@ bool connect_client(MqttService::State &state, uint32_t now_ms)
     publish_discovery(state);
     state.status_dirty = true;
     publish_status(state);
-    return true;
 }
+
+bool connect_client(MqttService::State &state, uint32_t now_ms)
+{
+#ifndef MACLOCK_LOCAL
+    state.network.setConnectionTimeout(250);
+    state.client.begin(
+        state.settings.host,
+        static_cast<int>(state.settings.port),
+        state.network);
+#else
+    state.client.begin(state.settings.host, state.settings.port);
 #endif
+    state.client.setOptions(30, true, 1000);
+    char availability[80];
+    build_topic(availability, sizeof(availability), state, "availability");
+    state.client.setWill(availability, "offline", true, 1);
+    const String client_id =
+        String("maclock-") + state.snapshot.device_id + "-client";
+    if (!state.client.connect(
+            client_id.c_str(), state.settings.username, state.password))
+    {
+        copy_text(state.snapshot.status, "Connection failed");
+        state.next_retry_ms = now_ms + state.retry_delay_ms;
+        state.retry_delay_ms = min<uint32_t>(
+            state.retry_delay_ms * 2, kMqttMaximumRetryMs);
+        return false;
+    }
+#ifdef MACLOCK_LOCAL
+    state.connecting = true;
+    return true;
+#else
+    connected_client(state);
+    return true;
+#endif
+}
 
 void promote_pending(MqttService::State &state)
 {
@@ -959,6 +969,20 @@ void MqttService::begin(
     state_->client.onMessage(mqtt_message_received);
 #else
     copy_text(state_->snapshot.device_id, "maclock_simulator");
+    state_->client.onMessage(mqtt_message_received);
+    if (!preferences.isKey("mqtt_host"))
+    {
+        state_->settings.enabled = true;
+        copy_text(state_->settings.host, "127.0.0.1");
+        state_->settings.port = 1883;
+        state_->settings.username[0] = '\0';
+        state_->password[0] = '\0';
+        preferences.putBool("mqtt_on", true);
+        preferences.putString("mqtt_host", state_->settings.host);
+        preferences.putUShort("mqtt_port", state_->settings.port);
+        preferences.putString("mqtt_user", "");
+        preferences.putString("mqtt_pass", "");
+    }
 #endif
     snprintf(
         state_->snapshot.topic_base,
@@ -1011,10 +1035,8 @@ bool MqttService::configure(
     copy_text(
         state_->snapshot.status,
         settings.enabled ? "Waiting for Wi-Fi" : "Disabled");
-#ifndef MACLOCK_LOCAL
     state_->next_retry_ms = 0;
     state_->retry_delay_ms = kMqttInitialRetryMs;
-#endif
     refresh_snapshot(*state_);
     return true;
 }
@@ -1048,9 +1070,13 @@ void MqttService::tick(
     const bool network_ready =
         state_->settings.enabled && valid_host(state_->settings.host) &&
         wifi.enabled && wifi.connected && !wifi.portal_active;
+#else
+    const bool network_ready =
+        state_->settings.enabled && valid_host(state_->settings.host);
+#endif
     if (!network_ready)
     {
-        if (state_->connected)
+        if (state_->connected || state_->connecting)
             stop(false);
         copy_text(
             state_->snapshot.status,
@@ -1062,12 +1088,28 @@ void MqttService::tick(
     }
     else
     {
-        if (!state_->connected &&
+        if (!state_->connected && !state_->connecting &&
             (!state_->next_retry_ms ||
              static_cast<int32_t>(now_ms - state_->next_retry_ms) >= 0))
         {
             copy_text(state_->snapshot.status, "Connecting");
             connect_client(*state_, now_ms);
+        }
+        if (state_->connecting)
+        {
+            if (!state_->client.loop())
+            {
+                state_->connecting = false;
+                state_->snapshot.connected = false;
+                copy_text(state_->snapshot.status, "Connection failed");
+                state_->next_retry_ms = now_ms + state_->retry_delay_ms;
+                state_->retry_delay_ms = min<uint32_t>(
+                    state_->retry_delay_ms * 2, kMqttMaximumRetryMs);
+            }
+#ifdef MACLOCK_LOCAL
+            else if (state_->client.connected())
+                connected_client(*state_);
+#endif
         }
         if (state_->connected)
         {
@@ -1092,14 +1134,6 @@ void MqttService::tick(
             }
         }
     }
-#else
-    (void)wifi;
-    copy_text(
-        state_->snapshot.status,
-        state_->settings.enabled
-            ? "Saved; MQTT is unavailable in the simulator"
-            : "Disabled");
-#endif
 
     promote_pending(*state_);
     if (state_->has_current && state_->current_visible && !display_allowed)
@@ -1139,17 +1173,14 @@ void MqttService::tick(
         promote_pending(*state_);
     }
     refresh_snapshot(*state_);
-#ifndef MACLOCK_LOCAL
     if (state_->status_dirty && state_->connected)
         publish_status(*state_);
-#endif
 }
 
 void MqttService::stop(bool remove_discovery)
 {
     if (!state_)
         return;
-#ifndef MACLOCK_LOCAL
     if (state_->connected)
     {
         char availability[80];
@@ -1166,13 +1197,12 @@ void MqttService::stop(bool remove_discovery)
             state_->client.publish(discovery_topic, "", true, 1);
         }
         state_->client.publish(availability, "offline", true, 1);
-        state_->client.disconnect();
     }
+    if (state_->connected || state_->connecting)
+        state_->client.disconnect();
     state_->connected = false;
+    state_->connecting = false;
     state_->snapshot.connected = false;
-#else
-    (void)remove_discovery;
-#endif
 }
 
 void MqttService::acknowledgeCurrent()
@@ -1182,10 +1212,8 @@ void MqttService::acknowledgeCurrent()
         return;
     finish_current(*state_, "acknowledged");
     promote_pending(*state_);
-#ifndef MACLOCK_LOCAL
     if (state_->connected)
         publish_status(*state_);
-#endif
 }
 
 bool MqttService::displayActive() const

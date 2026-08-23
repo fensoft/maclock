@@ -173,6 +173,7 @@ set(MACLOCK_DESKTOP_SOURCES
     desktop/src/local_audio_output.cpp
     desktop/src/local_hal_self_test.cpp
     desktop/src/local_maclock_hal.cpp
+    desktop/src/local_mqtt_client.cpp
     desktop/src/local_simulator_ui.cpp
     desktop/src/network_compat.cpp
     desktop/src/storage_compat.cpp)

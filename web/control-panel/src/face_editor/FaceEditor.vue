@@ -6,10 +6,13 @@ const W = 304;
 const H = 224;
 const canvas = ref(null);
 const preview = ref(null);
+const menuBar = ref(null);
 const upload = ref(null);
 const archiveUpload = ref(null);
+const openMenu = ref(null);
 const selected = ref(-1);
 const status = ref("");
+const newObjectType = ref("rectangle");
 const selectedPlaceholder = ref("time");
 const previewLanguage = ref("en");
 const savedFaces = ref([]);
@@ -76,12 +79,9 @@ function makeObject(type) {
   if (type === "text") Object.assign(base, { template: "{time_min}", font_family: "lv_font_chicago_8", font_size: 8, align: "left", random: [] });
   project.value.objects.push(base); selected.value = project.value.objects.length - 1; render();
 }
-function newObject() {
-  const type = window.prompt(`Object type: ${objectTypes.join(", ")}`, "rectangle");
-  if (!type) return;
-  const normalized = type.trim().toLowerCase();
-  if (!objectTypes.includes(normalized)) { status.value = "Unknown object type."; return; }
-  if (normalized === "image") upload.value?.click(); else makeObject(normalized);
+function addSelectedObject() {
+  if (newObjectType.value === "image") upload.value?.click();
+  else makeObject(newObjectType.value);
 }
 function removeObject() { if (object.value) { project.value.objects.splice(selected.value, 1); selected.value = Math.min(selected.value, project.value.objects.length - 1); render(); } }
 function duplicateObject() { if (!object.value) return; const copy = structuredClone(object.value); copy.id += "_copy"; copy.x += 6; copy.y += 6; project.value.objects.splice(selected.value + 1, 0, copy); selected.value++; render(); }
@@ -240,8 +240,8 @@ async function openFromMaclock() {
       const asset = String(format(item.template)).split("/").pop(); if (!asset) continue;
       const url = clockFaceAssetUrl(selectedFace.value, asset); const image = await loadImage(url); images.set(item.id, image); imageUrls.set(item.id, url); item.assetName = asset; item.ratio = image.naturalWidth / image.naturalHeight;
     }
-    selected.value = project.value.objects.length ? 0 : -1; localStorage.setItem(LAST_FACE_KEY, selectedFace.value); status.value = `Loaded ${selectedFace.value} from Maclock.`; render();
-  } catch { status.value = "Could not load this clock face from Maclock."; }
+    selected.value = project.value.objects.length ? 0 : -1; localStorage.setItem(LAST_FACE_KEY, selectedFace.value); status.value = `Loaded ${selectedFace.value} from Maclock.`; render(); return true;
+  } catch { status.value = "Could not load this clock face from Maclock."; return false; }
 }
 function safeFaceName(name) { return String(name || "").toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "clock_face"; }
 function newProject() {
@@ -275,8 +275,10 @@ async function useOnMaclock() {
   if (!selectedFace.value) return;
   try { await selectClockFace(selectedFace.value); status.value = `Using ${selectedFace.value} on Maclock.`; } catch { status.value = "Maclock could not select this clock face."; }
 }
-async function useDefaultFace() {
-  try { await selectClockFace("macintosh"); status.value = "Using the default clock face."; } catch { status.value = "Maclock could not select the default clock face."; }
+async function openAndUseFace(face) {
+  selectedFace.value = face.id;
+  if (await openFromMaclock())
+    await useOnMaclock();
 }
 async function importJson() { try { const parsed = JSON.parse(await navigator.clipboard.readText()); if (parsed.width !== W || parsed.height !== H) throw new Error(); project.value = parsed; selected.value = parsed.objects.length ? 0 : -1; status.value = "JSON imported from clipboard. Existing face assets were preserved."; render(); } catch { status.value = "Clipboard does not contain a 304×224 Maclock face JSON project."; } }
 let timer = 0;
@@ -289,27 +291,35 @@ function updatePreviewScale() {
   previewScale.value = Math.max(1, Math.min(4, Math.floor(Math.min(availableWidth / W, availableHeight / H))));
 }
 function nudge(event) { if (!object.value || /INPUT|TEXTAREA/.test(document.activeElement?.tagName || "")) return; const amount = event.shiftKey ? 10 : 1; const moves = { ArrowLeft: [-amount, 0], ArrowRight: [amount, 0], ArrowUp: [0, -amount], ArrowDown: [0, amount] }; const move = moves[event.key]; if (!move) return; event.preventDefault(); object.value.x = Number(object.value.x) + move[0]; object.value.y = Number(object.value.y) + move[1]; render(); }
+function toggleMenu(menu) { openMenu.value = openMenu.value === menu ? null : menu; }
+function closeMenus() { openMenu.value = null; }
+function runMenuCommand(command) { closeMenus(); return command(); }
+function closeMenuOnOutsideClick(event) { if (!menuBar.value?.contains(event.target)) closeMenus(); }
+function closeMenuOnEscape(event) { if (event.key === "Escape") closeMenus(); }
 onMounted(async () => { render(); updatePreviewScale(); window.addEventListener("resize", updatePreviewScale); previewResizeObserver = new ResizeObserver(updatePreviewScale); if (preview.value) previewResizeObserver.observe(preview.value); const fontResult = await fetchClockFaceFonts(); lvglFonts.value = fontResult.fonts || []; await refreshSavedFaces(); const lastFace = localStorage.getItem(LAST_FACE_KEY); if (lastFace && savedFaces.value.includes(lastFace)) selectedFace.value = lastFace; if (selectedFace.value) await openFromMaclock(); window.addEventListener("keydown", nudge); timer = window.setInterval(() => { tick.value = Math.floor(Date.now() / 1000); render(); }, 1000); });
-onBeforeUnmount(() => { window.clearInterval(timer); window.removeEventListener("keydown", nudge); window.removeEventListener("resize", updatePreviewScale); previewResizeObserver?.disconnect(); });
+onMounted(() => { window.addEventListener("pointerdown", closeMenuOnOutsideClick); window.addEventListener("keydown", closeMenuOnEscape); });
+onBeforeUnmount(() => { window.clearInterval(timer); window.removeEventListener("keydown", nudge); window.removeEventListener("keydown", closeMenuOnEscape); window.removeEventListener("pointerdown", closeMenuOnOutsideClick); window.removeEventListener("resize", updatePreviewScale); previewResizeObserver?.disconnect(); });
 watch(project, () => nextTick(render), { deep: true });
 </script>
 
 <template>
   <section class="face-editor">
-    <div class="face-editor__toolbar"><button @click="newProject">New</button><select v-model="selectedFace" @change="openFromMaclock"><option value="" disabled>Saved clock faces</option><option v-for="face in savedFaceOptions" :key="face.id" :value="face.id">{{ face.name }}</option></select><button @click="openFromMaclock" :disabled="!selectedFace">Open</button><button @click="saveToMaclock">Save</button><button @click="saveAsToMaclock">Save As…</button><button @click="exportArchive" :disabled="!selectedFace">Export archive</button><button @click="archiveUpload?.click()">Import archive</button><button @click="exportJson">Export JSON</button><button @click="importJson">Import JSON</button><button @click="useOnMaclock" :disabled="!selectedFace">Use on Maclock</button><button @click="useDefaultFace">Use default</button><span>{{ status }}</span></div>
+    <Teleport to="#face-editor-menu-host">
+    <nav ref="menuBar" class="face-editor__menu-bar" aria-label="Face editor menus">
+      <div class="face-editor__menu"><button type="button" aria-haspopup="menu" :aria-expanded="openMenu === 'file'" @click="toggleMenu('file')">File</button><div v-if="openMenu === 'file'" class="face-editor__menu-popover" role="menu"><button type="button" role="menuitem" @click="runMenuCommand(newProject)">New</button><button type="button" role="menuitem" @click="runMenuCommand(() => saveToMaclock())">Save</button><button type="button" role="menuitem" @click="runMenuCommand(saveAsToMaclock)">Save As...</button><hr><button type="button" role="menuitem" @click="runMenuCommand(() => archiveUpload?.click())">Import archive</button><button type="button" role="menuitem" @click="runMenuCommand(exportArchive)" :disabled="!selectedFace">Export archive</button><button type="button" role="menuitem" @click="runMenuCommand(importJson)">Import JSON</button><button type="button" role="menuitem" @click="runMenuCommand(exportJson)">Export JSON</button></div></div>
+      <div class="face-editor__menu"><button type="button" aria-haspopup="menu" :aria-expanded="openMenu === 'edit'" @click="toggleMenu('edit')">Edit</button><div v-if="openMenu === 'edit'" class="face-editor__menu-popover" role="menu"><label class="face-editor__menu-label">New object<select v-model="newObjectType"><option v-for="type in objectTypes" :key="type" :value="type">{{ type }}</option></select></label><button type="button" role="menuitem" @click="runMenuCommand(addSelectedObject)">Add object</button><hr><button type="button" role="menuitem" @click="runMenuCommand(() => moveObject(-1))" :disabled="!object || selected === 0">Bring back</button><button type="button" role="menuitem" @click="runMenuCommand(() => moveObject(1))" :disabled="!object || selected === project.objects.length - 1">Bring forward</button><button type="button" role="menuitem" @click="runMenuCommand(() => toggleObjectFlag('locked'))" :disabled="!object">{{ object?.editor?.locked ? 'Unlock' : 'Lock' }}</button><button type="button" role="menuitem" @click="runMenuCommand(() => toggleObjectFlag('hidden'))" :disabled="!object">{{ object?.editor?.hidden ? 'Show' : 'Hide' }}</button><button type="button" role="menuitem" @click="runMenuCommand(duplicateObject)" :disabled="!object">Duplicate</button><button type="button" role="menuitem" @click="runMenuCommand(removeObject)" :disabled="!object">Delete</button></div></div>
+      <div class="face-editor__menu"><button type="button" aria-haspopup="menu" :aria-expanded="openMenu === 'object'" @click="toggleMenu('object')">Object</button><div v-if="openMenu === 'object'" class="face-editor__menu-popover face-editor__object-list" role="menu"><button v-for="(item, index) in project.objects" :key="item.id" type="button" role="menuitem" :class="{ selected: selected === index }" @click="runMenuCommand(() => { selected = index; render(); })">{{ item.id }} <small>{{ item.type }}</small></button><span v-if="!project.objects.length" class="face-editor__menu-empty">No objects</span></div></div>
+      <div class="face-editor__menu"><button type="button" aria-haspopup="menu" :aria-expanded="openMenu === 'view'" @click="toggleMenu('view')">View</button><div v-if="openMenu === 'view'" class="face-editor__menu-popover" role="menu"><fieldset class="face-editor__availability"><legend>Preview availability</legend><label v-for="key in availabilityValues" :key="key"><input v-model="values[key]" type="checkbox" @change="render"> {{ valueLabel(key) }}</label><label><input v-model="values.floppy_inserted" type="checkbox" @change="render"> Floppy inserted</label><label>Weather <select :value="values.weather_asset" @change="setPreviewWeather($event.target.value)"><option value="sunny">Sunny</option><option value="cloudy">Cloudy</option><option value="rainy">Rainy</option></select></label><label>Language <select v-model="previewLanguage"><option value="en">English</option><option value="fr">French</option><option value="es">Spanish</option><option value="de">Deutsch</option><option value="it">Italian</option></select></label></fieldset></div></div>
+      <div class="face-editor__menu"><button type="button" aria-haspopup="menu" :aria-expanded="openMenu === 'face'" @click="toggleMenu('face')">Face</button><div v-if="openMenu === 'face'" class="face-editor__menu-popover" role="menu"><button v-for="face in savedFaceOptions" :key="face.id" type="button" role="menuitem" :class="{ selected: selectedFace === face.id }" @click="runMenuCommand(() => openAndUseFace(face))">{{ face.name }}</button><span v-if="!savedFaceOptions.length" class="face-editor__menu-empty">No saved clock faces</span></div></div>
+      <span class="face-editor__status" role="status">{{ status }}</span>
+    </nav>
+    </Teleport>
+    <input ref="upload" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/svg+xml" @change="addImage"><input ref="archiveUpload" class="visually-hidden" type="file" accept="application/zip,.zip" @change="importArchive">
     <div class="face-editor__layout">
-      <aside>
-        <strong>Layers</strong>
-        <button v-for="(item, index) in project.objects" :key="item.id" class="face-editor__layer" :class="{ selected: selected === index }" @click="selected = index; render()">{{ item.id }} <small>{{ item.type }}</small></button>
-        <div class="face-editor__actions"><button @click="newObject">New</button></div>
-        <input ref="upload" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/svg+xml" @change="addImage"><input ref="archiveUpload" class="visually-hidden" type="file" accept="application/zip,.zip" @change="importArchive">
-        <div class="face-editor__layer-controls"><button :disabled="!object || selected === 0" @click="moveObject(-1)">Bring back</button><button :disabled="!object || selected === project.objects.length - 1" @click="moveObject(1)">Bring forward</button><button :disabled="!object" @click="toggleObjectFlag('locked')">{{ object?.editor?.locked ? 'Unlock' : 'Lock' }}</button><button :disabled="!object" @click="toggleObjectFlag('hidden')">{{ object?.editor?.hidden ? 'Show' : 'Hide' }}</button><button :disabled="!object" @click="duplicateObject">Duplicate</button><button :disabled="!object" @click="removeObject">Delete</button></div>
-      </aside>
       <div ref="preview" class="face-editor__preview"><canvas ref="canvas" width="304" height="224" :style="{ width: `${W * previewScale}px`, height: `${H * previewScale}px` }" @pointerdown="beginDrag" @pointermove="moveDrag" @pointerup="endDrag" @pointercancel="endDrag" /></div>
       <aside class="face-editor__properties">
         <details><summary>Face</summary><div class="face-editor__section"><label>Name <input v-model="project.name"></label><label>Id <input :value="selectedFace" readonly></label><label>Background <input v-model="project.background"></label><label>Random every (seconds) <input v-model.number="project.random_interval_seconds" type="number" min="1"></label></div></details>
         <details><summary>Translations</summary><div class="face-editor__section"><p class="face-editor__hint">Use <code>{tr.key}</code> in text layers. English is the fallback.</p><div v-for="([key, entry]) in translationEntries" :key="key" class="face-editor__translation"><strong>{{ key }}</strong><button type="button" title="Remove translation" @click="removeTranslation(key)">−</button><label>EN <input v-model="entry.en"></label><label>FR <input v-model="entry.fr"></label><label>ES <input v-model="entry.es"></label><label>DE <input v-model="entry.de"></label><label>IT <input v-model="entry.it"></label></div><button type="button" @click="addTranslation">+ Add translation</button></div></details>
-        <details><summary>Preview availability</summary><fieldset class="face-editor__availability"><label v-for="key in availabilityValues" :key="key"><input v-model="values[key]" type="checkbox" @change="render"> {{ valueLabel(key) }}</label><label><input v-model="values.floppy_inserted" type="checkbox" @change="render"> Floppy inserted</label><label>Weather <select :value="values.weather_asset" @change="setPreviewWeather($event.target.value)"><option value="sunny">Sunny</option><option value="cloudy">Cloudy</option><option value="rainy">Rainy</option></select></label><label>Language <select v-model="previewLanguage"><option value="en">English</option><option value="fr">French</option><option value="es">Spanish</option><option value="de">Deutsch</option><option value="it">Italian</option></select></label></fieldset></details>
         <template v-if="object">
             <details><summary>Object · {{ object.id }}</summary><div class="face-editor__section"><label>Id <input v-model="object.id"></label><label>Type <select v-model="object.type"><option v-for="type in objectTypes" :key="type">{{ type }}</option></select></label><label>X <input v-model.number="object.x" type="number"></label><label>Y <input v-model.number="object.y" type="number"></label><label>Width <input v-model.number="object.width" type="number" @change="resizeImage('width')"></label><label>Height <input v-model.number="object.height" type="number" @change="resizeImage('height')"></label><label v-if="object.type === 'line'">Angle <input v-model="object.angle" placeholder="{hour}" @input="render"></label><label v-if="object.type === 'line'">Max <input v-model.number="object.max" type="number" min="1" @input="render"></label><label v-if="object.type === 'colon'"><input v-model="object.blink" type="checkbox"> Blink</label></div></details>
             <details><summary>Appearance</summary><div class="face-editor__section"><label>Stroke <input v-model="object.stroke" placeholder="#000000"></label><label>Fill <select v-model="object.fill"><option value="transparent">Transparent</option><option value="#ffffff">White</option><option value="#000000">Black</option></select></label><label>Stroke width <input v-model.number="object.stroke_width" type="number" min="0"></label><label v-if="!['line', 'text', 'image', 'colon'].includes(object.type)">Border radius <input v-model.number="object.border_radius" type="number" min="0"></label></div></details>
@@ -327,15 +337,16 @@ watch(project, () => nextTick(render), { deep: true });
 
 <style scoped>
 .face-editor { width: 100%; font-family: monospace; }
-.face-editor__layout { display: grid; grid-template-columns: 160px max-content minmax(280px, 1fr); gap: 16px; align-items: start; }
+.face-editor__layout { display: grid; grid-template-columns: max-content minmax(280px, 1fr); gap: 16px; align-items: start; }
 .face-editor aside { display: grid; gap: 6px; }
 .face-editor button, .face-editor input, .face-editor textarea { border: 1px solid #000; border-radius: 0; background: #fff; color: #000; font: inherit; }
 .face-editor button { padding: 4px 6px; text-align: left; cursor: pointer; }.face-editor button:disabled { color: #777; cursor: default; }.face-editor__layer.selected { color: #fff; background: #000; }.face-editor__layer small { float: right; }
 .face-editor__actions, .face-editor__layer-controls { display: grid; gap: 4px; margin: 8px 0; }.face-editor__preview { overflow: auto; padding: 0; border: 2px solid #000; background: #fff; width: fit-content; }.face-editor canvas { display: block; flex: none; background: #fff; image-rendering: pixelated; image-rendering: crisp-edges; touch-action: none; }
-.face-editor__properties label { display: grid; gap: 2px; }.face-editor textarea { width: 100%; resize: vertical; }.face-editor__toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }.face-editor__toolbar button { padding: 5px 9px; cursor: pointer; }
+.face-editor__properties label { display: grid; gap: 2px; }.face-editor textarea { width: 100%; resize: vertical; }.face-editor__menu-bar { position: relative; display: flex; flex-wrap: wrap; gap: 0; align-items: center; min-height: 0; margin: 0; border: 0; background: transparent; }.face-editor__menu { position: relative; }.face-editor__menu > button { border-width: 0 1px 0 0; padding: 6px 10px; }.face-editor__menu > button[aria-expanded="true"] { color: #fff; background: #000; }.face-editor__menu-popover { position: absolute; z-index: 2; top: 100%; left: -1px; display: grid; min-width: 190px; max-width: min(320px, calc(100vw - 24px)); gap: 4px; padding: 6px; border: 1px solid #000; background: #fff; box-shadow: 3px 3px 0 #000; }.face-editor__menu-popover button { width: 100%; }.face-editor__object-list { max-height: min(420px, calc(100vh - 48px)); overflow-y: auto; }.face-editor__object-list small { float: right; }.face-editor__object-list .selected { color: #fff; background: #000; }.face-editor__menu-popover hr { width: 100%; margin: 2px 0; border: 0; border-top: 1px solid #000; }.face-editor__menu-label { display: grid; gap: 3px; font-weight: bold; }.face-editor__menu-label select { min-width: 0; }.face-editor__status { align-self: center; min-width: 0; padding: 4px 8px; font-size: 0.9em; overflow-wrap: anywhere; }
 .face-editor details { border: 1px solid #000; background: #fff; }.face-editor summary { padding: 5px 7px; cursor: pointer; font-weight: bold; }.face-editor__section { display: grid; gap: 6px; padding: 7px; border-top: 1px solid #000; }.face-editor__availability { display: grid; gap: 4px; margin: 0; padding: 7px; border: 0; }.face-editor__availability label { display: block; }.face-editor__availability input { margin: 0 4px 0 0; }
 .face-editor__placeholder { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; }.face-editor__placeholder button { text-align: center; }
 .face-editor__hint { margin: 0; font-size: 0.9em; }.face-editor__rule { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: 4px; align-items: center; }
 .face-editor__translation { display: grid; grid-template-columns: 1fr auto; gap: 5px; padding: 6px; border: 1px solid #000; }.face-editor__translation label { grid-column: span 2; grid-template-columns: max-content minmax(0, 1fr); align-items: center; }.face-editor__translation input { min-width: 0; width: 100%; }
 @media (max-width: 900px) { .face-editor__layout { grid-template-columns: 1fr; }.face-editor__preview { order: -1; } }
+@media (max-width: 480px) { .face-editor__menu-bar { margin-bottom: 12px; }.face-editor__menu > button { padding: 6px 8px; }.face-editor__menu-popover { position: fixed; top: 44px; left: 12px; right: 12px; max-width: none; }.face-editor__status { width: 100%; border-top: 1px solid #000; } }
 </style>

@@ -92,6 +92,10 @@ a:focus-visible {
   font-weight: 700;
 }
 
+.menu-bar--face-editor {
+  overflow: visible;
+}
+
 .menu-bar button {
   padding: 1px 3px;
   border: 0;

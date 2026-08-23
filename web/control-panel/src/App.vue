@@ -1154,7 +1154,11 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="desktop">
-    <nav class="menu-bar" :aria-label="t('menuSections')">
+    <nav
+      class="menu-bar"
+      :class="{ 'menu-bar--face-editor': activeApp === 'faceEditor' }"
+      :aria-label="t('menuSections')"
+    >
       <button
         class="apple"
         type="button"
@@ -1167,19 +1171,22 @@ onBeforeUnmount(() => {
           />
         </svg>
       </button>
-      <button type="button" @click="openApp('appearance')">
-        {{ t("file") }}
-      </button>
-      <button type="button" @click="openApp('alarms')">
-        {{ t("edit") }}
-      </button>
-      <button type="button" @click="openApp('screensaver')">
-        {{ t("view") }}
-      </button>
-      <button type="button" @click="openApp('sounds')">
-        {{ t("special") }}
-      </button>
-      <span>{{ t("control") }}</span>
+      <div id="face-editor-menu-host" v-if="activeApp === 'faceEditor'"></div>
+      <template v-else>
+        <button type="button" @click="openApp('appearance')">
+          {{ t("file") }}
+        </button>
+        <button type="button" @click="openApp('alarms')">
+          {{ t("edit") }}
+        </button>
+        <button type="button" @click="openApp('screensaver')">
+          {{ t("view") }}
+        </button>
+        <button type="button" @click="openApp('sounds')">
+          {{ t("special") }}
+        </button>
+        <span>{{ t("control") }}</span>
+      </template>
     </nav>
 
     <main>
