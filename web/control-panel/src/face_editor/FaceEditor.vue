@@ -1,9 +1,15 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { clockFaceAssetUrl, fetchClockFaceFonts, fetchClockFaceGlyph, fetchClockFaces, listClockFaceAssets, loadClockFace, saveClockFace, selectClockFace, uploadClockFaceAsset } from "../api";
+import { clockFaceAssetUrl, fetchClockFaceFonts, fetchClockFaceGlyph, fetchClockFaces, fetchLoadingScreens, fetchState, listClockFaceAssets, listLoadingScreenAssets, loadClockFace, loadLoadingScreen, loadingScreenAssetUrl, saveClockFace, saveLoadingScreen, selectClockFace, uploadClockFaceAsset, uploadLoadingScreenAsset } from "../api";
+
+const props = defineProps({ mode: { type: String, default: "face" } });
 
 const W = 304;
 const H = 224;
+const isLoading = computed(() => props.mode === "loading");
+const projectFormat = computed(() => isLoading.value ? "maclock-loading-screen" : "maclock-clock-face");
+const projectFilename = computed(() => isLoading.value ? "loading.json" : "clockface.json");
+const projectLabel = computed(() => isLoading.value ? "loading screen" : "clock face");
 const canvas = ref(null);
 const preview = ref(null);
 const menuBar = ref(null);
@@ -17,9 +23,10 @@ const selectedPlaceholder = ref("time");
 const previewLanguage = ref("en");
 const savedFaces = ref([]);
 const savedFaceOptions = ref([]);
-const selectedFace = ref("compact_digital");
-const LAST_FACE_KEY = "maclock.face-editor.last-face";
+const selectedFace = ref(props.mode === "loading" ? "" : "compact_digital");
+const lastProjectKey = computed(() => isLoading.value ? "maclock.loading-editor.last-screen" : "maclock.face-editor.last-face");
 const lvglFonts = ref([]);
+const sounds = ref([]);
 const tick = ref(0);
 const previewScale = ref(2);
 const drag = ref(null);
@@ -29,7 +36,7 @@ const localImageTemplates = new Map();
 const glyphs = new Map();
 const pendingGlyphs = new Set();
 const project = ref({
-  format: "maclock-clock-face", version: 1, name: "Untitled Face",
+  format: projectFormat.value, version: 1, name: isLoading.value ? "Untitled Loading Screen" : "Untitled Face",
   width: W, height: H, background: "#ffffff", random_interval_seconds: 60, translations: {}, objects: [],
 });
 const values = reactive({
@@ -37,6 +44,7 @@ const values = reactive({
   date: "09/08/2026", date_iso: "2026-08-09", weekday: "Sunday", weekday_short: "Sun", day: "09", month: "08", month_name: "August", month_short: "Aug", year: "2026", face_name: "Compact Digital",
   internal_temp: "21.5", external_temp: "18.2", external_min: "12.1", external_max: "23.8", temperature_unit: "°C", pressure: "1013", humidity: "48", weather: "Sunny", weather_asset: "sunny", city: "Paris", wifi_ssid: "Mac Host Network", wifi_rssi: "-42", alarm_next: "07:30", alarm_label: "Wake up", timer_remaining: "24:59",
   rtc_available: true, weather_available: true, wifi_available: true, external_sensor_available: true, timer_active: false, floppy_inserted: true, show_time_seconds: false,
+  i2c: { "0x18": true, "0x38": true, "0x47": true, "0x68": true },
 });
 const objectTypes = ["rectangle", "circle", "line", "text", "image", "flip", "odometer", "odometer_background", "flip_background", "colon"];
 const alignments = ["left", "center", "right"];
@@ -44,7 +52,7 @@ const object = computed(() => project.value.objects[selected.value] || null);
 const availabilityValues = computed(() => Object.keys(values).filter((key) => typeof values[key] === "boolean" && key !== "floppy_inserted"));
 const placeholders = computed(() => Object.keys(values));
 const translationEntries = computed(() => Object.entries(project.value.translations || {}));
-const placeholderOptions = computed(() => [...placeholders.value.map((key) => ({ key, label: `{${key}} (${values[key]})` })), ...translationEntries.value.map(([key, translations]) => ({ key: `tr.${key}`, label: `{tr.${key}} (${translations?.[previewLanguage.value] || translations?.en || ""})` }))]);
+const placeholderOptions = computed(() => [...placeholders.value.map((key) => ({ key, label: `{${key}} (${typeof values[key] === "object" ? JSON.stringify(values[key]) : values[key]})` })), ...translationEntries.value.map(([key, translations]) => ({ key: `tr.${key}`, label: `{tr.${key}} (${translations?.[previewLanguage.value] || translations?.en || ""})` }))]);
 const visibleRules = computed({
   get: () => {
     const expression = object.value?.visible_if?.trim();
@@ -79,6 +87,11 @@ function makeObject(type) {
   if (type === "text") Object.assign(base, { template: "{time_min}", font_family: "lv_font_chicago_8", font_size: 8, align: "left", random: [] });
   project.value.objects.push(base); selected.value = project.value.objects.length - 1; render();
 }
+function assetUrl(projectName, asset) { return isLoading.value ? loadingScreenAssetUrl(projectName, asset) : clockFaceAssetUrl(projectName, asset); }
+function listAssets(projectName) { return isLoading.value ? listLoadingScreenAssets(projectName) : listClockFaceAssets(projectName); }
+function loadProject(projectName) { return isLoading.value ? loadLoadingScreen(projectName) : loadClockFace(projectName); }
+function saveProject(projectName, json) { return isLoading.value ? saveLoadingScreen(projectName, json) : saveClockFace(projectName, json); }
+function uploadAsset(projectName, asset, blob) { return isLoading.value ? uploadLoadingScreenAsset(projectName, asset, blob) : uploadClockFaceAsset(projectName, asset, blob); }
 function addSelectedObject() {
   if (newObjectType.value === "image") upload.value?.click();
   else makeObject(newObjectType.value);
@@ -88,7 +101,7 @@ function duplicateObject() { if (!object.value) return; const copy = structuredC
 function moveObject(direction) { if (!object.value) return; const next = selected.value + direction; if (next < 0 || next >= project.value.objects.length) return; const [item] = project.value.objects.splice(selected.value, 1); project.value.objects.splice(next, 0, item); selected.value = next; render(); }
 function toggleObjectFlag(key) { if (!object.value) return; object.value.editor ||= {}; object.value.editor[key] = !object.value.editor[key]; render(); }
 function translation(key) { const entry = project.value.translations?.[key]; return entry?.[previewLanguage.value] ?? entry?.en ?? Object.values(entry || {}).find(Boolean) ?? `{tr.${key}}`; }
-function format(template = "") { return template.replace(/\{([\w.]+)\}/g, (_, key) => key.startsWith("tr.") ? translation(key.slice(3)) : (values[key] ?? `{${key}}`)); }
+function format(template = "", context = values) { return template.replace(/\{([\w.]+)\}/g, (_, key) => { if (key.startsWith("tr.")) return translation(key.slice(3)); const value = context[key]; return typeof value === "object" ? JSON.stringify(value) : (value ?? `{${key}}`); }); }
 function valueLabel(key) { return key.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()); }
 function isVisible(expression = "") {
   if (!expression.trim()) return true;
@@ -163,21 +176,21 @@ function objectBounds(item) {
   });
   return Number.isFinite(minX) ? { x: minX, y: minY, w: maxX - minX, h: maxY - minY } : { x, y, w, h: fallback };
 }
-function resolveImageUrl(item) {
-  const source = format(item.template || item.source || "");
+function resolveImageUrl(item, context) {
+  const source = format(item.template || item.source || "", context);
   if (!source) return "";
   if (/^(data:|https?:)/.test(source)) return source;
   const asset = source.split("/").pop();
-  return selectedFace.value && asset ? clockFaceAssetUrl(selectedFace.value, asset) : source;
+  return selectedFace.value && asset ? assetUrl(selectedFace.value, asset) : source;
 }
-function ensureImage(item) {
-  const url = resolveImageUrl(item);
-  const template = format(item.template || item.source || "");
-  if (images.has(item.id) && localImageTemplates.get(item.id) === template)
+function ensureImage(item, context, cacheId = item.id) {
+  const url = resolveImageUrl(item, context);
+  const template = format(item.template || item.source || "", context);
+  if (images.has(cacheId) && localImageTemplates.get(cacheId) === template)
     return;
-  if (!url || imageUrls.get(item.id) === url) return;
-  imageUrls.set(item.id, url);
-  loadImage(url).then((image) => { if (imageUrls.get(item.id) === url) { images.set(item.id, image); item.ratio = image.naturalWidth / image.naturalHeight; render(); } }).catch(() => { if (imageUrls.get(item.id) === url) images.delete(item.id); });
+  if (!url || imageUrls.get(cacheId) === url) return;
+  imageUrls.set(cacheId, url);
+  loadImage(url).then((image) => { if (imageUrls.get(cacheId) === url) { images.set(cacheId, image); item.ratio = image.naturalWidth / image.naturalHeight; render(); } }).catch(() => { if (imageUrls.get(cacheId) === url) images.delete(cacheId); });
 }
 function color(input) { const probe = document.createElement("canvas").getContext("2d"); probe.fillStyle = input; const hex = probe.fillStyle; const bits = hex.match(/[\da-f]{2}/gi); return bits ? bits.map((v) => parseInt(v, 16)) : [0, 0, 0]; }
 function render() {
@@ -196,7 +209,29 @@ function render() {
     else if (item.type === "flip") { const text = format(randomText(item)); const half = Math.floor((h - 6) / 2); ctx.fillStyle = "#55544e"; ctx.beginPath(); ctx.roundRect(x, y, w, h, 6); ctx.fill(); ctx.strokeStyle = "#77766e"; ctx.stroke(); ctx.fillStyle = "#1d1d1d"; ctx.fillRect(x + 2, y + 2, w - 4, half); ctx.fillStyle = "#101010"; ctx.fillRect(x + 2, y + 4 + half, w - 4, half); ctx.fillStyle = "#b1afa4"; ctx.beginPath(); ctx.roundRect(x + 1, y + Math.floor(h / 2) - 3, 4, 6, 2); ctx.fill(); ctx.beginPath(); ctx.roundRect(x + w - 5, y + Math.floor(h / 2) - 3, 4, 6, 2); ctx.fill(); pixelText(ctx, { ...item, y: y + Math.floor((h - (Number(item.font_size) || 48)) / 2) - 4, template: text, random: [], stroke: "#ffffff" }); }
     else if (item.type === "flip" || item.type === "odometer") { const fallback = item.type === "flip" ? "#181818" : "#080808"; const fill = item.fill && item.fill !== "transparent" ? item.fill : fallback; const text = format(randomText(item)); const cellWidth = text.length ? w / text.length : w; const textY = y + Math.floor((h - (Number(item.font_size) || 48)) / 2) - 6 + (item.type === "odometer" ? 2 : 0); ctx.fillStyle = fill; if (item.type === "odometer" || Number(item.border_radius) > 0) { ctx.beginPath(); ctx.roundRect(x, y, w, h, Number(item.border_radius) || (item.type === "odometer" ? 6 : 0)); ctx.fill(); if (item.type !== "odometer" || text.length > 1) ctx.stroke(); } else { ctx.fillRect(x, y, w, h); ctx.strokeRect(x + 0.5, y + 0.5, Math.max(0, w - 1), Math.max(0, h - 1)); } if (item.type === "flip") { ctx.beginPath(); ctx.moveTo(x, y + h / 2 + 0.5); ctx.lineTo(x + w, y + h / 2 + 0.5); ctx.stroke(); } [...text].forEach((character, index) => { let textX = x + index * cellWidth, textWidth = cellWidth; let clipped = false; if (item.type === "odometer" && /\d/.test(character)) { const windowWidth = cellWidth - 2; const windowX = textX + (cellWidth - windowWidth) / 2; ctx.beginPath(); ctx.roundRect(windowX, y, windowWidth, h, 2); ctx.stroke(); ctx.save(); ctx.beginPath(); ctx.roundRect(windowX, y, windowWidth, h, 2); ctx.clip(); textX = windowX; textWidth = windowWidth; clipped = true; } pixelText(ctx, { ...item, x: textX, y: textY, width: textWidth, template: character, random: [], stroke: "#ffffff" }); if (clipped) ctx.restore(); }); }
     else if (item.type === "colon") { if (!item.blink || tick.value % 2) { ctx.fillStyle = item.stroke || "#ffffff"; [h / 3 - 2, h * 2 / 3 - 2].forEach((dotY) => { ctx.beginPath(); ctx.arc(x + w / 2, y + dotY + 2, 2, 0, Math.PI * 2); ctx.fill(); }); } }
-    else if (item.type === "image") { ensureImage(item); if (images.has(item.id)) ctx.drawImage(images.get(item.id), x, y, w, h); }
+    else if (item.type === "image") {
+      if (isLoading.value && item.id === "module" && String(item.template || "").includes("{i2c}")) {
+        const offsetX = Number(item.next_module_x) || 0, offsetY = Number(item.next_module_y) || 0;
+        Object.entries(values.i2c).forEach(([i2c, available], index) => {
+          const module = { ...item, x: x + index * offsetX, y: y + index * offsetY };
+          const cacheId = `${item.id}:${i2c}`;
+          ensureImage(module, { ...values, i2c }, cacheId);
+          if (!images.has(cacheId)) return;
+          const image = images.get(cacheId);
+          if (available) ctx.drawImage(image, module.x, module.y, w, h);
+          else {
+            const tinted = document.createElement("canvas");
+            tinted.width = image.naturalWidth; tinted.height = image.naturalHeight;
+            const tint = tinted.getContext("2d");
+            tint.drawImage(image, 0, 0);
+            tint.globalCompositeOperation = "source-in";
+            tint.fillStyle = "#ff0000";
+            tint.fillRect(0, 0, tinted.width, tinted.height);
+            ctx.drawImage(tinted, module.x, module.y, w, h);
+          }
+        });
+      } else { ensureImage(item); if (images.has(item.id)) ctx.drawImage(images.get(item.id), x, y, w, h); }
+    }
   });
   if (object.value) { const bounds = objectBounds(object.value); ctx.save(); ctx.setLineDash([2, 2]); ctx.strokeStyle = "#147ef5"; ctx.strokeRect(bounds.x - 2, bounds.y - 2, bounds.w + 4, bounds.h + 4); ctx.restore(); }
 }
@@ -229,44 +264,44 @@ function crc32(bytes) { let crc = 0xFFFFFFFF; for (const byte of bytes) { crc ^=
 function zipEntries(entries) { const encoder = new TextEncoder(); const chunks = []; const central = []; let offset = 0; const u16 = (value) => Uint8Array.of(value & 255, (value >>> 8) & 255); const u32 = (value) => Uint8Array.of(value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255); const join = (parts) => { const size = parts.reduce((sum, part) => sum + part.length, 0); const data = new Uint8Array(size); let at = 0; parts.forEach((part) => { data.set(part, at); at += part.length; }); return data; }; entries.forEach(({ name, data }) => { const nameBytes = encoder.encode(name); const crc = crc32(data); const local = join([u32(0x04034B50), u16(20), u16(0), u16(0), u16(0), u16(0), u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0), nameBytes, data]); chunks.push(local); central.push(join([u32(0x02014B50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0), u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset), nameBytes])); offset += local.length; }); const centralData = join(central); return new Blob([...chunks, centralData, join([u32(0x06054B50), u16(0), u16(0), u16(entries.length), u16(entries.length), u32(centralData.length), u32(offset), u16(0)])], { type: "application/zip" }); }
 function unzipEntries(buffer) { const data = new Uint8Array(buffer); const view = new DataView(buffer); const decoder = new TextDecoder(); const files = new Map(); let offset = 0; while (offset + 4 <= data.length && view.getUint32(offset, true) === 0x04034B50) { const method = view.getUint16(offset + 8, true); const size = view.getUint32(offset + 18, true); const nameLength = view.getUint16(offset + 26, true); const extraLength = view.getUint16(offset + 28, true); if (method !== 0) throw new Error("Compressed ZIP files are not supported"); const start = offset + 30 + nameLength + extraLength; files.set(decoder.decode(data.slice(offset + 30, offset + 30 + nameLength)), data.slice(start, start + size)); offset = start + size; } return files; }
 async function exportJson() { try { await navigator.clipboard.writeText(projectJson()); status.value = "JSON copied to clipboard."; } catch { status.value = "Clipboard export is unavailable."; } }
-async function exportArchive() { if (!selectedFace.value) { status.value = "Open a saved clock face before exporting its archive."; return; } try { const assets = (await listClockFaceAssets(selectedFace.value)).assets || []; const entries = [{ name: "clockface.json", data: new TextEncoder().encode(projectJson()) }]; for (const asset of assets) { const response = await fetch(clockFaceAssetUrl(selectedFace.value, asset)); if (!response.ok) throw new Error(); entries.push({ name: asset, data: new Uint8Array(await response.arrayBuffer()) }); } download(`${selectedFace.value}.zip`, zipEntries(entries)); status.value = `Exported ${entries.length} archive files.`; } catch { status.value = "Clock-face archive export failed."; } }
-async function importArchive(event) { const file = event.target.files?.[0]; if (!file) return; try { const entries = unzipEntries(await file.arrayBuffer()); const json = entries.get("clockface.json"); if (!json) throw new Error(); const parsed = JSON.parse(new TextDecoder().decode(json)); if (parsed.width !== W || parsed.height !== H) throw new Error(); const name = window.prompt("Import archive as", safeFaceName(parsed.name)); if (name === null) return; const face = safeFaceName(name); await saveClockFace(face, JSON.stringify(parsed)); for (const [asset, data] of entries) if (asset !== "clockface.json" && asset.endsWith(".png")) await uploadClockFaceAsset(face, asset, new Blob([data], { type: "image/png" })); await refreshSavedFaces(); selectedFace.value = face; await openFromMaclock(); status.value = `Imported ${entries.size} archive files.`; } catch { status.value = "That is not a supported Maclock face ZIP archive."; } finally { event.target.value = ""; } }
-async function refreshSavedFaces() { try { const result = await fetchClockFaces(); savedFaces.value = result.faces || []; savedFaceOptions.value = await Promise.all(savedFaces.value.map(async (id) => { const face = await loadClockFace(id); return { id, name: face.name || id }; })); if (!savedFaces.value.includes(selectedFace.value) && savedFaces.value.length) selectedFace.value = savedFaces.value[0]; } catch { status.value = "Could not list clock faces from Maclock."; } }
+async function exportArchive() { if (!selectedFace.value) { status.value = `Open a saved ${projectLabel.value} before exporting its archive.`; return; } try { const assets = (await listAssets(selectedFace.value)).assets || []; const entries = [{ name: projectFilename.value, data: new TextEncoder().encode(projectJson()) }]; for (const asset of assets) { const response = await fetch(assetUrl(selectedFace.value, asset)); if (!response.ok) throw new Error(); entries.push({ name: asset, data: new Uint8Array(await response.arrayBuffer()) }); } download(`${selectedFace.value}.zip`, zipEntries(entries)); status.value = `Exported ${entries.length} archive files.`; } catch { status.value = `${projectLabel.value} archive export failed.`; } }
+async function importArchive(event) { const file = event.target.files?.[0]; if (!file) return; try { const entries = unzipEntries(await file.arrayBuffer()); const json = entries.get(projectFilename.value); if (!json) throw new Error(); const parsed = JSON.parse(new TextDecoder().decode(json)); if (parsed.format !== projectFormat.value || parsed.width !== W || parsed.height !== H) throw new Error(); const name = window.prompt(`Import ${projectLabel.value} as`, safeFaceName(parsed.name)); if (name === null) return; const face = safeFaceName(name); await saveProject(face, JSON.stringify(parsed)); for (const [asset, data] of entries) if (asset !== projectFilename.value && asset.endsWith(".png")) await uploadAsset(face, asset, new Blob([data], { type: "image/png" })); await refreshSavedFaces(); selectedFace.value = face; await openFromMaclock(); status.value = `Imported ${entries.size} archive files.`; } catch { status.value = `That is not a supported Maclock ${projectLabel.value} ZIP archive.`; } finally { event.target.value = ""; } }
+async function refreshSavedFaces() { try { const result = isLoading.value ? await fetchLoadingScreens() : await fetchClockFaces(); savedFaces.value = isLoading.value ? result.screens || [] : result.faces || []; savedFaceOptions.value = await Promise.all(savedFaces.value.map(async (id) => { const face = await loadProject(id); return { id, name: face.name || id }; })); if (!savedFaces.value.includes(selectedFace.value) && savedFaces.value.length) selectedFace.value = savedFaces.value[0]; } catch { status.value = `Could not list ${projectLabel.value}s from Maclock.`; } }
 async function openFromMaclock() {
   try {
-    const loaded = await loadClockFace(selectedFace.value); project.value = loaded; images.clear(); imageUrls.clear(); localImageTemplates.clear();
-    for (const item of project.value.objects.filter((entry) => entry.type === "image")) {
+    const loaded = await loadProject(selectedFace.value); project.value = loaded; images.clear(); imageUrls.clear(); localImageTemplates.clear();
+    for (const item of project.value.objects.filter((entry) => entry.type === "image" && !String(entry.template || "").includes("{i2c}"))) {
       item.template ||= item.source || "";
       const asset = String(format(item.template)).split("/").pop(); if (!asset) continue;
-      const url = clockFaceAssetUrl(selectedFace.value, asset); const image = await loadImage(url); images.set(item.id, image); imageUrls.set(item.id, url); item.assetName = asset; item.ratio = image.naturalWidth / image.naturalHeight;
+      const url = assetUrl(selectedFace.value, asset); const image = await loadImage(url); images.set(item.id, image); imageUrls.set(item.id, url); item.assetName = asset; item.ratio = image.naturalWidth / image.naturalHeight;
     }
-    selected.value = project.value.objects.length ? 0 : -1; localStorage.setItem(LAST_FACE_KEY, selectedFace.value); status.value = `Loaded ${selectedFace.value} from Maclock.`; render(); return true;
-  } catch { status.value = "Could not load this clock face from Maclock."; return false; }
+    selected.value = project.value.objects.length ? 0 : -1; localStorage.setItem(lastProjectKey.value, selectedFace.value); status.value = `Loaded ${selectedFace.value} from Maclock.`; render(); return true;
+  } catch { status.value = `Could not load this ${projectLabel.value} from Maclock.`; return false; }
 }
 function safeFaceName(name) { return String(name || "").toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "clock_face"; }
 function newProject() {
   project.value = {
-    format: "maclock-clock-face", version: 1, name: "Untitled Face",
+    format: projectFormat.value, version: 1, name: isLoading.value ? "Untitled Loading Screen" : "Untitled Face",
     width: W, height: H, background: "#ffffff", random_interval_seconds: 60, translations: {}, objects: [],
   };
   selected.value = -1;
   selectedFace.value = "";
-  localStorage.removeItem(LAST_FACE_KEY);
+  localStorage.removeItem(lastProjectKey.value);
   images.clear(); imageUrls.clear(); localImageTemplates.clear();
-  status.value = "New clock face. Add layers, then Save As…";
+  status.value = `New ${projectLabel.value}. Add layers, then Save As…`;
   render();
 }
 async function saveToMaclock(name) {
   const face = safeFaceName(typeof name === "string" ? name : (selectedFace.value || project.value.name));
   try {
     for (const item of project.value.objects.filter((entry) => entry.type === "image")) {
-      const image = images.get(item.id); if (!image) continue; const out = document.createElement("canvas"); out.width = image.naturalWidth; out.height = image.naturalHeight; out.getContext("2d").drawImage(image, 0, 0); const blob = await new Promise((resolve) => out.toBlob(resolve, "image/png")); await uploadClockFaceAsset(face, item.assetName || `${item.id}.png`, blob);
+      const image = images.get(item.id); if (!image) continue; const out = document.createElement("canvas"); out.width = image.naturalWidth; out.height = image.naturalHeight; out.getContext("2d").drawImage(image, 0, 0); const blob = await new Promise((resolve) => out.toBlob(resolve, "image/png")); await uploadAsset(face, item.assetName || `${item.id}.png`, blob);
     }
-    localImageTemplates.clear(); await saveClockFace(face, projectJson()); await refreshSavedFaces(); selectedFace.value = face; localStorage.setItem(LAST_FACE_KEY, face); status.value = `Saved /clockface/${face}/clockface.json`; render();
-  } catch { status.value = "Maclock could not save this clock face."; }
+    localImageTemplates.clear(); await saveProject(face, projectJson()); await refreshSavedFaces(); selectedFace.value = face; localStorage.setItem(lastProjectKey.value, face); status.value = `Saved /${isLoading.value ? "loading" : "clockface"}/${face}/${projectFilename.value}`; render();
+  } catch { status.value = `Maclock could not save this ${projectLabel.value}.`; }
 }
 async function saveAsToMaclock() {
-  const name = window.prompt("Save clock face as", safeFaceName(project.value.name));
+  const name = window.prompt(`Save ${projectLabel.value} as`, safeFaceName(project.value.name));
   if (name === null) return;
   project.value.name = name.trim() || project.value.name;
   await saveToMaclock(name);
@@ -278,9 +313,9 @@ async function useOnMaclock() {
 async function openAndUseFace(face) {
   selectedFace.value = face.id;
   if (await openFromMaclock())
-    await useOnMaclock();
+    if (!isLoading.value) await useOnMaclock();
 }
-async function importJson() { try { const parsed = JSON.parse(await navigator.clipboard.readText()); if (parsed.width !== W || parsed.height !== H) throw new Error(); project.value = parsed; selected.value = parsed.objects.length ? 0 : -1; status.value = "JSON imported from clipboard. Existing face assets were preserved."; render(); } catch { status.value = "Clipboard does not contain a 304×224 Maclock face JSON project."; } }
+async function importJson() { try { const parsed = JSON.parse(await navigator.clipboard.readText()); if (parsed.format !== projectFormat.value || parsed.width !== W || parsed.height !== H) throw new Error(); project.value = parsed; selected.value = parsed.objects.length ? 0 : -1; status.value = "JSON imported from clipboard. Existing project assets were preserved."; render(); } catch { status.value = `Clipboard does not contain a 304×224 Maclock ${projectLabel.value} JSON project.`; } }
 let timer = 0;
 let previewResizeObserver = null;
 function updatePreviewScale() {
@@ -296,7 +331,7 @@ function closeMenus() { openMenu.value = null; }
 function runMenuCommand(command) { closeMenus(); return command(); }
 function closeMenuOnOutsideClick(event) { if (!menuBar.value?.contains(event.target)) closeMenus(); }
 function closeMenuOnEscape(event) { if (event.key === "Escape") closeMenus(); }
-onMounted(async () => { render(); updatePreviewScale(); window.addEventListener("resize", updatePreviewScale); previewResizeObserver = new ResizeObserver(updatePreviewScale); if (preview.value) previewResizeObserver.observe(preview.value); const fontResult = await fetchClockFaceFonts(); lvglFonts.value = fontResult.fonts || []; await refreshSavedFaces(); const lastFace = localStorage.getItem(LAST_FACE_KEY); if (lastFace && savedFaces.value.includes(lastFace)) selectedFace.value = lastFace; if (selectedFace.value) await openFromMaclock(); window.addEventListener("keydown", nudge); timer = window.setInterval(() => { tick.value = Math.floor(Date.now() / 1000); render(); }, 1000); });
+onMounted(async () => { render(); updatePreviewScale(); window.addEventListener("resize", updatePreviewScale); previewResizeObserver = new ResizeObserver(updatePreviewScale); if (preview.value) previewResizeObserver.observe(preview.value); const [fontResult, state] = await Promise.all([fetchClockFaceFonts(), fetchState().catch(() => ({}))]); lvglFonts.value = fontResult.fonts || []; sounds.value = state.sounds || []; await refreshSavedFaces(); const lastFace = localStorage.getItem(lastProjectKey.value); if (lastFace && savedFaces.value.includes(lastFace)) selectedFace.value = lastFace; if (selectedFace.value) await openFromMaclock(); window.addEventListener("keydown", nudge); timer = window.setInterval(() => { tick.value = Math.floor(Date.now() / 1000); render(); }, 1000); });
 onMounted(() => { window.addEventListener("pointerdown", closeMenuOnOutsideClick); window.addEventListener("keydown", closeMenuOnEscape); });
 onBeforeUnmount(() => { window.clearInterval(timer); window.removeEventListener("keydown", nudge); window.removeEventListener("keydown", closeMenuOnEscape); window.removeEventListener("pointerdown", closeMenuOnOutsideClick); window.removeEventListener("resize", updatePreviewScale); previewResizeObserver?.disconnect(); });
 watch(project, () => nextTick(render), { deep: true });
@@ -309,8 +344,8 @@ watch(project, () => nextTick(render), { deep: true });
       <div class="face-editor__menu"><button type="button" aria-haspopup="menu" :aria-expanded="openMenu === 'file'" @click="toggleMenu('file')">File</button><div v-if="openMenu === 'file'" class="face-editor__menu-popover" role="menu"><button type="button" role="menuitem" @click="runMenuCommand(newProject)">New</button><button type="button" role="menuitem" @click="runMenuCommand(() => saveToMaclock())">Save</button><button type="button" role="menuitem" @click="runMenuCommand(saveAsToMaclock)">Save As...</button><hr><button type="button" role="menuitem" @click="runMenuCommand(() => archiveUpload?.click())">Import archive</button><button type="button" role="menuitem" @click="runMenuCommand(exportArchive)" :disabled="!selectedFace">Export archive</button><button type="button" role="menuitem" @click="runMenuCommand(importJson)">Import JSON</button><button type="button" role="menuitem" @click="runMenuCommand(exportJson)">Export JSON</button></div></div>
       <div class="face-editor__menu"><button type="button" aria-haspopup="menu" :aria-expanded="openMenu === 'edit'" @click="toggleMenu('edit')">Edit</button><div v-if="openMenu === 'edit'" class="face-editor__menu-popover" role="menu"><label class="face-editor__menu-label">New object<select v-model="newObjectType"><option v-for="type in objectTypes" :key="type" :value="type">{{ type }}</option></select></label><button type="button" role="menuitem" @click="runMenuCommand(addSelectedObject)">Add object</button><hr><button type="button" role="menuitem" @click="runMenuCommand(() => moveObject(-1))" :disabled="!object || selected === 0">Bring back</button><button type="button" role="menuitem" @click="runMenuCommand(() => moveObject(1))" :disabled="!object || selected === project.objects.length - 1">Bring forward</button><button type="button" role="menuitem" @click="runMenuCommand(() => toggleObjectFlag('locked'))" :disabled="!object">{{ object?.editor?.locked ? 'Unlock' : 'Lock' }}</button><button type="button" role="menuitem" @click="runMenuCommand(() => toggleObjectFlag('hidden'))" :disabled="!object">{{ object?.editor?.hidden ? 'Show' : 'Hide' }}</button><button type="button" role="menuitem" @click="runMenuCommand(duplicateObject)" :disabled="!object">Duplicate</button><button type="button" role="menuitem" @click="runMenuCommand(removeObject)" :disabled="!object">Delete</button></div></div>
       <div class="face-editor__menu"><button type="button" aria-haspopup="menu" :aria-expanded="openMenu === 'object'" @click="toggleMenu('object')">Object</button><div v-if="openMenu === 'object'" class="face-editor__menu-popover face-editor__object-list" role="menu"><button v-for="(item, index) in project.objects" :key="item.id" type="button" role="menuitem" :class="{ selected: selected === index }" @click="runMenuCommand(() => { selected = index; render(); })">{{ item.id }} <small>{{ item.type }}</small></button><span v-if="!project.objects.length" class="face-editor__menu-empty">No objects</span></div></div>
-      <div class="face-editor__menu"><button type="button" aria-haspopup="menu" :aria-expanded="openMenu === 'view'" @click="toggleMenu('view')">View</button><div v-if="openMenu === 'view'" class="face-editor__menu-popover" role="menu"><fieldset class="face-editor__availability"><legend>Preview availability</legend><label v-for="key in availabilityValues" :key="key"><input v-model="values[key]" type="checkbox" @change="render"> {{ valueLabel(key) }}</label><label><input v-model="values.floppy_inserted" type="checkbox" @change="render"> Floppy inserted</label><label>Weather <select :value="values.weather_asset" @change="setPreviewWeather($event.target.value)"><option value="sunny">Sunny</option><option value="cloudy">Cloudy</option><option value="rainy">Rainy</option></select></label><label>Language <select v-model="previewLanguage"><option value="en">English</option><option value="fr">French</option><option value="es">Spanish</option><option value="de">Deutsch</option><option value="it">Italian</option></select></label></fieldset></div></div>
-      <div class="face-editor__menu"><button type="button" aria-haspopup="menu" :aria-expanded="openMenu === 'face'" @click="toggleMenu('face')">Face</button><div v-if="openMenu === 'face'" class="face-editor__menu-popover" role="menu"><button v-for="face in savedFaceOptions" :key="face.id" type="button" role="menuitem" :class="{ selected: selectedFace === face.id }" @click="runMenuCommand(() => openAndUseFace(face))">{{ face.name }}</button><span v-if="!savedFaceOptions.length" class="face-editor__menu-empty">No saved clock faces</span></div></div>
+      <div class="face-editor__menu"><button type="button" aria-haspopup="menu" :aria-expanded="openMenu === 'view'" @click="toggleMenu('view')">View</button><div v-if="openMenu === 'view'" class="face-editor__menu-popover" role="menu"><fieldset class="face-editor__availability"><legend>Preview availability</legend><label v-for="key in availabilityValues" :key="key"><input v-model="values[key]" type="checkbox" @change="render"> {{ valueLabel(key) }}</label><template v-if="isLoading"><strong>I2C modules</strong><label v-for="(available, address) in values.i2c" :key="address"><input v-model="values.i2c[address]" type="checkbox" @change="render"> {{ address }}</label></template><label><input v-model="values.floppy_inserted" type="checkbox" @change="render"> Floppy inserted</label><label>Weather <select :value="values.weather_asset" @change="setPreviewWeather($event.target.value)"><option value="sunny">Sunny</option><option value="cloudy">Cloudy</option><option value="rainy">Rainy</option></select></label><label>Language <select v-model="previewLanguage"><option value="en">English</option><option value="fr">French</option><option value="es">Spanish</option><option value="de">Deutsch</option><option value="it">Italian</option></select></label></fieldset></div></div>
+      <div class="face-editor__menu"><button type="button" aria-haspopup="menu" :aria-expanded="openMenu === 'face'" @click="toggleMenu('face')">{{ isLoading ? 'Loading Screen' : 'Face' }}</button><div v-if="openMenu === 'face'" class="face-editor__menu-popover" role="menu"><button v-for="face in savedFaceOptions" :key="face.id" type="button" role="menuitem" :class="{ selected: selectedFace === face.id }" @click="runMenuCommand(() => openAndUseFace(face))">{{ face.name }}</button><span v-if="!savedFaceOptions.length" class="face-editor__menu-empty">No saved {{ isLoading ? 'loading screens' : 'clock faces' }}</span></div></div>
       <span class="face-editor__status" role="status">{{ status }}</span>
     </nav>
     </Teleport>
@@ -318,10 +353,10 @@ watch(project, () => nextTick(render), { deep: true });
     <div class="face-editor__layout">
       <div ref="preview" class="face-editor__preview"><canvas ref="canvas" width="304" height="224" :style="{ width: `${W * previewScale}px`, height: `${H * previewScale}px` }" @pointerdown="beginDrag" @pointermove="moveDrag" @pointerup="endDrag" @pointercancel="endDrag" /></div>
       <aside class="face-editor__properties">
-        <details><summary>Face</summary><div class="face-editor__section"><label>Name <input v-model="project.name"></label><label>Id <input :value="selectedFace" readonly></label><label>Background <input v-model="project.background"></label><label>Random every (seconds) <input v-model.number="project.random_interval_seconds" type="number" min="1"></label></div></details>
+        <details><summary>{{ isLoading ? 'Loading Screen' : 'Face' }}</summary><div class="face-editor__section"><label>Name <input v-model="project.name"></label><label>Id <input :value="selectedFace" readonly></label><label>Background <input v-model="project.background"></label><label v-if="isLoading">Sound <select v-model="project.sound"><option value="">None</option><option v-for="sound in sounds" :key="sound.path" :value="sound.path">{{ sound.name }}</option></select></label><label>Random every (seconds) <input v-model.number="project.random_interval_seconds" type="number" min="1"></label></div></details>
         <details><summary>Translations</summary><div class="face-editor__section"><p class="face-editor__hint">Use <code>{tr.key}</code> in text layers. English is the fallback.</p><div v-for="([key, entry]) in translationEntries" :key="key" class="face-editor__translation"><strong>{{ key }}</strong><button type="button" title="Remove translation" @click="removeTranslation(key)">−</button><label>EN <input v-model="entry.en"></label><label>FR <input v-model="entry.fr"></label><label>ES <input v-model="entry.es"></label><label>DE <input v-model="entry.de"></label><label>IT <input v-model="entry.it"></label></div><button type="button" @click="addTranslation">+ Add translation</button></div></details>
         <template v-if="object">
-            <details><summary>Object · {{ object.id }}</summary><div class="face-editor__section"><label>Id <input v-model="object.id"></label><label>Type <select v-model="object.type"><option v-for="type in objectTypes" :key="type">{{ type }}</option></select></label><label>X <input v-model.number="object.x" type="number"></label><label>Y <input v-model.number="object.y" type="number"></label><label>Width <input v-model.number="object.width" type="number" @change="resizeImage('width')"></label><label>Height <input v-model.number="object.height" type="number" @change="resizeImage('height')"></label><label v-if="object.type === 'line'">Angle <input v-model="object.angle" placeholder="{hour}" @input="render"></label><label v-if="object.type === 'line'">Max <input v-model.number="object.max" type="number" min="1" @input="render"></label><label v-if="object.type === 'colon'"><input v-model="object.blink" type="checkbox"> Blink</label></div></details>
+            <details><summary>Object · {{ object.id }}</summary><div class="face-editor__section"><label>Id <input v-model="object.id"></label><label>Type <select v-model="object.type"><option v-for="type in objectTypes" :key="type">{{ type }}</option></select></label><label>X <input v-model.number="object.x" type="number"></label><label>Y <input v-model.number="object.y" type="number"></label><label>Width <input v-model.number="object.width" type="number" @change="resizeImage('width')"></label><label>Height <input v-model.number="object.height" type="number" @change="resizeImage('height')"></label><template v-if="object.id.startsWith('module')"><p class="face-editor__hint">Next module is X/Y offset from this.</p><label>Next module X offset <input v-model.number="object.next_module_x" type="number"></label><label>Next module Y offset <input v-model.number="object.next_module_y" type="number"></label></template><label v-if="object.type === 'line'">Angle <input v-model="object.angle" placeholder="{hour}" @input="render"></label><label v-if="object.type === 'line'">Max <input v-model.number="object.max" type="number" min="1" @input="render"></label><label v-if="object.type === 'colon'"><input v-model="object.blink" type="checkbox"> Blink</label></div></details>
             <details><summary>Appearance</summary><div class="face-editor__section"><label>Stroke <input v-model="object.stroke" placeholder="#000000"></label><label>Fill <select v-model="object.fill"><option value="transparent">Transparent</option><option value="#ffffff">White</option><option value="#000000">Black</option></select></label><label>Stroke width <input v-model.number="object.stroke_width" type="number" min="0"></label><label v-if="!['line', 'text', 'image', 'colon'].includes(object.type)">Border radius <input v-model.number="object.border_radius" type="number" min="0"></label></div></details>
           <details><summary>Visible when…</summary><div class="face-editor__section"><p class="face-editor__hint">All conditions must match. No condition means always visible.</p><div v-for="(rule, index) in visibleRules" :key="index" class="face-editor__rule"><select :value="rule.key" @change="updateVisibleRule(index, 'key', $event.target.value)"><option v-for="placeholder in placeholders" :key="placeholder" :value="placeholder">{{ valueLabel(placeholder) }}</option></select><select :value="rule.operator" @change="updateVisibleRule(index, 'operator', $event.target.value)"><option value="==">is</option><option value="!=">is not</option></select><select v-if="typeof values[rule.key] === 'boolean'" :value="rule.value" @change="updateVisibleRule(index, 'value', $event.target.value)"><option value="true">available / yes</option><option value="false">unavailable / no</option></select><input v-else :value="rule.value" @input="updateVisibleRule(index, 'value', $event.target.value)" :placeholder="String(values[rule.key] ?? '')"><button type="button" title="Remove condition" @click="removeVisibleRule(index)">−</button></div><button type="button" @click="addVisibleRule">+ Add condition</button></div></details>
           <details v-if="['text', 'flip', 'odometer'].includes(object.type)"><summary>Text</summary><div class="face-editor__section"><label>Template <input v-model="object.template" placeholder="{time_min}"></label><div class="face-editor__placeholder"><select v-model="selectedPlaceholder"><option v-for="placeholder in placeholderOptions" :key="placeholder.key" :value="placeholder.key">{{ placeholder.label }}</option></select><button type="button" @click="insertPlaceholder">Insert</button></div><label>LVGL pixel font <select v-model="object.font_family" @change="selectFont"><option v-for="font in lvglFonts" :key="font.id" :value="font.id">{{ font.id }} · {{ font.size }} px{{ font.digitsOnly ? ' · digits' : '' }}</option></select></label><label>Font size <input v-model.number="object.font_size" type="number" min="1" @change="render"></label><label>Alignment <select v-model="object.align"><option v-for="alignment in alignments" :key="alignment">{{ alignment }}</option></select></label><label v-if="object.type === 'text'">Random text (one per line) <textarea v-model="randomLines" rows="5" spellcheck="false"></textarea></label></div></details>

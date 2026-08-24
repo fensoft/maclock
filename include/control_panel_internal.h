@@ -47,6 +47,11 @@ struct ControlPanelService::State
     String clockface_upload_error;
     size_t clockface_upload_size = 0;
     bool clockface_upload_started = false;
+    File loading_upload;
+    String loading_upload_path;
+    String loading_upload_error;
+    size_t loading_upload_size = 0;
+    bool loading_upload_started = false;
 };
 
 extern ControlPanelService *active_control_panel;
@@ -71,6 +76,7 @@ void register_control_panel_routes();
 void register_control_panel_settings_routes(WebServer &server);
 String safe_clockface_name(const String &source);
 void register_control_panel_clockface_routes(WebServer &server);
+void register_control_panel_loading_routes(WebServer &server);
 void register_control_panel_screensaver_routes(WebServer &server);
 void register_control_panel_minivmac_routes(WebServer &server);
 void register_control_panel_update_routes(WebServer &server);

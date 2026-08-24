@@ -72,6 +72,7 @@ const launcherApps = [
   { id: "backup", titleKey: "configurationBackup", icon: "backup" },
   { id: "minivmac", titleKey: "miniVmacFiles", icon: "minivmac" },
   { id: "faceEditor", titleKey: "faceEditor", icon: "faceEditor" },
+  { id: "loadingEditor", titleKey: "loadingEditor", icon: "loadingEditor" },
 ];
 
 const panelState = ref(null);
@@ -1227,6 +1228,17 @@ onBeforeUnmount(() => {
             @close="closeActiveApp()"
           >
             <FaceEditor />
+          </ActiveAppWindow>
+          <ActiveAppWindow
+            v-if="activeApp === 'loadingEditor'"
+            ref="activeWindowRef"
+            app-id="loading-editor"
+            :title="activeAppTitle"
+            class="mac-window--wide"
+            :close-label="t('closeWindow', { title: activeAppTitle })"
+            @close="closeActiveApp()"
+          >
+            <FaceEditor mode="loading" />
           </ActiveAppWindow>
           <MacWindow
             v-if="activeApp === 'appearance'"

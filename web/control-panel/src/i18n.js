@@ -35,6 +35,7 @@ const translations = [
     discardChanges: "Discard Changes",
     appearance: "Appearance",
     faceEditor: "Clock Face Editor",
+    loadingEditor: "Loading Screen Editor",
     location: "Location",
     city: "City",
     countryCode: "Country",

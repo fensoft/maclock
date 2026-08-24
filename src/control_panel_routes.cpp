@@ -12,6 +12,7 @@ void register_control_panel_routes()
     g_server.on("/", HTTP_GET, send_control_page);
     register_control_panel_settings_routes(g_server);
     register_control_panel_clockface_routes(g_server);
+    register_control_panel_loading_routes(g_server);
     register_control_panel_screensaver_routes(g_server);
     register_control_panel_minivmac_routes(g_server);
     register_control_panel_update_routes(g_server);

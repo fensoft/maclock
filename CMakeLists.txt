@@ -158,6 +158,7 @@ set(MACLOCK_APPLICATION_SOURCES
     src/configuration_archive_zip.cpp
     src/configuration_archive_zip_parser.cpp
     src/control_panel_clockface.cpp
+    src/control_panel_loading.cpp
     src/control_panel_core.cpp
     src/control_panel_minivmac.cpp
     src/control_panel_routes.cpp

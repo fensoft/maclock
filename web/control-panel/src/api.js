@@ -519,6 +519,52 @@ export function clockFaceAssetUrl(face, name) {
   return `/api/clockface/asset?name=${encodeURIComponent(name)}&face=${encodeURIComponent(face)}`;
 }
 
+const demoLoadingScreens = [];
+const demoLoadingProjects = new Map();
+
+export async function fetchLoadingScreens() {
+  if (import.meta.env.DEV) return { screens: [...demoLoadingScreens] };
+  return realFetch("/api/loading/list");
+}
+
+export async function loadLoadingScreen(name) {
+  if (import.meta.env.DEV) {
+    const project = demoLoadingProjects.get(name);
+    if (!project) throw new Error("Loading screen could not be loaded");
+    return clone(project);
+  }
+  const response = await fetch(`/api/loading/project?name=${encodeURIComponent(name)}`);
+  if (!response.ok) throw new Error("Loading screen could not be loaded");
+  return response.json();
+}
+
+export async function listLoadingScreenAssets(name) {
+  if (import.meta.env.DEV) return { assets: [] };
+  return realFetch(`/api/loading/assets?name=${encodeURIComponent(name)}`);
+}
+
+export async function saveLoadingScreen(name, json) {
+  if (import.meta.env.DEV) {
+    demoLoadingProjects.set(name, clone(JSON.parse(json)));
+    if (!demoLoadingScreens.includes(name)) demoLoadingScreens.push(name);
+    return { ok: true, message: "Loading screen saved" };
+  }
+  return postForm("/api/loading/project", { name, json });
+}
+
+export async function uploadLoadingScreenAsset(screen, name, blob) {
+  if (import.meta.env.DEV) return { ok: true, message: "Loading-screen asset saved" };
+  const body = new FormData();
+  body.append("file", blob, name);
+  const response = await fetch(`/api/loading/asset/upload?name=${encodeURIComponent(screen)}`, { method: "POST", body });
+  return parseResponse(response);
+}
+
+export function loadingScreenAssetUrl(screen, name) {
+  if (import.meta.env.DEV) return "";
+  return `/api/loading/asset?name=${encodeURIComponent(name)}&screen=${encodeURIComponent(screen)}`;
+}
+
 export async function uploadMiniVmacFile(slot, file) {
   if (import.meta.env.DEV) {
     await new Promise((resolve) => setTimeout(resolve, 350));

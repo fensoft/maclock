@@ -1,0 +1,48 @@
+{
+  "format": "maclock-loading-screen",
+  "version": 1,
+  "name": "Macintosh",
+  "width": 304,
+  "height": 224,
+  "background": "#ffffff",
+  "sound": "/floppy.mp3",
+  "random_interval_seconds": 60,
+  "translations": {},
+  "objects": [
+    {
+      "id": "background",
+      "type": "image",
+      "template": "background.png",
+      "x": 0,
+      "y": 0,
+      "width": 304,
+      "height": 224,
+      "keep_ratio": true,
+      "visible_if": ""
+    },
+    {
+      "id": "boot",
+      "type": "image",
+      "template": "boot.png",
+      "x": 22,
+      "y": 48,
+      "width": 261,
+      "height": 129,
+      "keep_ratio": true,
+      "visible_if": ""
+    },
+    {
+      "id": "module",
+      "type": "image",
+      "template": "plugin_{i2c}.png",
+      "x": 8,
+      "y": 184,
+      "width": 32,
+      "height": 32,
+      "keep_ratio": true,
+      "next_module_x": 36,
+      "next_module_y": 0,
+      "visible_if": ""
+    }
+  ]
+}
