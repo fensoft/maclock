@@ -29,9 +29,26 @@ import {
   uploadScreensaverPhoto,
   screensaverPhotoUrl,
 } from "./api";
-import MacAppIcon from "./components/MacAppIcon.vue";
 import MacButton from "./components/MacButton.vue";
 import MacWindow from "./components/MacWindow.vue";
+import ControlPanelMenuBar from "./components/ControlPanelMenuBar.vue";
+import ControlPanelLauncher from "./components/ControlPanelLauncher.vue";
+import ActiveAppWindow from "./components/ActiveAppWindow.vue";
+import ControlPanelNotice from "./components/ControlPanelNotice.vue";
+import RestoreConfirmationDialog from "./components/RestoreConfirmationDialog.vue";
+import DeleteSoundConfirmationDialog from "./components/DeleteSoundConfirmationDialog.vue";
+import AppearanceApp from "./apps/AppearanceApp.vue";
+import LocationApp from "./apps/LocationApp.vue";
+import MqttApp from "./apps/MqttApp.vue";
+import ScreensaverApp from "./apps/ScreensaverApp.vue";
+import TimerApp from "./apps/TimerApp.vue";
+import AlarmsApp from "./apps/AlarmsApp.vue";
+import NightModeApp from "./apps/NightModeApp.vue";
+import HourlyChimeApp from "./apps/HourlyChimeApp.vue";
+import SoundManagerApp from "./apps/SoundManagerApp.vue";
+import SoftwareUpdateApp from "./apps/SoftwareUpdateApp.vue";
+import ConfigurationBackupApp from "./apps/ConfigurationBackupApp.vue";
+import MiniVmacFilesApp from "./apps/MiniVmacFilesApp.vue";
 import FaceEditor from "./face_editor/FaceEditor.vue";
 import {
   languageCodes,
@@ -113,6 +130,20 @@ const t = (key, replacements) =>
 const activeAppEntry = computed(
   () => launcherApps.find((app) => app.id === activeApp.value) || null,
 );
+const activePane = computed(() => ({
+  appearance: AppearanceApp,
+  location: LocationApp,
+  mqtt: MqttApp,
+  screensaver: ScreensaverApp,
+  timer: TimerApp,
+  alarms: AlarmsApp,
+  night: NightModeApp,
+  chime: HourlyChimeApp,
+  sounds: SoundManagerApp,
+  update: SoftwareUpdateApp,
+  backup: ConfigurationBackupApp,
+  minivmac: MiniVmacFilesApp,
+}[activeApp.value]));
 const activeAppTitle = computed(() =>
   activeAppEntry.value ? t(activeAppEntry.value.titleKey) : "",
 );
@@ -1154,40 +1185,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="desktop">
-    <nav
-      class="menu-bar"
-      :class="{ 'menu-bar--face-editor': activeApp === 'faceEditor' }"
-      :aria-label="t('menuSections')"
-    >
-      <button
-        class="apple"
-        type="button"
-        :aria-label="t('home')"
-        @click="closeActiveApp(true)"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35-.07 2.29.74 3.08.79 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.53 4.09M12.03 7.25C11.88 5.02 13.69 3.18 15.77 3c.29 2.58-2.34 4.5-3.74 4.25"
-          />
-        </svg>
-      </button>
-      <div id="face-editor-menu-host" v-if="activeApp === 'faceEditor'"></div>
-      <template v-else>
-        <button type="button" @click="openApp('appearance')">
-          {{ t("file") }}
-        </button>
-        <button type="button" @click="openApp('alarms')">
-          {{ t("edit") }}
-        </button>
-        <button type="button" @click="openApp('screensaver')">
-          {{ t("view") }}
-        </button>
-        <button type="button" @click="openApp('sounds')">
-          {{ t("special") }}
-        </button>
-        <span>{{ t("control") }}</span>
-      </template>
-    </nav>
+    <ControlPanelMenuBar :active-app="activeApp" :t="t" @home="closeActiveApp(true)" @open="openApp" />
 
     <main>
       <div v-if="loading" class="startup-screen" role="status">
@@ -1216,42 +1214,20 @@ onBeforeUnmount(() => {
           </div>
         </MacWindow>
 
-        <section
-          v-if="!activeApp"
-          ref="launcherRef"
-          class="app-launcher"
-          tabindex="-1"
-          :aria-label="t('launcherTitle')"
-        >
-          <div class="app-grid">
-            <MacAppIcon
-              v-for="app in launcherApps"
-              :key="app.id"
-              :app-id="app.id"
-              :icon="app.icon"
-              :title="t(app.titleKey)"
-              :open-label="
-                t('openApp', { title: t(app.titleKey) })
-              "
-              :selected="selectedApp === app.id"
-              @select="selectApp(app.id)"
-              @open="openApp(app.id)"
-            />
-          </div>
-        </section>
+        <ControlPanelLauncher v-if="!activeApp" ref="launcherRef" :apps="launcherApps" :selected-app="selectedApp" :t="t" @select="selectApp" @open="openApp" />
 
-        <div v-if="activeApp" class="active-window-slot">
-          <MacWindow
+        <component :is="activePane || 'div'" v-if="activeApp" class="active-window-slot">
+          <ActiveAppWindow
             v-if="activeApp === 'faceEditor'"
             ref="activeWindowRef"
+            app-id="face-editor"
             :title="activeAppTitle"
             class="mac-window--wide"
-            closable
             :close-label="t('closeWindow', { title: activeAppTitle })"
             @close="closeActiveApp()"
           >
             <FaceEditor />
-          </MacWindow>
+          </ActiveAppWindow>
           <MacWindow
             v-if="activeApp === 'appearance'"
             id="appearance"
@@ -2583,7 +2559,7 @@ onBeforeUnmount(() => {
               </section>
             </form>
           </MacWindow>
-        </div>
+        </component>
 
         <footer class="corner-footer">
           <a
@@ -2599,114 +2575,10 @@ onBeforeUnmount(() => {
       </template>
     </main>
 
-    <Transition name="dialog">
-      <div
-        v-if="restoreConfirmation"
-        class="dialog-shade"
-        @click.self="cancelConfigurationRestore"
-      >
-        <section
-          class="classic-confirm"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="restore-backup-title"
-          aria-describedby="restore-backup-message"
-        >
-          <div class="confirm-icon" aria-hidden="true">!</div>
-          <div>
-            <h2 id="restore-backup-title">{{ t("restoreConfirmTitle") }}</h2>
-            <p id="restore-backup-message">
-              {{
-                t("restoreConfirmMessage", {
-                  name: pendingBackupFile?.name || "",
-                })
-              }}
-            </p>
-            <p>{{ t("restoreConfirmNetwork") }}</p>
-          </div>
-          <div class="confirm-actions">
-            <MacButton
-              secondary
-              :disabled="!!busy"
-              @click="cancelConfigurationRestore"
-            >
-              {{ t("cancel") }}
-            </MacButton>
-            <MacButton
-              danger
-              default-action
-              :disabled="!!busy"
-              @click="confirmConfigurationRestore"
-            >
-              {{
-                busy === "configuration-import"
-                  ? t("restoringBackup")
-                  : t("restoreBackup")
-              }}
-            </MacButton>
-          </div>
-        </section>
-      </div>
-    </Transition>
+    <RestoreConfirmationDialog :open="restoreConfirmation" :file="pendingBackupFile" :busy="busy" :t="t" @cancel="cancelConfigurationRestore" @confirm="confirmConfigurationRestore" />
 
-    <Transition name="dialog">
-      <div
-        v-if="deleteSoundTarget"
-        class="dialog-shade"
-        @click.self="deleteSoundTarget = null"
-      >
-        <section
-          class="classic-confirm"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="delete-sound-title"
-          aria-describedby="delete-sound-message"
-        >
-          <div class="confirm-icon" aria-hidden="true">?</div>
-          <div>
-            <h2 id="delete-sound-title">{{ t("removeSoundTitle") }}</h2>
-            <p id="delete-sound-message">
-              {{
-                t("removeSoundMessage", {
-                  name: deleteSoundTarget.name,
-                })
-              }}
-            </p>
-          </div>
-          <div class="confirm-actions">
-            <MacButton
-              secondary
-              :disabled="!!busy"
-              @click="deleteSoundTarget = null"
-            >
-              {{ t("cancel") }}
-            </MacButton>
-            <MacButton
-              danger
-              default-action
-              :disabled="!!busy"
-              @click="confirmSoundDeletion"
-            >
-              {{ t("remove") }}
-            </MacButton>
-          </div>
-        </section>
-      </div>
-    </Transition>
+    <DeleteSoundConfirmationDialog :sound="deleteSoundTarget" :busy="busy" :t="t" @cancel="deleteSoundTarget = null" @confirm="confirmSoundDeletion" />
 
-    <Transition name="alert">
-      <div
-        v-if="notice"
-        class="classic-alert"
-        :class="{ error: notice.kind === 'error' }"
-        role="status"
-      >
-        <div class="alert-icon" aria-hidden="true">
-          {{ notice.kind === "error" ? "!" : "✓" }}
-        </div>
-        <p>{{ notice.message }}</p>
-        <MacButton default-action @click="notice = null">OK</MacButton>
-      </div>
-    </Transition>
+    <ControlPanelNotice :notice="notice" @dismiss="notice = null" />
   </div>
 </template>

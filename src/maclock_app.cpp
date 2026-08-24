@@ -1038,6 +1038,11 @@ static void maybe_start_chime(const DateTime &current)
         audio_volume_from_index(g_chime.volume));
 }
 
+#include "ui/boot_options_view_widgets.cpp"
+#include "ui/boot_options_view_settings.cpp"
+#include "ui/boot_options_view_datetime.cpp"
+#include "ui/boot_options_view_update.cpp"
+#include "ui/boot_options_view_navigation.cpp"
 #include "ui/boot_options_view_events.cpp"
 #include "ui/boot_options_view_layout.cpp"
 #include "ui/ui_shell.cpp"

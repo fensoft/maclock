@@ -145,7 +145,42 @@ set(MACLOCK_APPLICATION_SOURCES
     src/touch.cpp
     src/update_service.cpp
     src/weather_service.cpp
-    src/wifi_mode.cpp)
+    src/wifi_mode.cpp
+    src/alarm_editor_view.cpp
+    src/alarm_ringing_view.cpp
+    src/alarm_service.cpp
+    src/alarm_storage.cpp
+    src/configuration_archive_export.cpp
+    src/configuration_archive_import.cpp
+    src/configuration_archive_media.cpp
+    src/configuration_archive_media_restore.cpp
+    src/configuration_archive_settings.cpp
+    src/configuration_archive_zip.cpp
+    src/configuration_archive_zip_parser.cpp
+    src/control_panel_clockface.cpp
+    src/control_panel_core.cpp
+    src/control_panel_minivmac.cpp
+    src/control_panel_routes.cpp
+    src/control_panel_screensaver.cpp
+    src/control_panel_settings_api.cpp
+    src/control_panel_update.cpp
+    src/mqtt_commands.cpp
+    src/mqtt_home_assistant.cpp
+    src/mqtt_message_queue.cpp
+    src/mqtt_transport.cpp
+    src/update_assets.cpp
+    src/update_facade.cpp
+    src/update_install.cpp
+    src/update_manifest.cpp
+    src/update_manual_upload.cpp
+    src/update_ota.cpp
+    src/update_release_check.cpp
+    src/update_worker.cpp
+    src/wifi_portal.cpp
+    src/wifi_service.cpp
+    src/wifi_settings.cpp
+    src/wifi_station_task.cpp
+    src/wifi_weather.cpp)
 
 set(MINIVMAC_CORE_SOURCES
     src/minivmac/src/ASCEMDEV.c

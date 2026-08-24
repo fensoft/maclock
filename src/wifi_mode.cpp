@@ -1,4 +1,4 @@
-#include "wifi_mode.h"
+#include "wifi_mode_internal.h"
 
 #include <ArduinoJson.h>
 #include <DNSServer.h>
@@ -15,134 +15,9 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
-namespace
-{
-static constexpr char kSetupSsid[] = "Maclock Setup";
-static constexpr uint32_t kConnectRetryMs = 30000;
-static constexpr uint32_t kForecastRefreshMs = 30UL * 60UL * 1000UL;
-static constexpr uint32_t kNtpRefreshMs = 6UL * 60UL * 60UL * 1000UL;
-static constexpr uint32_t kForecastStaleSeconds = 6UL * 60UL * 60UL;
-static constexpr uint16_t kHttpTimeoutMs = 12000;
-static constexpr size_t kMaxDetectedNetworks = 12;
-static constexpr char kLocalDefaultCity[] = "Paris";
-static constexpr char kLocalDefaultCountry[] = "FR";
-static constexpr char kLocalDefaultLocation[] = "Paris, FR";
-static constexpr char kLocalDefaultTimezone[] = "Europe/Paris";
-static constexpr double kLocalDefaultLatitude = 48.856613;
-static constexpr double kLocalDefaultLongitude = 2.352222;
-
-struct WifiSettings
-{
-    bool enabled;
-    bool coordinates_valid;
-    char ssid[33];
-    char password[65];
-    char city[49];
-    char country[3];
-    double latitude;
-    double longitude;
-    int32_t utc_offset_seconds;
-};
-
-struct DetectedNetwork
-{
-    char ssid[33];
-    int32_t rssi;
-    bool secured;
-};
-
-} // namespace
-
-struct WifiService::State
-{
-    Preferences *preferences = nullptr;
-    SemaphoreHandle_t lock = nullptr;
-    TaskHandle_t task = nullptr;
-    WifiSettings settings = {};
-    WifiModeSnapshot snapshot = {};
-    DNSServer dns_server;
-    WebServer web_server{80};
-    volatile bool pause_requested = false;
-    volatile bool pause_acknowledged = false;
-    volatile bool portal_active = false;
-    bool portal_routes_ready = false;
-    bool portal_server_active = false;
-    bool time_sync_pending = false;
-    uint32_t pending_local_epoch = 0;
-    uint32_t last_forecast_ms = 0;
-    uint32_t last_ntp_ms = 0;
-    DetectedNetwork detected_networks[kMaxDetectedNetworks] = {};
-    size_t detected_network_count = 0;
-    bool network_scan_succeeded = false;
-    WifiBackupSettings pending_restore = {};
-    volatile bool restore_pending = false;
-    uint32_t restore_due_ms = 0;
-};
-
-namespace
-{
 WifiService *active_wifi_service = nullptr;
 
-#define g_preferences (active_wifi_service->state().preferences)
-#define g_lock (active_wifi_service->state().lock)
-#define g_task (active_wifi_service->state().task)
-#define g_settings (active_wifi_service->state().settings)
-#define g_snapshot (active_wifi_service->state().snapshot)
-#define g_dns_server (active_wifi_service->state().dns_server)
-#define g_web_server (active_wifi_service->state().web_server)
-#define g_pause_requested (active_wifi_service->state().pause_requested)
-#define g_pause_acknowledged \
-    (active_wifi_service->state().pause_acknowledged)
-#define g_portal_active (active_wifi_service->state().portal_active)
-#define g_portal_routes_ready \
-    (active_wifi_service->state().portal_routes_ready)
-#define g_portal_server_active \
-    (active_wifi_service->state().portal_server_active)
-#define g_time_sync_pending \
-    (active_wifi_service->state().time_sync_pending)
-#define g_pending_local_epoch \
-    (active_wifi_service->state().pending_local_epoch)
-#define g_last_forecast_ms \
-    (active_wifi_service->state().last_forecast_ms)
-#define g_last_ntp_ms (active_wifi_service->state().last_ntp_ms)
-#define g_detected_networks \
-    (active_wifi_service->state().detected_networks)
-#define g_detected_network_count \
-    (active_wifi_service->state().detected_network_count)
-#define g_network_scan_succeeded \
-    (active_wifi_service->state().network_scan_succeeded)
-#define g_pending_restore \
-    (active_wifi_service->state().pending_restore)
-#define g_restore_pending \
-    (active_wifi_service->state().restore_pending)
-#define g_restore_due_ms \
-    (active_wifi_service->state().restore_due_ms)
-
-static void lock_state()
-{
-    if (g_lock)
-        xSemaphoreTake(g_lock, portMAX_DELAY);
-}
-
-static void unlock_state()
-{
-    if (g_lock)
-        xSemaphoreGive(g_lock);
-}
-
-template <size_t N>
-static void copy_text(char (&destination)[N], const String &source)
-{
-    source.substring(0, N - 1).toCharArray(destination, N);
-}
-
-template <size_t N>
-static void copy_text(char (&destination)[N], const char *source)
-{
-    strlcpy(destination, source ? source : "", N);
-}
-
-static bool normalize_country_code(String &country)
+bool normalize_country_code(String &country)
 {
     country.trim();
     country.toUpperCase();
@@ -153,14 +28,14 @@ static bool normalize_country_code(String &country)
            country[1] >= 'A' && country[1] <= 'Z';
 }
 
-static void set_status(const char *status)
+void set_status(const char *status)
 {
     lock_state();
     copy_text(g_snapshot.status, status);
     unlock_state();
 }
 
-static WifiSettings settings_snapshot()
+WifiSettings settings_snapshot()
 {
     lock_state();
     const WifiSettings settings = g_settings;
@@ -168,7 +43,7 @@ static WifiSettings settings_snapshot()
     return settings;
 }
 
-static void apply_backup_settings(
+void apply_backup_settings(
     const WifiBackupSettings &backup)
 {
     lock_state();
@@ -206,7 +81,7 @@ static void apply_backup_settings(
     g_last_ntp_ms = 0;
 }
 
-static void disconnect_wifi()
+void disconnect_wifi()
 {
     if (WiFi.getMode() != WIFI_MODE_NULL)
     {
@@ -220,7 +95,7 @@ static void disconnect_wifi()
     unlock_state();
 }
 
-static void cache_station_details(bool connected)
+void cache_station_details(bool connected)
 {
     char ip_address[16] = "";
     int32_t rssi = 0;
@@ -237,7 +112,7 @@ static void cache_station_details(bool connected)
     unlock_state();
 }
 
-static void responsive_delay(uint32_t duration_ms)
+void responsive_delay(uint32_t duration_ms)
 {
     const uint32_t started = millis();
     while (millis() - started < duration_ms &&
@@ -414,7 +289,7 @@ static bool begin_http(HTTPClient &http, NetworkClient &client,
     return http.begin(client, url);
 }
 
-static bool geocode_city(WifiSettings &settings)
+bool geocode_city(WifiSettings &settings)
 {
     set_status("Finding configured city...");
     Serial.printf("[Wi-Fi] Looking up city: %s\n", settings.city);
@@ -527,7 +402,7 @@ static bool geocode_city(WifiSettings &settings)
     return true;
 }
 
-static bool fetch_forecast(WifiSettings &settings)
+bool fetch_forecast(WifiSettings &settings)
 {
     set_status("Updating online forecast...");
     char url[512];
@@ -619,7 +494,7 @@ static bool fetch_forecast(WifiSettings &settings)
     return true;
 }
 
-static bool synchronize_time(const WifiSettings &settings)
+bool synchronize_time(const WifiSettings &settings)
 {
     set_status("Synchronizing clock...");
     configTime(0, 0, "pool.ntp.org", "time.cloudflare.com");
@@ -1062,8 +937,6 @@ static void seed_local_wifi_defaults(
     Serial.println(
         "[Wi-Fi] Seeded fresh simulator Wi-Fi defaults");
 }
-} // namespace
-
 WifiService::State &WifiService::state()
 {
     return *state_;
