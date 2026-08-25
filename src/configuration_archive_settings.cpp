@@ -283,10 +283,9 @@ static bool deserialize_configuration(
     }
     if (!settings["continuousSeconds"].isNull())
     {
-        if (!read_json_uint(settings["continuousSeconds"], 0, 1, value))
+        if (!read_json_bool(settings["continuousSeconds"], boolean))
             goto invalid_settings;
-        configuration.settings.face_customization.continuous_seconds =
-            value != 0;
+        configuration.settings.face_customization.continuous_seconds = boolean;
     }
     if (!read_json_uint(
             settings["hourFormat"], 0,
@@ -297,9 +296,9 @@ static bool deserialize_configuration(
         static_cast<HourFormat>(value);
     if (!settings["showSeconds"].isNull())
     {
-        if (!read_json_uint(settings["showSeconds"], 0, 1, value))
+        if (!read_json_bool(settings["showSeconds"], boolean))
             goto invalid_settings;
-        configuration.settings.time_format.show_seconds = value != 0;
+        configuration.settings.time_format.show_seconds = boolean;
     }
     if (!read_json_uint(
             settings["screensaverMode"], 0,
