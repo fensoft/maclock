@@ -91,6 +91,11 @@ const translations = [
     showWeekday: "Show 3-letter weekday before the date",
     showWeather: "Show weather on Macintosh, Mac OS 8, and Compact faces",
     brightness: "Brightness",
+    animationSpeed: "Animation speed",
+    colonBlink: "Colon blink",
+    continuousSeconds: "Continuous seconds",
+    time: "Time",
+    ok: "OK",
     apply: "Apply",
     screensaver: "Screensaver",
     screensaverMode: "Screensaver mode",
@@ -315,6 +320,11 @@ const translations = [
     showWeekday: "Afficher le jour abrégé avant la date",
     showWeather: "Afficher la météo sur les cadrans Macintosh, Mac OS 8 et compact",
     brightness: "Luminosité",
+    animationSpeed: "Vitesse d’animation",
+    colonBlink: "Clignotement des deux-points",
+    continuousSeconds: "Secondes continues",
+    time: "Heure",
+    ok: "OK",
     apply: "Appliquer",
     screensaver: "Économiseur d’écran",
     screensaverMode: "Mode d’économiseur",
@@ -540,6 +550,11 @@ const translations = [
     showWeekday: "Mostrar el día abreviado antes de la fecha",
     showWeather: "Mostrar el tiempo en las esferas Macintosh, Mac OS 8 y compacta",
     brightness: "Brillo",
+    animationSpeed: "Velocidad de animación",
+    colonBlink: "Parpadeo de dos puntos",
+    continuousSeconds: "Segundos continuos",
+    time: "Hora",
+    ok: "Aceptar",
     apply: "Aplicar",
     screensaver: "Salvapantallas",
     screensaverMode: "Modo de salvapantallas",
@@ -765,6 +780,11 @@ const translations = [
     showWeekday: "Kurzen Wochentag vor dem Datum anzeigen",
     showWeather: "Wetter auf Macintosh-, Mac OS 8- und Kompaktzifferblättern anzeigen",
     brightness: "Helligkeit",
+    animationSpeed: "Animationsgeschwindigkeit",
+    colonBlink: "Doppelpunkt blinkt",
+    continuousSeconds: "Kontinuierliche Sekunden",
+    time: "Zeit",
+    ok: "OK",
     apply: "Anwenden",
     screensaver: "Bildschirmschoner",
     screensaverMode: "Bildschirmschonermodus",
@@ -990,6 +1010,11 @@ const translations = [
     showWeekday: "Mostra il giorno abbreviato prima della data",
     showWeather: "Mostra il meteo sui quadranti Macintosh, Mac OS 8 e compatto",
     brightness: "Luminosità",
+    animationSpeed: "Velocità dell’animazione",
+    colonBlink: "Lampeggio dei due punti",
+    continuousSeconds: "Secondi continui",
+    time: "Ora",
+    ok: "OK",
     apply: "Applica",
     screensaver: "Salvaschermo",
     screensaverMode: "Modalità salvaschermo",
@@ -1511,6 +1536,70 @@ const miniVmacTranslations = [
     miniVmacReplaceWarning:
       "Uploading replaces the selected file. Exit Mini vMac before changing its ROM or disks.",
   },
+  {
+    miniVmacFiles: "Fichiers Mini vMac",
+    miniVmacFilesHelp:
+      "Installez ou enregistrez la ROM Macintosh Plus et les images de disquettes réinscriptibles utilisées par Mini vMac.",
+    file: "Fichier",
+    status: "État",
+    actions: "Actions",
+    upload: "Téléverser…",
+    download: "Télécharger",
+    notInstalled: "Non installé",
+    installedFileSize: "Installé — {size}",
+    miniVmacFileInstalled: "Fichier Mini vMac installé",
+    miniVmacFileError: "Impossible d’installer le fichier Mini vMac",
+    miniVmacReplaceWarning:
+      "Le téléversement remplace le fichier sélectionné. Quittez Mini vMac avant de modifier sa ROM ou ses disques.",
+  },
+  {
+    miniVmacFiles: "Archivos de Mini vMac",
+    miniVmacFilesHelp:
+      "Instala o guarda la ROM de Macintosh Plus y las imágenes de disquete regrabables que usa Mini vMac.",
+    file: "Archivo",
+    status: "Estado",
+    actions: "Acciones",
+    upload: "Subir…",
+    download: "Descargar",
+    notInstalled: "No instalado",
+    installedFileSize: "Instalado — {size}",
+    miniVmacFileInstalled: "Archivo de Mini vMac instalado",
+    miniVmacFileError: "No se pudo instalar el archivo de Mini vMac",
+    miniVmacReplaceWarning:
+      "La carga reemplaza el archivo seleccionado. Sal de Mini vMac antes de cambiar su ROM o discos.",
+  },
+  {
+    miniVmacFiles: "Mini vMac-Dateien",
+    miniVmacFilesHelp:
+      "Installieren oder sichern Sie die Macintosh-Plus-ROM und die beschreibbaren Diskettenabbilder, die Mini vMac verwendet.",
+    file: "Datei",
+    status: "Status",
+    actions: "Aktionen",
+    upload: "Hochladen…",
+    download: "Herunterladen",
+    notInstalled: "Nicht installiert",
+    installedFileSize: "Installiert — {size}",
+    miniVmacFileInstalled: "Mini vMac-Datei installiert",
+    miniVmacFileError: "Die Mini vMac-Datei konnte nicht installiert werden",
+    miniVmacReplaceWarning:
+      "Beim Hochladen wird die ausgewählte Datei ersetzt. Beenden Sie Mini vMac, bevor Sie ROM oder Datenträger ändern.",
+  },
+  {
+    miniVmacFiles: "File di Mini vMac",
+    miniVmacFilesHelp:
+      "Installa o salva la ROM Macintosh Plus e le immagini di dischetto riscrivibili usate da Mini vMac.",
+    file: "File",
+    status: "Stato",
+    actions: "Azioni",
+    upload: "Carica…",
+    download: "Scarica",
+    notInstalled: "Non installato",
+    installedFileSize: "Installato — {size}",
+    miniVmacFileInstalled: "File Mini vMac installato",
+    miniVmacFileError: "Impossibile installare il file Mini vMac",
+    miniVmacReplaceWarning:
+      "Il caricamento sostituisce il file selezionato. Esci da Mini vMac prima di modificare ROM o dischi.",
+  },
 ];
 
 const mqttTranslations = [
@@ -1626,6 +1715,24 @@ export const faceEditorTranslations = {
   faceEditorType_rectangle: ["Rectangle", "Rectangle", "Rectángulo", "Rechteck", "Rettangolo"], faceEditorType_circle: ["Circle", "Cercle", "Círculo", "Kreis", "Cerchio"], faceEditorType_line: ["Line", "Ligne", "Línea", "Linie", "Linea"], faceEditorType_text: ["Text", "Texte", "Texto", "Text", "Testo"], faceEditorType_image: ["Image", "Image", "Imagen", "Bild", "Immagine"], faceEditorType_flip: ["Flip", "Volet", "Tablilla", "Klappanzeige", "Palette"], faceEditorType_odometer: ["Odometer", "Compteur", "Cuentakilómetros", "Kilometerzähler", "Contachilometri"], faceEditorType_odometer_background: ["Odometer background", "Fond du compteur", "Fondo del cuentakilómetros", "Kilometerzähler-Hintergrund", "Sfondo del contachilometri"], faceEditorType_flip_background: ["Flip background", "Fond de volet", "Fondo de tablilla", "Klappanzeigen-Hintergrund", "Sfondo palette"], faceEditorType_colon: ["Colon", "Deux-points", "Dos puntos", "Doppelpunkt", "Due punti"], faceEditorAlignment_left: ["Left", "Gauche", "Izquierda", "Links", "Sinistra"], faceEditorAlignment_center: ["Center", "Centre", "Centro", "Mitte", "Centro"], faceEditorAlignment_right: ["Right", "Droite", "Derecha", "Rechts", "Destra"], faceEditorWeather_sunny: ["Sunny", "Ensoleillé", "Soleado", "Sonnig", "Soleggiato"], faceEditorWeather_cloudy: ["Cloudy", "Nuageux", "Nublado", "Bewölkt", "Nuvoloso"], faceEditorWeather_rainy: ["Rainy", "Pluvieux", "Lluvioso", "Regnerisch", "Piovoso"],
   faceEditorValue_time_min: ["Time (minutes)", "Heure (minutes)", "Hora (minutos)", "Zeit (Minuten)", "Ora (minuti)"], faceEditorValue_time_seconds: ["Time (seconds)", "Heure (secondes)", "Hora (segundos)", "Zeit (Sekunden)", "Ora (secondi)"], faceEditorValue_hour: ["Hour", "Heure", "Hora", "Stunde", "Ora"], faceEditorValue_hour12: ["12-hour hour", "Heure sur 12 h", "Hora de 12 horas", "12-Stunden-Stunde", "Ora a 12 ore"], faceEditorValue_hour_tens: ["Hour tens", "Dizaines d'heures", "Decenas de hora", "Stundenzehner", "Decine dell'ora"], faceEditorValue_hour_ones: ["Hour ones", "Unités d'heures", "Unidades de hora", "Stundeneiner", "Unità dell'ora"], faceEditorValue_minute: ["Minute", "Minute", "Minuto", "Minute", "Minuto"], faceEditorValue_minute_tens: ["Minute tens", "Dizaines de minutes", "Decenas de minuto", "Minutenzehner", "Decine dei minuti"], faceEditorValue_minute_ones: ["Minute ones", "Unités de minutes", "Unidades de minuto", "Minuteneiner", "Unità dei minuti"], faceEditorValue_second: ["Second", "Seconde", "Segundo", "Sekunde", "Secondo"], faceEditorValue_second_tens: ["Second tens", "Dizaines de secondes", "Decenas de segundo", "Sekundenzehner", "Decine dei secondi"], faceEditorValue_second_ones: ["Second ones", "Unités de secondes", "Unidades de segundo", "Sekundeneiner", "Unità dei secondi"], faceEditorValue_meridiem: ["AM/PM", "AM/PM", "AM/PM", "AM/PM", "AM/PM"], faceEditorValue_date: ["Date", "Date", "Fecha", "Datum", "Data"], faceEditorValue_date_iso: ["ISO date", "Date ISO", "Fecha ISO", "ISO-Datum", "Data ISO"], faceEditorValue_weekday: ["Weekday", "Jour de la semaine", "Día de la semana", "Wochentag", "Giorno della settimana"], faceEditorValue_weekday_short: ["Short weekday", "Jour abrégé", "Día abreviado", "Kurzer Wochentag", "Giorno abbreviato"], faceEditorValue_day: ["Day", "Jour", "Día", "Tag", "Giorno"], faceEditorValue_month: ["Month", "Mois", "Mes", "Monat", "Mese"], faceEditorValue_month_name: ["Month name", "Nom du mois", "Nombre del mes", "Monatsname", "Nome del mese"], faceEditorValue_month_short: ["Short month", "Mois abrégé", "Mes abreviado", "Kurzer Monat", "Mese abbreviato"], faceEditorValue_year: ["Year", "Année", "Año", "Jahr", "Anno"], faceEditorValue_face_name: ["Face name", "Nom du cadran", "Nombre de esfera", "Zifferblattname", "Nome del quadrante"], faceEditorValue_internal_temp: ["Internal temperature", "Température interne", "Temperatura interna", "Innentemperatur", "Temperatura interna"], faceEditorValue_external_temp: ["External temperature", "Température extérieure", "Temperatura exterior", "Außentemperatur", "Temperatura esterna"], faceEditorValue_external_min: ["External minimum", "Minimum extérieur", "Mínimo exterior", "Externes Minimum", "Minimo esterno"], faceEditorValue_external_max: ["External maximum", "Maximum extérieur", "Máximo exterior", "Externes Maximum", "Massimo esterno"], faceEditorValue_temperature_unit: ["Temperature unit", "Unité de température", "Unidad de temperatura", "Temperatureinheit", "Unità di temperatura"], faceEditorValue_pressure: ["Pressure", "Pression", "Presión", "Luftdruck", "Pressione"], faceEditorValue_humidity: ["Humidity", "Humidité", "Humedad", "Luftfeuchtigkeit", "Umidità"], faceEditorValue_weather: ["Weather", "Météo", "Tiempo", "Wetter", "Meteo"], faceEditorValue_weather_asset: ["Weather asset", "Ressource météo", "Recurso meteorológico", "Wetterressource", "Risorsa meteo"], faceEditorValue_city: ["City", "Ville", "Ciudad", "Stadt", "Città"], faceEditorValue_wifi_ssid: ["Wi-Fi network", "Réseau Wi-Fi", "Red Wi-Fi", "WLAN-Netzwerk", "Rete Wi-Fi"], faceEditorValue_wifi_rssi: ["Wi-Fi signal", "Signal Wi-Fi", "Señal Wi-Fi", "WLAN-Signal", "Segnale Wi-Fi"], faceEditorValue_alarm_next: ["Next alarm", "Prochaine alarme", "Próxima alarma", "Nächster Alarm", "Prossima sveglia"], faceEditorValue_alarm_label: ["Alarm label", "Libellé d'alarme", "Etiqueta de alarma", "Alarmbezeichnung", "Etichetta della sveglia"], faceEditorValue_timer_remaining: ["Timer remaining", "Minuteur restant", "Temporizador restante", "Verbleibender Timer", "Timer rimanente"], faceEditorValue_rtc_available: ["RTC available", "RTC disponible", "RTC disponible", "RTC verfügbar", "RTC disponibile"], faceEditorValue_weather_available: ["Weather available", "Météo disponible", "Tiempo disponible", "Wetter verfügbar", "Meteo disponibile"], faceEditorValue_wifi_available: ["Wi-Fi available", "Wi-Fi disponible", "Wi-Fi disponible", "WLAN verfügbar", "Wi-Fi disponibile"], faceEditorValue_external_sensor_available: ["External sensor available", "Capteur externe disponible", "Sensor externo disponible", "Externer Sensor verfügbar", "Sensore esterno disponibile"], faceEditorValue_timer_active: ["Timer active", "Minuteur actif", "Temporizador activo", "Timer aktiv", "Timer attivo"], faceEditorValue_floppy_inserted: ["Floppy inserted", "Disquette insérée", "Disquete insertado", "Diskette eingelegt", "Dischetto inserito"], faceEditorValue_show_time_seconds: ["Show time seconds", "Afficher les secondes", "Mostrar segundos", "Sekunden anzeigen", "Mostra secondi"],
 };
+
+export function hasTranslation(language, key) {
+  const tables = [
+    translations[language],
+    updateTranslations[language],
+    backupTranslations[language],
+    mqttTranslations[language],
+    miniVmacTranslations[language],
+    loadingTranslations[language],
+  ];
+  const faceEditorText = faceEditorTranslations[key]?.[language];
+  const hasText = (text) =>
+    (typeof text === "string" && text.trim()) ||
+    (Array.isArray(text) && text.every((entry) => typeof entry === "string" && entry.trim()));
+  return (
+    hasText(faceEditorText) || tables.some((table) => hasText(table?.[key]))
+  );
+}
 
 export function translate(language, key, replacements = {}) {
   const table = translations[language] || translations[0];

@@ -1,17 +1,39 @@
-import { readFile } from "node:fs/promises";
-import { faceEditorTranslations } from "../src/i18n.js";
+import { readdir, readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { extname, join } from "node:path";
+import { hasTranslation, languageCodes } from "../src/i18n.js";
 
-const source = await readFile(new URL("../src/face_editor/FaceEditor.vue", import.meta.url), "utf8");
-const keys = [...source.matchAll(/t\(["'](faceEditor\w+)["']/g)].map((match) => match[1]);
-const missing = [...new Set(keys)].filter((key) => !faceEditorTranslations[key]);
-const incomplete = Object.entries(faceEditorTranslations)
-  .filter(([, translations]) => !Array.isArray(translations) || translations.length !== 5 || translations.some((text) => typeof text !== "string" || !text.trim()))
-  .map(([key]) => key);
+const sourceDirectory = fileURLToPath(new URL("../src/", import.meta.url));
 
-if (missing.length || incomplete.length) {
-  if (missing.length) console.error(`Missing Face Editor translations: ${missing.join(", ")}`);
-  if (incomplete.length) console.error(`Incomplete Face Editor translations: ${incomplete.join(", ")}`);
+async function sourceFiles(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = await Promise.all(entries.map((entry) => {
+    const path = join(directory, entry.name);
+    return entry.isDirectory()
+      ? sourceFiles(path)
+      : [".js", ".vue"].includes(extname(entry.name)) ? [path] : [];
+  }));
+  return files.flat();
+}
+
+const files = await sourceFiles(sourceDirectory);
+const sources = await Promise.all(files.map(async (path) => [path, await readFile(path, "utf8")]));
+const keys = new Set();
+
+for (const [, source] of sources) {
+  for (const match of source.matchAll(/\bt\(\s*["']([^"']+)["']/g)) keys.add(match[1]);
+  for (const match of source.matchAll(/\btitleKey\s*:\s*["']([^"']+)["']/g)) keys.add(match[1]);
+}
+
+const missing = languageCodes.flatMap((language, index) =>
+  [...keys]
+    .filter((key) => !hasTranslation(index, key))
+    .map((key) => `${language}:${key}`),
+);
+
+if (missing.length) {
+  console.error(`Missing localized strings: ${missing.join(", ")}`);
   process.exit(1);
 }
 
-console.log(`Face Editor i18n coverage passed (${keys.length} referenced keys, ${Object.keys(faceEditorTranslations).length} localized keys).`);
+console.log(`i18n coverage passed (${keys.size} static keys across ${files.length} source files and ${languageCodes.length} locales).`);

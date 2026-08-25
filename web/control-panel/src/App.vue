@@ -1310,10 +1310,10 @@ onBeforeUnmount(() => {
                 </select>
               </label>
 
-              <label class="field"><span>Animation speed</span><select v-model.number="panelState.appearance.animationSpeed"><option value="0">Slow</option><option value="1">Normal</option><option value="2">Fast</option></select></label>
-              <label class="check-line"><input v-model="colonBlinkEnabled" type="checkbox"><span>Colon blink</span></label>
-              <label class="check-line"><input v-model="panelState.appearance.continuousSeconds" type="checkbox"><span>Continuous seconds</span></label>
-              <label class="check-line"><input v-model="panelState.appearance.showSeconds" type="checkbox"><span>Show seconds</span></label>
+              <label class="field"><span>{{ t("animationSpeed") }}</span><select v-model.number="panelState.appearance.animationSpeed"><option value="0">{{ t("slow") }}</option><option value="1">{{ t("normal") }}</option><option value="2">{{ t("fast") }}</option></select></label>
+              <label class="check-line"><input v-model="colonBlinkEnabled" type="checkbox"><span>{{ t("colonBlink") }}</span></label>
+              <label class="check-line"><input v-model="panelState.appearance.continuousSeconds" type="checkbox"><span>{{ t("continuousSeconds") }}</span></label>
+              <label class="check-line"><input v-model="panelState.appearance.showSeconds" type="checkbox"><span>{{ t("showSeconds") }}</span></label>
 
               <fieldset class="radio-box">
                 <legend>{{ t("hourFormat") }}</legend>
@@ -2623,6 +2623,6 @@ onBeforeUnmount(() => {
 
     <DeleteSoundConfirmationDialog :sound="deleteSoundTarget" :busy="busy" :t="t" @cancel="deleteSoundTarget = null" @confirm="confirmSoundDeletion" />
 
-    <ControlPanelNotice :notice="notice" @dismiss="notice = null" />
+    <ControlPanelNotice :notice="notice" :t="t" @dismiss="notice = null" />
   </div>
 </template>
