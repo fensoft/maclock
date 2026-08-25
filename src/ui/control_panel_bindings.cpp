@@ -274,6 +274,9 @@ bool MaclockApp::applyControlAppearance(
 
     const bool language_changed =
         app_settings.language != language;
+    const bool time_format_changed =
+        app_settings.time_format.hour_format != time_format.hour_format ||
+        app_settings.time_format.show_seconds != time_format.show_seconds;
     app_settings.language = language;
     app_settings.face_customization = face_customization;
     app_settings.time_format = time_format;
@@ -304,6 +307,8 @@ bool MaclockApp::applyControlAppearance(
 
     if (current_state_ == UiState::Normal)
     {
+        if (time_format_changed)
+            clock_view.hideCustomFace();
         clock_view.last_second = -1;
         const ClockRenderSnapshot snapshot =
             make_clock_snapshot(millis());

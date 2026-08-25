@@ -244,6 +244,18 @@ bool is_deleted(const std::filesystem::path &relative)
         deletion_marker(relative));
 }
 
+void clear_deletion_markers(const std::filesystem::path &relative)
+{
+    std::error_code error;
+    for (auto current = relative;
+         !current.empty() && current != ".";
+         current = current.parent_path())
+    {
+        std::filesystem::remove_all(deletion_marker(current), error);
+        error.clear();
+    }
+}
+
 std::filesystem::path resolve_read(
     const std::filesystem::path &relative)
 {
@@ -831,10 +843,8 @@ bool LittleFSFS::mkdir(const char *path)
     const auto relative = normalize_relative(path);
     if (relative.empty())
         return false;
+    clear_deletion_markers(relative);
     std::error_code error;
-    std::filesystem::remove(
-        deletion_marker(relative), error);
-    error.clear();
     return std::filesystem::create_directories(
                overlay_root() / relative, error) ||
            (!error &&

@@ -613,6 +613,7 @@ static bool custom_face_visible(
         value = snapshot.sensor.valid || snapshot.online.forecast_valid;
     else if (!strcmp(name, "wifi_available")) value = snapshot.online.connected;
     else if (!strcmp(name, "timer_active")) value = snapshot.timer_active;
+    else if (!strcmp(name, "alarm_active")) value = snapshot.alarm_indicator;
     else if (!strcmp(name, "show_time_seconds"))
         value = g_time_format.show_seconds;
     else if (!strcmp(name, "floppy_inserted"))

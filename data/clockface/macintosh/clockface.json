@@ -101,6 +101,17 @@
       "random": []
     },
     {
+      "id": "alarm_indicator",
+      "type": "image",
+      "template": "alarm_indicator.png",
+      "x": 270,
+      "y": -2,
+      "width": 18,
+      "height": 21,
+      "keep_ratio": true,
+      "visible_if": "alarm_active"
+    },
+    {
       "id": "date",
       "type": "text",
       "x": 30,

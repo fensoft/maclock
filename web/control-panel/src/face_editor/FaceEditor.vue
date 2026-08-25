@@ -48,7 +48,7 @@ const values = reactive({
   time: "10:42", time_min: "10:42", time_seconds: "10:42:37", hour: "10", hour12: "10", hour_tens: "1", hour_ones: "0", minute: "42", minute_tens: "4", minute_ones: "2", second: "37", second_tens: "3", second_ones: "7", meridiem: "AM",
   date: "09/08/2026", date_iso: "2026-08-09", weekday: "Sunday", weekday_short: "Sun", day: "09", month: "08", month_name: "August", month_short: "Aug", year: "2026", face_name: "Compact Digital",
   internal_temp: "21.5", external_temp: "18.2", external_min: "12.1", external_max: "23.8", temperature_unit: "°C", pressure: "1013", humidity: "48", weather: "Sunny", weather_asset: "sunny", city: "Paris", wifi_ssid: "Mac Host Network", wifi_rssi: "-42", alarm_next: "07:30", alarm_label: "Wake up", timer_remaining: "24:59",
-  rtc_available: true, weather_available: true, wifi_available: true, external_sensor_available: true, timer_active: false, floppy_inserted: true, show_time_seconds: false,
+  rtc_available: true, weather_available: true, wifi_available: true, external_sensor_available: true, timer_active: false, alarm_active: false, floppy_inserted: true, show_time_seconds: false,
   i2c: { "0x18": true, "0x38": true, "0x47": true, "0x68": true },
 });
 const objectTypes = computed(() => isLoading.value
@@ -113,7 +113,7 @@ function moveObject(direction) { if (!object.value) return; const next = selecte
 function toggleObjectFlag(key) { if (!object.value) return; object.value.editor ||= {}; object.value.editor[key] = !object.value.editor[key]; render(); }
 function translation(key) { const entry = project.value.translations?.[key]; return entry?.[previewLanguage.value] ?? entry?.en ?? Object.values(entry || {}).find(Boolean) ?? `{tr.${key}}`; }
 function format(template = "", context = values) { return template.replace(/\{([\w.]+)\}/g, (_, key) => { if (key.startsWith("tr.")) return translation(key.slice(3)); const value = context[key]; return typeof value === "object" ? JSON.stringify(value) : (value ?? `{${key}}`); }); }
-function valueLabel(key) { return key === "time" ? t("time") : t(`faceEditorValue_${key}`); }
+function valueLabel(key) { if (key === "time") return t("time"); if (key === "alarm_active") return t("faceEditorAlarmActive"); return t(`faceEditorValue_${key}`); }
 function objectTypeLabel(type) { return t(`faceEditorType_${type}`); }
 function alignmentLabel(alignment) { return t(`faceEditorAlignment_${alignment}`); }
 function isVisible(expression = "") {
