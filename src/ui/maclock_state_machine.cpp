@@ -380,6 +380,15 @@ void MaclockApp::tick()
     case UI_STATE_BOOT_PLUGINS: // show boot screen + detected i2c plugins
         if (current_state_ != last_state_)
         {
+            startup_view.use_legacy = !loading_view.begin(now);
+            if (!startup_view.use_legacy)
+            {
+                floppy_sound_started_ = loading_view.soundPath()[0] &&
+                    audio_service.play(loading_view.soundPath(),
+                        loading_view.soundVolume(), true);
+            }
+            else
+            {
             const uint8_t k_addrs[k_plugin_max] = {
                 0x18, 0x38, weather_service.address(), 0x68};
             const int16_t margin_x = 8;
@@ -469,23 +478,35 @@ void MaclockApp::tick()
                 SoundSelector::resolvePath(
                     g_floppy_sound_path, "/floppy.mp3"),
                 g_floppy_sound_volume, true);
+            }
         }
         if (now - state_start_ms_ >= 0)
         {
             ui_shell.hideAll();
-            lv_obj_clear_flag(ui_shell.background, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(ui_shell.boot, LV_OBJ_FLAG_HIDDEN);
-            if (startup_view.plugin_reveal < startup_view.plugin_count && now >= startup_view.next_reveal_ms)
+            if (!startup_view.use_legacy)
             {
-                startup_view.plugin_reveal++;
-                startup_view.next_reveal_ms = now + (unsigned long)random(200, 600);
+                loading_view.show(now);
+                lv_obj_clear_flag(ui_shell.corners, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_move_foreground(ui_shell.corners);
             }
-            for (size_t i = 0; i < startup_view.plugin_reveal; ++i)
-                lv_obj_clear_flag(ui_shell.plugin_icons[i], LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(ui_shell.corners, LV_OBJ_FLAG_HIDDEN);
+            else
+            {
+                lv_obj_clear_flag(ui_shell.background, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(ui_shell.boot, LV_OBJ_FLAG_HIDDEN);
+                if (startup_view.plugin_reveal < startup_view.plugin_count && now >= startup_view.next_reveal_ms)
+                {
+                    startup_view.plugin_reveal++;
+                    startup_view.next_reveal_ms = now + (unsigned long)random(200, 600);
+                }
+                for (size_t i = 0; i < startup_view.plugin_reveal; ++i)
+                    lv_obj_clear_flag(ui_shell.plugin_icons[i], LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(ui_shell.corners, LV_OBJ_FLAG_HIDDEN);
+            }
             lv_timer_handler();
         }
-        if (now - state_start_ms_ >= 1500 && startup_view.plugin_reveal == startup_view.plugin_count)
+        if ((!startup_view.use_legacy && loading_view.finished(now)) ||
+            (startup_view.use_legacy && now - state_start_ms_ >= 1500 &&
+             startup_view.plugin_reveal == startup_view.plugin_count))
         {
             requested_state_ = advance_state(current_state_);
             state_start_ms_ = now;
@@ -510,6 +531,7 @@ void MaclockApp::tick()
         static constexpr unsigned long kDualKeyHoldMs = 2000;
         if (current_state_ != last_state_)
         {
+            loading_view.clear();
             wifi_service.startTask();
             clock_view.last_update_ms = 0;
             dual_key_hold_start_ms_ = 0;

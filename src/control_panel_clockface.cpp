@@ -387,7 +387,7 @@ static void select_clockface_project()
     const bool applied = g_events->applyControlAppearance(
         snapshot.settings.language, snapshot.brightness,
         snapshot.settings.face_customization, snapshot.settings.time_format,
-        clear ? "" : name.c_str());
+        clear ? "" : name.c_str(), snapshot.settings.loading_screen);
     send_result(applied, applied ? "Clock face selected" : "Clock face was not selected", applied ? 200 : 500);
 }
 

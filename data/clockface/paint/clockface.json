@@ -9,14 +9,14 @@
   "translations": {
     "menu": {
       "en": "File  Edit  View  Special",
-      "fr": "Fichier  Édition  Présentation  Spécial",
-      "es": "Archivo  Edición  Visualización  Especial",
-      "de": "Ablage  Bearbeiten  Darstellung  Spezial",
-      "it": "Archivio  Composizione  Vista  Speciale"
+      "fr": "Fichier  Édition  Vue  Spécial",
+      "es": "Archivo  Editar  Ver  Especial",
+      "de": "Ablage  Bearb.  Ansicht  Spezial",
+      "it": "Archivio  Componi  Vista  Speciale"
     },
     "in": { "en": "In", "fr": "Int", "es": "Int", "de": "Innen", "it": "Int" },
     "out": { "en": "Out", "fr": "Ext", "es": "Ext", "de": "Außen", "it": "Est" },
-    "today": { "en": "Today", "fr": "Aujourd'hui", "es": "Hoy", "de": "Heute", "it": "Oggi" }
+    "today": { "en": "Today", "fr": "Auj.", "es": "Hoy", "de": "Heute", "it": "Oggi" }
   },
   "objects": [
     { "id": "background", "type": "image", "template": "background.png", "x": 0, "y": 0, "width": 304, "height": 224, "keep_ratio": true, "visible_if": "" },

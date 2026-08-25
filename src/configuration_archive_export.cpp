@@ -102,6 +102,18 @@ static bool build_export_entries(
         entries.push_back(entry);
     }
 
+    std::vector<String> loading;
+    collect_files("/loading", loading);
+    for (const String &path : loading)
+    {
+        ExportEntry entry;
+        entry.source_path = path;
+        entry.archive_name = String(kLoadingPrefix) +
+            path.substring(strlen("/loading/"));
+        if (!calculate_file_crc(entry, error)) return false;
+        entries.push_back(entry);
+    }
+
     if (LittleFS.exists(kRomPath))
     {
         ExportEntry entry;

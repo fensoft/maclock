@@ -88,7 +88,7 @@ static void update_clock_face_selection(bool scroll_to_selected)
             const char *display_name = name_value.is<const char *>()
                 ? name_value.as<const char *>() : nullptr;
             strlcpy(boot_options_view.clock_face_labels[index],
-                display_name && display_name[0] ? display_name : "Unnamed face",
+                display_name && display_name[0] ? display_name : tr("Unnamed face"),
                 sizeof(boot_options_view.clock_face_labels[index]));
             lv_obj_t *item = lv_list_add_button(
                 boot_options_view.clock_face_options, nullptr,
@@ -150,10 +150,9 @@ static void update_regional_options_ui()
                 ? "°F"
                 : "°C");
     if (boot_options_view.regional_seconds_label)
-        lv_label_set_text(boot_options_view.regional_seconds_label,
-            g_time_format.show_seconds
-                ? "Show seconds: On"
-                : "Show seconds: Off");
+        lv_label_set_text_fmt(boot_options_view.regional_seconds_label,
+            tr("Show seconds: %s"),
+            tr(g_time_format.show_seconds ? "On" : "Off"));
 }
 
 static void update_face_customization_options_ui()
@@ -161,16 +160,18 @@ static void update_face_customization_options_ui()
     static const char *const speeds[] = {"Slow", "Normal", "Fast"};
     if (boot_options_view.flip_speed_label)
         lv_label_set_text_fmt(boot_options_view.flip_speed_label,
-            "Animation: %s", speeds[static_cast<uint8_t>(
-                g_face_customization.flip_speed)]);
+            tr("Animation: %s"), tr(speeds[static_cast<uint8_t>(
+                g_face_customization.flip_speed)]));
     if (boot_options_view.colon_blink_label)
-        lv_label_set_text(boot_options_view.colon_blink_label,
-            g_face_customization.colon_blink == ColonBlinkInterval::None
-                ? "Blink: No" : "Blink: Yes");
+        lv_label_set_text_fmt(boot_options_view.colon_blink_label,
+            tr("Blink: %s"), tr(
+                g_face_customization.colon_blink == ColonBlinkInterval::None
+                    ? "No" : "Yes"));
     if (boot_options_view.continuous_seconds_label)
-        lv_label_set_text(boot_options_view.continuous_seconds_label,
-            g_face_customization.continuous_seconds
-                ? "Continuous: Yes" : "Continuous: No");
+        lv_label_set_text_fmt(boot_options_view.continuous_seconds_label,
+            tr("Continuous: %s"), tr(
+                g_face_customization.continuous_seconds
+                    ? "Yes" : "No"));
 }
 
 static void update_boot_translation_maps()

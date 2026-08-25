@@ -65,6 +65,8 @@ static void serialize_configuration(
         configuration.settings.temperature_unit);
     settings["customClockFace"] =
         configuration.settings.custom_clock_face;
+    settings["loadingScreen"] =
+        configuration.settings.loading_screen;
     settings["animationSpeed"] = static_cast<uint8_t>(
         configuration.settings.face_customization.flip_speed);
     settings["colonBlink"] = static_cast<uint8_t>(
@@ -243,6 +245,24 @@ static bool deserialize_configuration(
         strlcpy(
             configuration.settings.custom_clock_face, custom_face,
             sizeof(configuration.settings.custom_clock_face));
+    }
+    if (!settings["loadingScreen"].isNull())
+    {
+        if (!settings["loadingScreen"].is<const char *>())
+            goto invalid_settings;
+        const char *loading_screen = settings["loadingScreen"];
+        if (strlen(loading_screen) >=
+            sizeof(configuration.settings.loading_screen))
+            goto invalid_settings;
+        for (const char *cursor = loading_screen; *cursor; ++cursor)
+            if (!((*cursor >= 'a' && *cursor <= 'z') ||
+                  (*cursor >= 'A' && *cursor <= 'Z') ||
+                  (*cursor >= '0' && *cursor <= '9') ||
+                  *cursor == '-' || *cursor == '_'))
+                goto invalid_settings;
+        strlcpy(
+            configuration.settings.loading_screen, loading_screen,
+            sizeof(configuration.settings.loading_screen));
     }
     if (!read_json_uint(
             settings["animationSpeed"], 0,

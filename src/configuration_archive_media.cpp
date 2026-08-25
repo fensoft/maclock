@@ -110,7 +110,7 @@ static void collect_root_floppies(
     root.close();
 }
 
-static bool replace_restored_files()
+static bool replace_restored_files(bool replace_loading)
 {
     remove_tree("/downloaded");
     if (!LittleFS.mkdir("/downloaded") ||
@@ -138,6 +138,13 @@ static bool replace_restored_files()
             return false;
         }
         if (!LittleFS.rename(kRestoreRom, kRomPath))
+            return false;
+    }
+    if (replace_loading)
+    {
+        remove_tree("/loading");
+        if (!LittleFS.mkdir("/loading") ||
+            !move_staged_files(kRestoreLoading, "/loading"))
             return false;
     }
     return true;

@@ -96,6 +96,10 @@ AppSettings SettingsStore::load()
     if (!settings.custom_clock_face[0])
         strlcpy(settings.custom_clock_face, "macintosh",
             sizeof(settings.custom_clock_face));
+    strlcpy(
+        settings.loading_screen,
+        preferences_.getString("loading_screen", "").c_str(),
+        sizeof(settings.loading_screen));
     settings.face_customization.flip_speed = load_enum(
         preferences_, "animation_speed",
         FlipAnimationSpeed::Normal,
@@ -187,6 +191,11 @@ void SettingsStore::saveTemperatureUnit(UiTemperatureUnit value)
 void SettingsStore::saveCustomClockFace(const char *value)
 {
     preferences_.putString("custom_face", value ? value : "");
+}
+
+void SettingsStore::saveLoadingScreen(const char *value)
+{
+    preferences_.putString("loading_screen", value ? value : "");
 }
 
 void SettingsStore::saveFaceCustomization(

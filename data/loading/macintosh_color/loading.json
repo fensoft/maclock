@@ -1,7 +1,7 @@
 {
   "format": "maclock-loading-screen",
   "version": 1,
-  "name": "Macintosh",
+  "name": "Macintosh Color",
   "protected": true,
   "width": 304,
   "height": 224,
@@ -51,8 +51,8 @@
     {
       "id": "welcome",
       "type": "text",
-      "x": 40,
-      "y": 76,
+      "x": 64,
+      "y": 80,
       "width": 244,
       "height": 12,
       "stroke": "#000000",

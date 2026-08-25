@@ -173,7 +173,8 @@ bool MaclockApp::applyControlConfiguration(
             configuration.brightness,
             configuration.settings.face_customization,
             configuration.settings.time_format,
-            configuration.settings.custom_clock_face) ||
+            configuration.settings.custom_clock_face,
+            configuration.settings.loading_screen) ||
         !applyControlScreensaver(
             configuration.settings.screensaver_mode,
             configuration.settings.screensaver_delay_index,
@@ -257,7 +258,8 @@ bool MaclockApp::applyControlAppearance(
     uint8_t brightness,
     const FaceCustomizationSettings &face_customization,
     const TimeFormatSettings &time_format,
-    const char *custom_clock_face)
+    const char *custom_clock_face,
+    const char *loading_screen)
 {
     if (language >= UI_LANGUAGE_COUNT ||
         static_cast<uint8_t>(time_format.hour_format) >=
@@ -279,10 +281,15 @@ bool MaclockApp::applyControlAppearance(
         app_settings.custom_clock_face,
         custom_clock_face ? custom_clock_face : "",
         sizeof(app_settings.custom_clock_face));
+    strlcpy(
+        app_settings.loading_screen,
+        loading_screen ? loading_screen : "",
+        sizeof(app_settings.loading_screen));
     settings_store.saveLanguage(language);
     settings_store.saveFaceCustomization(face_customization);
     settings_store.saveTimeFormat(time_format);
     settings_store.saveCustomClockFace(app_settings.custom_clock_face);
+    settings_store.saveLoadingScreen(app_settings.loading_screen);
     settings_store.saveBrightness(brightness);
     input_service.setEncoderPosition(brightness);
     g_last_saved_encoder = brightness;
@@ -489,6 +496,15 @@ bool MaclockApp::previewControlSound(
     control_preview_volume_ = volume;
     control_preview_due_ms_ = millis() + 200;
     control_preview_pending_ = true;
+    return true;
+}
+
+bool MaclockApp::previewControlLoadingScreen(const char *screen)
+{
+    if (current_state_ != UiState::Normal || !screen || !screen[0])
+        return false;
+    loading_view.setPreviewScreen(screen);
+    requestState(UiState::BootPlugins);
     return true;
 }
 

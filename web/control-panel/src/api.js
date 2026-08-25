@@ -14,6 +14,7 @@ const demoState = {
     leadingZero: true,
     seconds: true,
     weekday: false,
+    loadingScreen: "",
   },
   location: {
     city: "Paris",
@@ -289,6 +290,7 @@ function applyDemo(path, values) {
     if ("flipSpeed" in values) {
       appearance.flipSpeed = number("flipSpeed");
     }
+    if ("loadingScreen" in values) appearance.loadingScreen = values.loadingScreen;
     Object.assign(demoState.appearance, appearance);
   } else if (path === "/api/location") {
     Object.assign(demoState.location, {
@@ -563,6 +565,31 @@ export async function uploadLoadingScreenAsset(screen, name, blob) {
 export function loadingScreenAssetUrl(screen, name) {
   if (import.meta.env.DEV) return "";
   return `/api/loading/asset?name=${encodeURIComponent(name)}&screen=${encodeURIComponent(screen)}`;
+}
+
+export async function renameLoadingScreen(name, to) {
+  if (import.meta.env.DEV) {
+    const project = demoLoadingProjects.get(name);
+    if (!project || demoLoadingProjects.has(to)) throw new Error("Loading screen could not be renamed");
+    demoLoadingProjects.delete(name); demoLoadingProjects.set(to, project);
+    demoLoadingScreens.splice(demoLoadingScreens.indexOf(name), 1, to);
+    return { ok: true, message: "Loading screen renamed" };
+  }
+  return postForm("/api/loading/rename", { name, to });
+}
+
+export async function deleteLoadingScreen(name) {
+  if (import.meta.env.DEV) {
+    demoLoadingProjects.delete(name);
+    const index = demoLoadingScreens.indexOf(name);
+    if (index >= 0) demoLoadingScreens.splice(index, 1);
+    return { ok: true, message: "Loading screen deleted" };
+  }
+  return postForm("/api/loading/delete", { name });
+}
+
+export function previewLoadingScreen(screen) {
+  return postForm("/api/loading/preview", { screen });
 }
 
 export async function uploadMiniVmacFile(slot, file) {

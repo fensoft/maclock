@@ -56,7 +56,8 @@ public:
         uint8_t brightness,
         const FaceCustomizationSettings &face_customization,
         const TimeFormatSettings &time_format,
-        const char *custom_clock_face) override;
+        const char *custom_clock_face,
+        const char *loading_screen) override;
     bool applyControlScreensaver(
         ScreensaverMode mode, uint8_t delay_index,
         bool launch_now) override;
@@ -77,6 +78,7 @@ public:
         const char *city, const char *country) override;
     bool previewControlSound(
         const char *sound_path, uint8_t volume) override;
+    bool previewControlLoadingScreen(const char *screen) override;
     void beginControlPanelNetworkTransfer() override;
     void endControlPanelNetworkTransfer() override;
     void showControlPanelDownload(

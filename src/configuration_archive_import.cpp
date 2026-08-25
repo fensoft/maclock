@@ -153,10 +153,10 @@ void ConfigurationArchive::finishUpload(
 
     ControlPanelConfiguration configuration;
     String error;
-    if (!deserialize_configuration(
+        if (!deserialize_configuration(
             state_->restore.configuration(),
             configuration, error) ||
-        !replace_restored_files())
+        !replace_restored_files(state_->restore.loadingFilesSeen()))
     {
         if (!error.length())
             error = "Could not install restored files";

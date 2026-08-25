@@ -409,28 +409,28 @@ void BootOptionsView::init(lv_obj_t *screen)
         boot_options_view.pages[BOOT_OPTIONS_FACE_SETTINGS];
 
     boot_options_view.flip_speed_options = create_action_button(
-        face_settings_page, "Animation: Normal", flip_speed_event);
+        face_settings_page, tr("Animation: Normal"), flip_speed_event);
     lv_obj_set_size(boot_options_view.flip_speed_options, 126, 58);
     lv_obj_align(boot_options_view.flip_speed_options, LV_ALIGN_TOP_LEFT, 0, 0);
     boot_options_view.flip_speed_label = lv_obj_get_child(
         boot_options_view.flip_speed_options, 0);
 
     boot_options_view.colon_blink_options = create_action_button(
-        face_settings_page, "Blink: Yes", colon_blink_event);
+        face_settings_page, tr("Blink: Yes"), colon_blink_event);
     lv_obj_set_size(boot_options_view.colon_blink_options, 126, 58);
     lv_obj_align(boot_options_view.colon_blink_options, LV_ALIGN_TOP_RIGHT, 0, 0);
     boot_options_view.colon_blink_label = lv_obj_get_child(
         boot_options_view.colon_blink_options, 0);
 
     boot_options_view.continuous_seconds_options = create_action_button(
-        face_settings_page, "Continuous: No", continuous_seconds_event);
+        face_settings_page, tr("Continuous: No"), continuous_seconds_event);
     lv_obj_set_size(boot_options_view.continuous_seconds_options, 126, 58);
     lv_obj_align(boot_options_view.continuous_seconds_options, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     boot_options_view.continuous_seconds_label = lv_obj_get_child(
         boot_options_view.continuous_seconds_options, 0);
 
     boot_options_view.regional_seconds_button = create_action_button(
-        face_settings_page, "Show seconds: No", regional_seconds_event);
+        face_settings_page, tr("Show seconds: No"), regional_seconds_event);
     lv_obj_set_size(boot_options_view.regional_seconds_button, 126, 58);
     lv_obj_align(boot_options_view.regional_seconds_button, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     boot_options_view.regional_seconds_label = lv_obj_get_child(

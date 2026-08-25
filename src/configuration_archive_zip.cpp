@@ -27,6 +27,8 @@ static constexpr char kDownloadedPrefix[] =
     "downloaded/";
 static constexpr char kFloppyPrefix[] =
     "floppies/";
+static constexpr char kLoadingPrefix[] =
+    "loading/";
 static constexpr char kRomEntry[] =
     "rom/vMac.ROM";
 static constexpr char kRomPath[] =
@@ -37,6 +39,8 @@ static constexpr char kRestoreDownloaded[] =
     "/.maclock-restore/downloaded";
 static constexpr char kRestoreFloppies[] =
     "/.maclock-restore/floppies";
+static constexpr char kRestoreLoading[] =
+    "/.maclock-restore/loading";
 static constexpr char kRestoreRom[] =
     "/.maclock-restore/vMac.ROM";
 static constexpr size_t kIoBufferSize = 4096;

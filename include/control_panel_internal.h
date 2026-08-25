@@ -75,6 +75,7 @@ void send_control_page();
 void register_control_panel_routes();
 void register_control_panel_settings_routes(WebServer &server);
 String safe_clockface_name(const String &source);
+String safe_loading_name(const String &source);
 void register_control_panel_clockface_routes(WebServer &server);
 void register_control_panel_loading_routes(WebServer &server);
 void register_control_panel_screensaver_routes(WebServer &server);

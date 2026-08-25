@@ -167,6 +167,7 @@ static void send_state()
     appearance["language"] =
         static_cast<uint8_t>(snapshot.settings.language);
     appearance["customClockFace"] = snapshot.settings.custom_clock_face;
+    appearance["loadingScreen"] = snapshot.settings.loading_screen;
     appearance["animationSpeed"] = static_cast<uint8_t>(
         snapshot.settings.face_customization.flip_speed);
     appearance["colonBlink"] = static_cast<uint8_t>(
@@ -329,6 +330,7 @@ static void apply_appearance()
     uint32_t show_seconds = 0;
     FaceCustomizationSettings face_customization;
     String custom_clock_face;
+    String loading_screen;
     uint32_t flip_speed =
         static_cast<uint8_t>(face_customization.flip_speed);
     uint32_t colon_blink =
@@ -365,6 +367,20 @@ static void apply_appearance()
         send_result(false, "Invalid custom clock face", 400);
         return;
     }
+    if (g_server.hasArg("loadingScreen"))
+        loading_screen = safe_loading_name(g_server.arg("loadingScreen"));
+    if (g_server.hasArg("loadingScreen") &&
+        g_server.arg("loadingScreen").length() && !loading_screen.length())
+    {
+        send_result(false, "Invalid loading screen", 400);
+        return;
+    }
+    if (loading_screen.length() && !LittleFS.exists(
+            (String("/loading/") + loading_screen + "/loading.json").c_str()))
+    {
+        send_result(false, "Loading screen not found", 404);
+        return;
+    }
 
     TimeFormatSettings time_format;
     time_format.hour_format =
@@ -381,7 +397,8 @@ static void apply_appearance()
             static_cast<uint8_t>(brightness),
             face_customization,
             time_format,
-            custom_clock_face.c_str());
+            custom_clock_face.c_str(),
+            loading_screen.c_str());
     send_result(
         applied,
         applied ? "Appearance updated" : "Appearance was not updated",
@@ -686,6 +703,23 @@ static void preview_sound()
         started ? 200 : 500);
 }
 
+static void preview_loading_screen()
+{
+    const String screen = safe_loading_name(g_server.arg("screen"));
+    if (!screen.length() || !LittleFS.exists(
+            (String("/loading/") + screen + "/loading.json").c_str()))
+    {
+        send_result(false, "Loading screen not found", 404);
+        return;
+    }
+    const bool started = g_events &&
+        g_events->previewControlLoadingScreen(screen.c_str());
+    send_result(started,
+        started ? "Loading screen preview started" :
+            "Loading screen preview is unavailable",
+        started ? 200 : 409);
+}
+
 static void apply_system_sounds()
 {
     uint32_t startup_volume = 0;
@@ -724,6 +758,7 @@ void register_control_panel_settings_routes_impl(WebServer &server) {
     server.on("/api/state", HTTP_GET, send_state);
     server.on("/api/status", HTTP_GET, send_status);
     server.on("/api/appearance", HTTP_POST, apply_appearance);
+    server.on("/api/loading/preview", HTTP_POST, preview_loading_screen);
 #ifdef MACLOCK_LOCAL
     server.on("/api/manual/page", HTTP_POST, show_local_manual_page);
 #endif

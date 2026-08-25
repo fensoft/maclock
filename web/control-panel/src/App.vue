@@ -14,10 +14,12 @@ import {
   exportConfiguration,
   fetchMiniVmacFiles,
   fetchClockFaces,
+  fetchLoadingScreens,
   fetchScreensaverPhotos,
   fetchState,
   fetchStatus,
   loadClockFace,
+  loadLoadingScreen,
   importSoundUrl,
   miniVmacDownloadUrl,
   postForm,
@@ -100,6 +102,7 @@ const screensaverPhotoInput = ref(null);
 const restoreConfirmation = ref(false);
 const pendingBackupFile = ref(null);
 const faceOptions = ref([]);
+const loadingScreenOptions = ref([]);
 const colonBlinkEnabled = computed({
   get: () => panelState.value?.appearance?.colonBlink !== 2,
   set: (enabled) => {
@@ -237,6 +240,7 @@ function editableSnapshot(appId) {
         "language",
         "face",
         "customClockFace",
+        "loadingScreen",
         "animationSpeed",
         "colonBlink",
         "continuousSeconds",
@@ -580,6 +584,7 @@ function saveAppearance() {
   );
 }
 
+
 async function loadFaceOptions() {
   try {
     const faces = (await fetchClockFaces()).faces || [];
@@ -589,6 +594,18 @@ async function loadFaceOptions() {
     }));
   } catch {
     faceOptions.value = [];
+  }
+}
+
+async function loadLoadingScreenOptions() {
+  try {
+    const screens = (await fetchLoadingScreens()).screens || [];
+    loadingScreenOptions.value = await Promise.all(screens.map(async (id) => {
+      const project = await loadLoadingScreen(id);
+      return { id, name: project.name || id };
+    }));
+  } catch {
+    loadingScreenOptions.value = [];
   }
 }
 
@@ -1153,6 +1170,7 @@ async function confirmConfigurationRestore() {
 onMounted(async () => {
   await loadState();
   await loadFaceOptions();
+  await loadLoadingScreenOptions();
   const linkedApp = appFromUrl();
   if (linkedApp) openApp(linkedApp);
   statusPoll = window.setInterval(pollStatus, 3000);
@@ -1238,7 +1256,7 @@ onBeforeUnmount(() => {
             :close-label="t('closeWindow', { title: activeAppTitle })"
             @close="closeActiveApp()"
           >
-            <FaceEditor mode="loading" />
+            <FaceEditor mode="loading" @project-changed="loadLoadingScreenOptions" />
           </ActiveAppWindow>
           <MacWindow
             v-if="activeApp === 'appearance'"
@@ -1274,6 +1292,20 @@ onBeforeUnmount(() => {
                     :value="face.id"
                   >
                     {{ face.name }}
+                  </option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>{{ t("loadingScreen") }}</span>
+                <select v-model="panelState.appearance.loadingScreen">
+                  <option value="">{{ t("firstAvailable") }}</option>
+                  <option
+                    v-for="screen in loadingScreenOptions"
+                    :key="screen.id"
+                    :value="screen.id"
+                  >
+                    {{ screen.name }}
                   </option>
                 </select>
               </label>

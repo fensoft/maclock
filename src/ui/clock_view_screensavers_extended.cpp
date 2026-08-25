@@ -533,7 +533,7 @@ static void draw_photo(ClockView &view)
         line(view, 96, 70, 96, 150);
         line(view, 96, 150, 208, 150);
         line(view, 208, 70, 208, 150);
-        draw_text(view, 112, 101, "ADD JPG", 2);
+        draw_text(view, 112, 101, tr("Add JPG"), 2);
         return;
     }
     lv_obj_set_style_opa(

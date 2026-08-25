@@ -152,10 +152,38 @@ public:
 class StartupView
 {
 public:
+    bool use_legacy = true;
     uint8_t plugin_count = 0;
     uint8_t plugin_reveal = 0;
     unsigned long next_reveal_ms = 0;
     lv_draw_buf_t *plugin_buffers[k_plugin_max] = {};
+};
+
+class LoadingView
+{
+public:
+    bool begin(uint32_t now);
+    void setPreviewScreen(const char *screen);
+    void show(uint32_t now);
+    bool finished(uint32_t now) const;
+    const char *soundPath() const { return sound_path; }
+    uint8_t soundVolume() const { return sound_volume; }
+    void clear();
+
+private:
+    static constexpr size_t kMaxObjects = 64;
+    static constexpr size_t kMaxModules = 4;
+    lv_obj_t *root = nullptr;
+    lv_obj_t *modules[kMaxModules] = {};
+    lv_draw_buf_t *buffers[kMaxObjects] = {};
+    lv_point_precise_t line_points[kMaxObjects][2] = {};
+    char sound_path[SOUND_SELECTOR_PATH_MAX] = "";
+    uint8_t sound_volume = 0;
+    char preview_screen[AppSettings::kLoadingScreenNameMax] = "";
+    uint8_t module_count = 0;
+    uint8_t module_reveal = 0;
+    uint32_t next_reveal_ms = 0;
+    uint32_t started_ms = 0;
 };
 
 enum BootOptionsPage
@@ -620,6 +648,7 @@ static UiState advance_state(UiState state, uint8_t count = 1)
 static UiShell ui_shell = {};
 static CalibrationView calibration_view = {};
 static StartupView startup_view = {};
+static LoadingView loading_view = {};
 static BootOptionsView boot_options_view = {};
 static ClockView clock_view = {};
 static DiagnosticsView diagnostics_view = {};
@@ -1048,6 +1077,7 @@ static void maybe_start_chime(const DateTime &current)
 #include "ui/ui_shell.cpp"
 #include "ui/clock_view_common.cpp"
 #include "ui/clock_view_custom.cpp"
+#include "ui/loading_view.cpp"
 #include "ui/clock_view_faces.cpp"
 #include "ui/clock_view_screensavers.cpp"
 #include "ui/clock_view_screensavers_extended.cpp"

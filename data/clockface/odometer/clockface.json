@@ -6,9 +6,11 @@
   "height": 224,
   "background": "#080808",
   "random_interval_seconds": 60,
-  "translations": {},
+  "translations": {
+    "title": { "en": "ODOMETER", "fr": "COMPTEUR", "es": "CUENTAKILÓMETROS", "de": "KILOMETERZÄHLER", "it": "CONTACHILOMETRI" }
+  },
   "objects": [
-    { "id": "title", "type": "text", "x": 12, "y": 14, "width": 280, "height": 12, "stroke": "#ffffff", "template": "ODOMETER", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "center", "visible_if": "", "random": [] },
+    { "id": "title", "type": "text", "x": 12, "y": 14, "width": 280, "height": 12, "stroke": "#ffffff", "template": "{tr.title}", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "center", "visible_if": "", "random": [] },
     { "id": "odometer_bg", "type": "odometer_background", "x": 6, "y": 38, "width": 292, "height": 62, "stroke": "#ffffff", "fill": "#242424", "stroke_width": 3, "visible_if": "" },
     { "id": "hour_tens", "type": "odometer", "x": 20, "y": 43, "width": 36, "height": 52, "stroke": "#ffffff", "fill": "#080808", "stroke_width": 1, "template": "{hour_tens}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },
     { "id": "hour_ones", "type": "odometer", "x": 60, "y": 43, "width": 36, "height": 52, "stroke": "#ffffff", "fill": "#080808", "stroke_width": 1, "template": "{hour_ones}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },

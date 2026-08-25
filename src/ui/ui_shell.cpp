@@ -206,6 +206,11 @@ static void refresh_language_ui()
     update_night_options_ui();
     update_chime_options_ui();
     update_wifi_options_ui();
+    if (clock_view.custom_face)
+    {
+        clock_view.custom_loaded_name[0] = '\0';
+        clock_view.custom_last_refresh_ms = 0;
+    }
     boot_options_view.setPage(boot_options_view.page);
     diagnostics_view.update(make_diagnostics_snapshot());
 }

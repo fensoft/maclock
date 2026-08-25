@@ -114,7 +114,8 @@ public:
         uint8_t brightness,
         const FaceCustomizationSettings &face_customization,
         const TimeFormatSettings &time_format,
-        const char *custom_clock_face) = 0;
+        const char *custom_clock_face,
+        const char *loading_screen) = 0;
     virtual bool applyControlScreensaver(
         ScreensaverMode mode, uint8_t delay_index,
         bool launch_now) = 0;
@@ -133,6 +134,7 @@ public:
         const char *city, const char *country) = 0;
     virtual bool previewControlSound(
         const char *sound_path, uint8_t volume) = 0;
+    virtual bool previewControlLoadingScreen(const char *screen) = 0;
     virtual void beginControlPanelNetworkTransfer() = 0;
     virtual void endControlPanelNetworkTransfer() = 0;
     virtual void showControlPanelDownload(

@@ -8,7 +8,8 @@ public:
         remove_tree(kRestoreRoot);
         if (!LittleFS.mkdir(kRestoreRoot) ||
             !LittleFS.mkdir(kRestoreDownloaded) ||
-            !LittleFS.mkdir(kRestoreFloppies))
+            !LittleFS.mkdir(kRestoreFloppies) ||
+            !LittleFS.mkdir(kRestoreLoading))
         {
             fail("Could not create restore staging folders");
             return false;
@@ -171,6 +172,7 @@ public:
         central_offset_ = 0;
         entry_count_ = 0;
         configuration_seen_ = false;
+        loading_files_seen_ = false;
     }
 
     const String &configuration() const
@@ -182,6 +184,8 @@ public:
     {
         return error_;
     }
+
+    bool loadingFilesSeen() const { return loading_files_seen_; }
 
 private:
     enum class ParserState : uint8_t
@@ -308,6 +312,29 @@ private:
                 return false;
             }
         }
+        else if (name_.startsWith(kLoadingPrefix))
+        {
+            const String relative = name_.substring(strlen(kLoadingPrefix));
+            if (!valid_relative_path(relative.c_str()) ||
+                !strchr(relative.c_str(), '/'))
+            {
+                fail("The backup contains an invalid loading path");
+                return false;
+            }
+            const String path = String(kRestoreLoading) + "/" + relative;
+            if (!ensure_parent_directories(path.c_str()))
+            {
+                fail("Could not create loading restore folders");
+                return false;
+            }
+            output_ = LittleFS.open(path.c_str(), "w");
+            if (!output_)
+            {
+                fail("Could not stage a loading screen file");
+                return false;
+            }
+            loading_files_seen_ = true;
+        }
         else if (name_ == kRomEntry)
         {
             output_ = LittleFS.open(kRestoreRom, "w");
@@ -374,5 +401,6 @@ private:
     uint16_t entry_count_ = 0;
     bool current_is_configuration_ = false;
     bool configuration_seen_ = false;
+    bool loading_files_seen_ = false;
 };
 #endif

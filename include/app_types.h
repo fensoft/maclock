@@ -140,6 +140,8 @@ struct AppSettings
     UiTemperatureUnit temperature_unit = UI_TEMPERATURE_CELSIUS;
     static constexpr size_t kCustomClockFaceNameMax = 40;
     char custom_clock_face[kCustomClockFaceNameMax] = "";
+    static constexpr size_t kLoadingScreenNameMax = 48;
+    char loading_screen[kLoadingScreenNameMax] = "";
     FaceCustomizationSettings face_customization;
     TimeFormatSettings time_format;
     ScreensaverMode screensaver_mode = ScreensaverMode::Off;

@@ -232,7 +232,7 @@ static void custom_face_error(ClockView &view, const char *message)
     lv_obj_set_width(view.custom_error, 280);
     lv_obj_set_style_text_align(view.custom_error, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text_fmt(
-        view.custom_error, "CLOCK FACE ERROR\n%s", message);
+        view.custom_error, tr("Clock Face Error\n%s"), tr(message));
     lv_obj_center(view.custom_error);
     view.custom_loaded = false;
 }
@@ -505,7 +505,23 @@ static bool custom_face_expand(
         else if (key_length == 4 && !strncmp(value + 1, "city", 4))
             replacement = snapshot.online.city;
         else if (key_length == 7 && !strncmp(value + 1, "weather", 7))
-            replacement = snapshot.online.forecast_valid ? "Weather" : "--";
+        {
+            if (snapshot.online.forecast_valid)
+            {
+                replacement = snapshot.online.weather_code <= 1 ? tr("Sunny") :
+                    (snapshot.online.weather_code <= 3 ||
+                     snapshot.online.weather_code == 45 ||
+                     snapshot.online.weather_code == 48) ? tr("Cloudy") :
+                    tr("Rainy");
+            }
+            else if (snapshot.sensor.valid)
+            {
+                replacement = snapshot.sensor.condition == WeatherCondition::Sunny ? tr("Sunny") :
+                    snapshot.sensor.condition == WeatherCondition::Rainy ? tr("Rainy") :
+                    tr("Cloudy");
+            }
+            else replacement = "--";
+        }
         else if (key_length == 13 && !strncmp(value + 1, "weather_asset", 13))
         {
             if (snapshot.online.forecast_valid)
@@ -524,7 +540,7 @@ static bool custom_face_expand(
         else if (key_length == 13 && !strncmp(value + 1, "weekday_short", 13))
         {
             static const char *const weekdays[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-            replacement = weekdays[now.dayOfTheWeek() % 7];
+            replacement = tr(weekdays[now.dayOfTheWeek() % 7]);
         }
         else if (key_length == 13 && !strncmp(value + 1, "internal_temp", 13))
         {
@@ -535,7 +551,8 @@ static bool custom_face_expand(
             snprintf(buffer, sizeof(buffer), "%.1f", snapshot.online.current_temperature); replacement = buffer;
         }
         else if (key_length == 16 && !strncmp(value + 1, "temperature_unit", 16))
-            replacement = "C";
+            replacement = g_temperature_unit == UI_TEMPERATURE_FAHRENHEIT
+                ? "\xC2\xB0" "F" : "\xC2\xB0" "C";
         else if (key_length == 12 && !strncmp(value + 1, "external_min", 12))
         {
             snprintf(buffer, sizeof(buffer), "%.0f", snapshot.online.minimum_temperature); replacement = buffer;
@@ -574,6 +591,22 @@ static bool custom_face_visible(
     }
     const bool negate = expression[0] == '!';
     const char *name = expression + (negate ? 1 : 0);
+    const char *comparison = strstr(name, " == ");
+    const char *inequality = strstr(name, " != ");
+    char key[32] = {};
+    bool expected = true;
+    if (comparison || inequality)
+    {
+        const char *operator_start = comparison ? comparison : inequality;
+        const size_t key_length = operator_start - name;
+        const char *value = operator_start + 4;
+        if (!key_length || key_length >= sizeof(key) ||
+            (strcmp(value, "true") && strcmp(value, "false")))
+            return false;
+        memcpy(key, name, key_length);
+        name = key;
+        expected = !strcmp(value, "true");
+    }
     bool value = false;
     if (!strcmp(name, "rtc_available")) value = true;
     else if (!strcmp(name, "weather_available"))
@@ -585,6 +618,8 @@ static bool custom_face_visible(
     else if (!strcmp(name, "floppy_inserted"))
         value = digitalRead(GPIO_FLOPPY) == LOW;
     else return false;
+    if (comparison) value = value == expected;
+    else if (inequality) value = value != expected;
     return negate ? !value : value;
 }
 
@@ -634,7 +669,7 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
         File file = LittleFS.open(path.c_str(), "r");
         if (!file || file.size() > kCustomFaceMaxJsonBytes)
         {
-            custom_face_error(*this, "PROJECT MISSING");
+            custom_face_error(*this, "Project missing");
         }
         else
         {
@@ -648,7 +683,7 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
                 document["height"] != 224 || objects.isNull() ||
                 objects.size() > kCustomFaceMaxObjects)
             {
-                custom_face_error(*this, "INVALID PROJECT");
+                custom_face_error(*this, "Invalid project");
             }
             else
             {
@@ -941,7 +976,7 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
                     ++object_index;
                 }
                 if (!valid)
-                    custom_face_error(*this, "UNSUPPORTED LAYER");
+                    custom_face_error(*this, "Unsupported layer");
                 else
                 {
                     strlcpy(custom_loaded_name, name, sizeof(custom_loaded_name));
