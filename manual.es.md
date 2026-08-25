@@ -64,6 +64,10 @@ En **General > Idioma**, elige English, Français, Español, Deutsch o Italiano.
 En **General > Regional**, configura el orden de la fecha, 12/24 horas y
 Celsius/Fahrenheit.
 
+El idioma elegido se aplica a Maclock, al panel de control web, las esferas
+integradas, las pantallas de carga, las etiquetas meteorológicas y las entradas
+`{tr.*}` de proyectos personalizados. Los nombres de producto no cambian.
+
 | Idioma | Opciones regionales |
 | --- | --- |
 | ![](img/manual/es/language.png) | ![](img/manual/es/regional.png) |
@@ -76,8 +80,9 @@ parte y usa **-** o **+**. Mantén pulsado para repetir.
 ## 5. Esferas y pantalla
 
 En **Pantalla > Pantalla**, elige cero inicial, día de la semana, segundos y
-apariencia clara u oscura. En **Pantalla > Esfera**, elige Macintosh, Compacta,
-Analógica, Flip, Odómetro o Mac OS 8.
+apariencia clara u oscura. En **Pantalla > Esfera**, elige una esfera integrada
+o personalizada, como Macintosh, Compacta, Analógica, Flip, Odómetro o Mac OS
+8. El contenido de las esferas adaptadas al idioma usa tu idioma elegido.
 
 | Macintosh | Compacta | Analógica |
 | --- | --- | --- |
@@ -88,7 +93,9 @@ Analógica, Flip, Odómetro o Mac OS 8.
 | ![](img/manual/clock-flip.png) | ![](img/manual/clock-odometer.png) | ![](img/manual/clock-macos8.png) |
 
 También puedes ajustar el color de acento, tamaño de números, información
-meteorológica y velocidad de la animación Flip.
+meteorológica y velocidad de la animación Flip. Las esferas personalizadas
+pueden mostrar condicionalmente la alarma activa y los segundos; la opción
+**Mostrar segundos** reconstruye la esfera para aplicar el cambio.
 
 ## 6. Salvapantallas
 
@@ -194,14 +201,30 @@ alarmas, noche, campanadas, sonidos, actualizaciones, copias de seguridad y
 archivos del emulador. Si cierras cambios no guardados, puedes seguir editando
 o descartarlos.
 
+### Editores de esferas y pantallas de carga
+
+Las aplicaciones **Editor de esferas** y **Editor de pantalla de carga** sirven
+para crear y guardar un proyecto, renombrarlo, duplicarlo, protegerlo o
+eliminarlo. Importa o exporta una esfera como JSON; para una pantalla de carga,
+usa JSON o un archivo ZIP para incluir sus imágenes PNG. Las PNG de cada
+proyecto se suben desde su editor.
+
+La vista previa del Editor de esferas muestra el resultado sin cambiar la esfera
+activa. El editor de pantalla de carga puede previsualizar los módulos I2C
+detectados y la pantalla de carga seleccionada. En **Apariencia**, selecciona
+la pantalla de carga, su sonido y su volumen.
+
 **Gestor de sonidos** permite soltar o elegir un MP3, importar una URL, buscar
 en MyInstants, previsualizar y borrar sonidos añadidos. Los sonidos integrados
 no se pueden borrar.
 
 ![Gestor de sonidos](img/manual/sound-manager-web.png)
 
-**Copia de configuración** exporta y restaura ajustes. **MQTT** ofrece una
-integración opcional con sistemas domóticos compatibles.
+**Copia de configuración** exporta y restaura los ajustes, los proyectos de
+pantalla de carga y sus PNG, además de la pantalla de carga seleccionada. Haz
+una copia separada de los discos del emulador y los medios descargados por el
+usuario: no forman parte de este archivo. **MQTT** ofrece una integración
+opcional con sistemas domóticos compatibles.
 
 ## 13. Actualizaciones
 
@@ -248,3 +271,15 @@ otra vez. Toca y suelta las cuatro cruces en orden. Reloj cancela el proceso
 sin guardar.
 
 ![Cruz de calibración](img/manual/touch-calibration.png)
+
+## 17. Mantenimiento y recuperación
+
+Después de cargar LittleFS se actualizan las esferas y pantallas de carga
+integradas; guarda antes tus proyectos y medios modificados. Si la lista de un
+editor aparece vacía en el simulador, restablece su estado y reinícialo: los
+proyectos integrados se crearán de nuevo.
+
+Si falta o no es válido el proyecto de pantalla de carga seleccionado, Maclock
+elige el primer proyecto válido disponible y, como último recurso, usa la
+pantalla de arranque clásica. Revisa el JSON del proyecto, sus PNG, el sonido y
+los nombres de módulos I2C, y vuelve a cargar LittleFS si hace falta.

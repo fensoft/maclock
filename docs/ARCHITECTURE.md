@@ -77,8 +77,10 @@ The local Preferences file is typed and atomically replaced. EEPROM uses a
 persistent binary image. The LittleFS compatibility layer merges repository
 `data/` as a read-only base with a writable state overlay and copies a base
 file into the overlay before its first mutation. Directory enumeration merges
-both layers. This prevents emulator disk writes or application changes from
-modifying repository assets.
+both layers. Deleting a source file creates an overlay deletion marker;
+recreating a directory clears markers for that directory and its ancestors,
+preventing stale markers from hiding restored source projects. This prevents
+emulator disk writes or application changes from modifying repository assets.
 
 Simulated Wi-Fi scanning returns `Mac Host Network`; association is
 credential-independent and IP/RSSI data is deterministic. When the local
@@ -158,7 +160,7 @@ Application code is divided by ownership:
   persisted runtime state.
 - `ControlPanelService` owns a station-only HTTP server and mDNS advertisement.
   It is never used as the captive Wi-Fi setup server.
-- `UiShell`, `StartupView`, `ClockView`, `BootOptionsView`,
+- `UiShell`, `StartupView`, `LoadingView`, `ClockView`, `BootOptionsView`,
   `DateTimeEditor`, `AlarmView`, `TimerView`, `DiagnosticsView`,
   `WifiSetupView`, and `CalibrationView` own UI state.
 - `SoundSelector` is a reusable stateful widget shared by alarm and chime
@@ -180,7 +182,8 @@ Maclock has two intentionally independent HTTP lifecycles:
 - `ControlPanelService` starts only after station Wi-Fi has connected. It
   advertises `maclock.local`, serves the embedded responsive control page, and
   exposes JSON/form routes for appearance, alarms, timer, night mode, chimes,
-  and sound previews.
+   sound previews, clock-face projects, loading-screen projects, and
+   configuration archives.
 
 `MaclockApp` implements `ControlPanelEventSink`. HTTP callbacks run from
 `MaclockApp::tick()`, validate ranges and LittleFS sound paths, then call the
@@ -188,6 +191,13 @@ same state-owning services and persistence methods used by the device UI.
 They never access LVGL from the Wi-Fi worker. The control server is stopped
 before the setup portal starts or Mini vMac runs, avoiding two listeners on
 port 80 and preserving exclusive display/audio ownership.
+
+Loading-project routes are `/api/loading/list`, `/api/loading/project`,
+`/api/loading/assets`, `/api/loading/asset`, `/api/loading/asset/upload`,
+`/api/loading/rename`, `/api/loading/delete`, and `/api/loading/preview`.
+Appearance persists the selected project after checking that its
+`/loading/<id>/loading.json` exists. The editor owns project and PNG asset
+creation; loading assets accept PNG files only.
 
 ## Flash Layout And LittleFS
 
@@ -204,12 +214,20 @@ port 80 and preserving exclusive display/audio ownership.
 Despite the partition subtype name, `board_build.filesystem = littlefs` makes
 PlatformIO build and upload a LittleFS image from `data/`.
 
-The filesystem contains three kinds of content:
+The filesystem contains four kinds of content:
 
-- Tracked UI images, fonts, weather icons, plugin icons, and MP3 effects.
+- Built-in clock-face projects at `/clockface/<id>/clockface.json` and loading
+  projects at `/loading/<id>/loading.json`; their PNG references are
+  project-local and self-contained.
+- Tracked shared UI images, fonts, weather icons, plugin icons, and MP3 effects.
+  Root boot assets are a legacy fallback allowlist, not loading-project assets.
 - Ignored local emulator inputs such as `vMac.ROM` and `disk1.dsk`.
-- User MP3s in `/downloaded/`, the only subtree protected from release
-  reconciliation.
+- User media in `/downloaded/`, which release reconciliation preserves.
+
+`scripts/audit_littlefs_assets.mjs` verifies built-in project asset
+self-containment, expands weather and I2C module templates, and reports missing
+or unexpected files. It is an audit only: it does not remove ROMs, disks, or
+user media.
 
 Arduino callers use paths such as `/background.png`; LVGL reaches the same file
 through the registered `S:` drive as `S:/background.png`. Mini vMac's file
@@ -302,7 +320,7 @@ LVGL callbacks are static thunks with instance context at the boundary.
 | `WAIT_STARTUP_SOUND` | Wait for the audio task to report completion. |
 | `WAIT_FLOPPY_1` / `WAIT_FLOPPY_2` | Alternate missing-disk artwork while waiting for the floppy input. |
 | `FLOPPY_INSERTED` | Start `floppy.mp3` and lower codec volume. |
-| `BOOT_PLUGINS` | Probe and progressively reveal codec, touch, weather, and RTC plugin icons. |
+| `BOOT_PLUGINS` | Render the selected loading project and progressively reveal its I2C modules; use the legacy boot view only when no valid project can load. |
 | `WAIT_FLOPPY_SOUND` | Wait for the floppy sound to finish. |
 | `NORMAL` | Show the clock, date, weather, gauge, menus, and floppy indicator. |
 | `ALARM_EDITOR` / `ALARM_RINGING` | Configure alarms or run snooze/dismiss playback. |
@@ -313,8 +331,20 @@ LVGL callbacks are static thunks with instance context at the boundary.
 | `WIFI_SETUP` | Show a standard open-network Wi-Fi QR and run the optional iOS/Android-compatible captive portal. |
 | `CALIBRATION` | Capture four raw FT6336 corner samples and persist their bounds. |
 
-The plugin diagnostic is fail-stop by design. Each expected device must be
-present. A missing device displays its icon in red and blinks forever instead
+`LoadingView` replaces the fixed `BOOT_PLUGINS` presentation when a project
+loads. It selects the Appearance-persisted `loading_screen`, otherwise the
+first valid `/loading` project. Each project must declare the
+`maclock-loading-screen` version-1 304x224 format. It supports rectangle,
+circle, line, text, and image layers, conditional `visible_if` layers, and
+localized `{tr.*}` text. Its single `module` image template must be
+`plugin_{i2c}.png`; it expands in actual probe order for codec, touch, detected
+weather sensor, and RTC using `next_module_x`/`next_module_y`. Missing modules
+are rendered red. A project can own an absolute LittleFS sound path and volume,
+and runs for at least 1.5 seconds while modules reveal. Invalid selections or
+projects fall back to the first valid project, then the fixed legacy view.
+
+The legacy plugin diagnostic is fail-stop by design. Each expected device must
+be present. A missing device displays its icon in red and blinks forever instead
 of advancing to the clock.
 
 In `NORMAL`, the UI refreshes at most every 100 ms, while `ClockView`
@@ -336,6 +366,15 @@ Mac OS 8, Compact Digital, Flip, and Odometer; seconds apply to the digital
 faces, while
 leading zero remains Compact/Flip-specific, with up to six independently
 animated Flip cards.
+
+Localization uses five languages: English, French, Spanish, German, and
+Italian. LVGL labels resolve through `tr()` tables. Custom clock-face projects
+expand `{tr.*}` entries with English fallback and localized `{weather}` labels;
+loading projects similarly expand `{tr.*}` entries. The web panel's
+`npm run i18n:check` enforces shared locale coverage. Applying a changed
+12/24-hour or Show Seconds setting hides and rebuilds the active custom face so
+conditional and time-dependent content is recreated.
+
 Holding Clock and Alarm together for two seconds remains an alternate
 Configuration shortcut. The floppy level controls the small disk icon.
 
@@ -516,6 +555,12 @@ Three storage mechanisms have different lifetimes:
 | EEPROM emulation | FT6336 calibration structure |
 | LittleFS | UI assets, audio, ROM, and mutable emulator disk images |
 
+The NVS appearance record includes the selected custom clock face and
+`loading_screen`. Configuration archives serialize settings and include all
+`/loading` project files, `/downloaded` media, root disk images, and the ROM.
+Import replaces loading projects when the archive contains them; a missing
+selected project recovers at runtime through loading-project fallback.
+
 LittleFS contains user-significant emulator disks. The one-time 1.0.0 USB
 repartition and filesystem upload are deliberately destructive. Normal OTA
 reconciliation overwrites release-owned content and removes other root files,
@@ -532,8 +577,16 @@ Prepare generated inputs once in a fresh checkout:
 Build firmware and, when relevant, the filesystem:
 
 ```bash
+node scripts/audit_littlefs_assets.mjs
 pio run -e lolin_s3
 pio run -e lolin_s3 -t buildfs
+```
+
+Validate the embedded web panel and desktop target when they are affected:
+
+```bash
+cd web/control-panel && npm run i18n:check && npm run build
+cmake --build --preset macos-debug
 ```
 
 PlatformIO may be available as `~/.platformio/penv/bin/pio` when it is not on

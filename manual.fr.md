@@ -73,6 +73,10 @@ Dans **Général > Langue**, choisissez English, Français, Español, Deutsch ou
 Italiano. Dans **Général > Région**, choisissez l’ordre jour/mois/année, le
 format 12/24 heures et Celsius/Fahrenheit.
 
+La langue choisie s’applique à Maclock, au panneau de contrôle web, aux cadrans
+intégrés, aux écrans de chargement, aux libellés météo et aux entrées `{tr.*}`
+des projets personnalisés. Les noms de produit restent inchangés.
+
 | Langue | Réglages régionaux |
 | --- | --- |
 | ![Choix de la langue](img/manual/fr/language.png) | ![Formats régionaux](img/manual/fr/regional.png) |
@@ -89,8 +93,9 @@ le jour de la semaine, les secondes et le thème clair ou sombre.
 
 ![Options d’affichage](img/manual/fr/display.png)
 
-Dans **Affichage > Cadran**, choisissez Macintosh, Compact, Analogique, Flip,
-Compteur ou Mac OS 8.
+Dans **Affichage > Cadran**, choisissez un cadran intégré ou personnalisé,
+notamment Macintosh, Compact, Analogique, Flip, Compteur ou Mac OS 8. Le texte
+des cadrans adaptés à la langue utilise votre choix de langue.
 
 | Macintosh | Compact | Analogique |
 | --- | --- | --- |
@@ -101,7 +106,9 @@ Compteur ou Mac OS 8.
 | ![Flip](img/manual/clock-flip.png) | ![Compteur](img/manual/clock-odometer.png) | ![Mac OS 8](img/manual/clock-macos8.png) |
 
 La couleur d’accent, la taille des chiffres, la météo et la vitesse de
-l’animation Flip sont également réglables.
+l’animation Flip sont également réglables. Les cadrans personnalisés peuvent
+afficher conditionnellement l’alarme active et les secondes ; l’option
+**Afficher les secondes** reconstruit le cadran pour appliquer ce choix.
 
 ## 6. Économiseurs d’écran
 
@@ -212,14 +219,32 @@ mode nuit, carillons, sons, mises à jour, sauvegardes et fichiers émulateur.
 Une fermeture avec des modifications non enregistrées propose de continuer ou
 de les abandonner.
 
+### Éditeurs de cadrans et d’écrans de chargement
+
+Les applications **Éditeur de cadrans** et **Éditeur d’écran de chargement**
+servent à créer et enregistrer un projet, le renommer, le dupliquer, le
+protéger ou le supprimer. Importez ou exportez un cadran au format JSON ; pour
+un écran de chargement, utilisez JSON ou une archive ZIP afin de conserver ses
+images PNG. Les PNG propres à un projet se téléversent depuis son éditeur.
+
+L’aperçu de l’Éditeur de cadrans montre le résultat sans modifier le cadran
+actif. L’éditeur d’écran de chargement peut prévisualiser les modules I2C
+détectés et l’écran de chargement actuellement sélectionné. Dans
+**Apparence**, choisissez l’écran de chargement à utiliser, son son et son
+volume.
+
 Dans **Gestionnaire de sons**, déposez ou choisissez un MP3, importez une URL,
 recherchez MyInstants, écoutez et supprimez vos sons. Les sons intégrés ne sont
 pas supprimables.
 
 ![Gestionnaire de sons](img/manual/sound-manager-web.png)
 
-**Sauvegarde de configuration** exporte et restaure vos réglages. L’application
-**MQTT** permet l’intégration facultative à une installation domotique.
+**Sauvegarde de configuration** exporte et restaure vos réglages, les projets
+d’écran de chargement et leurs PNG, ainsi que l’écran de chargement sélectionné.
+Conservez aussi une copie séparée des disques de l’émulateur et des médias
+téléchargés par l’utilisateur : ils ne font pas partie de cette archive.
+L’application **MQTT** permet l’intégration facultative à une installation
+domotique.
 
 ## 13. Mises à jour
 
@@ -269,3 +294,15 @@ l’ordre. Maclock enregistre ensuite le réglage. Appuyez sur Horloge pendant
 l’étalonnage pour annuler.
 
 ![Croix d’étalonnage](img/manual/touch-calibration.png)
+
+## 17. Maintenance et récupération
+
+Après un téléversement LittleFS, les cadrans et écrans de chargement intégrés
+sont mis à jour ; vos projets et médias modifiés doivent donc être sauvegardés
+avant cette opération. Si une liste d’éditeur est vide dans le simulateur,
+réinitialisez son état puis redémarrez-le : les projets intégrés seront recréés.
+
+Si l’écran de chargement sélectionné est absent ou invalide, Maclock choisit le
+premier projet valide disponible et utilise l’écran de démarrage historique en
+dernier recours. Vérifiez alors le JSON du projet, ses PNG, le son et les noms
+des modules I2C, puis téléversez de nouveau LittleFS si nécessaire.

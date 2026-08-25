@@ -63,6 +63,51 @@ Confirm that:
 Install the LittleFS image. A firmware-only upload does not install files from
 `data/`.
 
+Run `node scripts/audit_littlefs_assets.mjs` before rebuilding LittleFS. It
+reports missing static, weather, and I2C module project assets without deleting
+anything. PlatformIO package-install messages can be noisy on a fresh machine;
+the relevant result is the final build status.
+
+## The loading screen falls back to the legacy boot view
+
+The selected loading project could not be loaded. Confirm that
+`/loading/<id>/loading.json` uses the `maclock-loading-screen` version-1 format
+at 304x224, and that every referenced PNG is in the same project directory.
+Supported static layers are rectangles, circles, lines, text, and images.
+
+For dynamic I2C modules, use one image with `id` `module`, template
+`plugin_{i2c}.png`, and `next_module_x`/`next_module_y` spacing. Provide the
+project-local `plugin_0x18.png`, `plugin_0x38.png`, weather-address, and
+`plugin_0x68.png` assets as needed; unavailable hardware is shown in red. A
+project sound must be an existing absolute LittleFS path without `..`, with a
+valid volume. Rebuild and upload LittleFS after changing source `data/`.
+
+If the selected project is missing or invalid, Maclock tries the first valid
+loading project and then the legacy boot view.
+
+## The Loading Screen Editor list is empty in the simulator
+
+The desktop overlay may contain deletion markers from an older state. Close the
+simulator and restart it with `--reset-state` to remove only its Preferences,
+EEPROM, and LittleFS overlay state. Recreated directories also clear stale
+markers automatically, so built-in projects are enumerated again.
+
+## Localized custom-face text is clipped or shows a bad degree unit
+
+Check each custom project's `{tr.*}` entry for the active language and leave an
+appropriate width for longer translations. Use the supported degree text emitted
+by `{temperature_unit}` rather than substituting an unsupported glyph. Changing
+**Show Seconds** or the 12/24-hour setting rebuilds the active custom face so
+conditional and time-dependent content can update.
+
+## Backing up before filesystem changes
+
+Use the control panel's configuration export/import workflow and verify that an
+export can be imported successfully. Archives include settings, loading-screen
+projects and assets, downloaded media, Mini vMac ROM, and root disk images.
+Still make a separate host backup of emulator disks before filesystem upload,
+because a new LittleFS image can replace mutable media.
+
 ## The date resets to 2000
 
 The RTC was not detected, initialized, or retained time. Check the RTC, backup

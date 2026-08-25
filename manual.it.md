@@ -63,6 +63,10 @@ In **Generale > Lingua** scegli English, Français, Español, Deutsch o Italiano
 **Generale > Regionale** imposta ordine della data, formato 12/24 ore e
 Celsius/Fahrenheit.
 
+Le cinque lingue si applicano al dispositivo, al pannello web, ai quadranti
+integrati, alle schermate di caricamento, alle etichette meteo e alle voci
+`{tr.*}` dei progetti personali. I nomi dei prodotti restano invariati.
+
 | Lingua | Opzioni regionali |
 | --- | --- |
 | ![](img/manual/it/language.png) | ![](img/manual/it/regional.png) |
@@ -88,6 +92,11 @@ Analogico, Flip, Contachilometri o Mac OS 8.
 
 Sono regolabili anche colore d’accento, dimensione dei numeri, meteo e velocità
 dell’animazione Flip.
+
+I progetti di quadrante personali possono contenere testi localizzati. Nell’Editor
+quadranti puoi definire elementi condizionali per un allarme attivo e per
+l’opzione **Mostra secondi**. L’anteprima dell’editor mostra il progetto con le
+sue impostazioni senza cambiare il quadrante selezionato sul dispositivo.
 
 ## 6. Salvaschermo
 
@@ -192,14 +201,30 @@ Il pannello gestisce aspetto, posizione, salvaschermo, timer, allarmi, notte,
 rintocchi, suoni, aggiornamenti, backup e file dell’emulatore. Chiudendo
 modifiche non salvate puoi continuare o annullarle.
 
+Con **Editor quadranti** ed **Editor schermata di caricamento** puoi creare,
+salvare, rinominare, duplicare, proteggere o eliminare progetti. I progetti si
+importano ed esportano in JSON o ZIP; i PNG necessari si caricano nel rispettivo
+progetto. L’anteprima dell’editor della schermata di caricamento può mostrare i
+moduli I2C collegati. In **Aspetto** scegli e visualizzi in anteprima la schermata
+di caricamento desiderata; qui imposti anche suono e volume del progetto.
+
 **Gestione suoni** permette di trascinare o scegliere un MP3, importare un URL,
 cercare MyInstants, ascoltare ed eliminare suoni aggiunti. Quelli integrati non
 possono essere rimossi.
 
 ![Gestione suoni](img/manual/sound-manager-web.png)
 
-**Backup configurazione** esporta e ripristina le impostazioni. **MQTT** offre
-un collegamento facoltativo alla domotica compatibile.
+**Backup configurazione** esporta e ripristina le impostazioni, compresi progetti
+e file delle schermate di caricamento e la schermata selezionata. I dischi
+dell’emulatore e i media scaricati dall’utente non fanno parte dell’archivio e
+devono essere protetti separatamente. **MQTT** offre un collegamento facoltativo
+alla domotica compatibile.
+
+Se progetti o immagini mancano dopo il ripristino del simulatore desktop,
+reimporta il backup oppure carica di nuovo LittleFS con i progetti integrati. Un
+upload LittleFS aggiorna i progetti integrati dei quadranti e delle schermate di
+caricamento, ma può sovrascrivere dischi dell’emulatore e media personali
+scaricati. Esegui prima un backup separato.
 
 ## 13. Aggiornamenti software
 

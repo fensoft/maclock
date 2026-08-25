@@ -83,6 +83,11 @@ lowest visible brightness, or full brightness.
 Open **General > Language**, then choose English, Français, Español, Deutsch,
 or Italiano. Maclock remembers your choice.
 
+The selected language is used by the device, web control panel, built-in clock
+faces, loading screens, and weather labels. Custom clock-face and loading-screen
+projects can also use their translated text entries. Product names remain
+unchanged.
+
 ![Language selection](img/manual/language.png)
 
 ### Regional choices
@@ -118,7 +123,8 @@ Open **Display > Display** to choose whether to show:
 
 ### Clock faces
 
-Open **Display > Clock Face** and choose the face you prefer.
+Open **Display > Clock Face** and choose the face you prefer. The selected face
+uses your language and regional time settings where it supports them.
 
 | Macintosh | Compact |
 | --- | --- |
@@ -133,7 +139,9 @@ Open **Display > Clock Face** and choose the face you prefer.
 | ![Odometer display mode](img/manual/clock-odometer.png) | ![Mac OS 8 display mode](img/manual/clock-macos8.png) |
 
 You can also choose an accent color, numeral size, weather display, and Flip
-animation speed.
+animation speed. Custom faces can provide additional conditional choices, such
+as showing an active alarm or seconds. Changing **Show Seconds** rebuilds a
+custom face so its optional seconds content is applied.
 
 | Clock face | Style | Details |
 | --- | --- | --- |
@@ -295,7 +303,8 @@ launcher.
 ![Macintosh-style web control panel launcher](img/manual/control-panel-launcher.png)
 
 The control panel lets you manage appearance, location, screensavers, timers,
-alarms, night mode, chimes, sounds, updates, backups, and emulator files.
+alarms, night mode, chimes, sounds, updates, backups, clock-face and
+loading-screen projects, and emulator files.
 
 If you close a window containing unsaved changes, choose whether to continue
 editing or discard those changes.
@@ -314,11 +323,35 @@ Built-in sounds remain available but cannot be removed.
 
 ![Sound Manager in the web control panel](img/manual/sound-manager-web.png)
 
+### Create clock faces and loading screens
+
+Open **Clock Face Editor** or **Loading Screen Editor** to manage projects.
+Choose a project to preview it, then create, save, rename, duplicate, protect,
+or delete it. Protected built-in projects cannot be deleted.
+
+- Import and export projects as JSON or ZIP archives.
+- Upload PNG assets to the selected project; project assets stay with that
+  project when it is exported.
+- Use the Clock Face Editor preview to check a face before selecting it on
+  Maclock.
+- Use the Loading Screen Editor preview to check its static layers and detected
+  I2C module layout. A module that is unavailable is shown in red.
+
+Open **Appearance** to select a loading screen. You can preview the selected
+loading screen before saving, and choose its startup sound and volume there.
+Maclock uses the selected screen while it starts; if that project is missing or
+invalid, it uses a working built-in screen or the legacy startup display.
+
 ### Back up your settings
 
 Open **Configuration Backup** to save a copy of your settings. Keep a recent
 backup, especially before making many changes. The same application restores a
 previous backup.
+
+Configuration archives include loading-screen projects, their assets, and the
+selected loading screen. They do not replace the need to protect emulator disks
+or media that you downloaded yourself. Back up those files separately before a
+filesystem upload, reset, or file replacement.
 
 ### Optional home automation
 
@@ -387,9 +420,31 @@ Open **Mini vMac Files** in the web control panel to back up, replace, or add
 emulator files. Back up anything important before replacing it, then wait for
 Maclock to confirm that the new file is installed.
 
+A filesystem upload can replace built-in clock-face and loading-screen assets,
+and can also overwrite emulator disks or user-downloaded media. Back up and
+restore those files separately when performing filesystem maintenance.
+
 Use only software that you are legally entitled to use.
 
-## 16. Touchscreen Calibration
+## 16. Maintenance and Recovery
+
+### Project and asset recovery
+
+If an editor list is empty or a project falls back to the legacy startup
+display, confirm that the project and its PNG assets were uploaded to
+Maclock's filesystem. Re-uploading the filesystem restores built-in projects,
+but does not preserve mutable emulator disks or downloaded media unless they
+were backed up first.
+
+### Desktop simulator recovery
+
+If you use the desktop simulator and its editor lists or previews show stale
+projects, reset its local overlay state with its `--reset-state` option, then
+restart the simulator. This resets simulator state only; it does not change
+Maclock hardware. Opening a recreated project directory clears its old deleted
+marker so the built-in project is visible again.
+
+## 17. Touchscreen Calibration
 
 Calibrate the touchscreen if taps no longer match the displayed controls.
 

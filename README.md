@@ -27,8 +27,9 @@ It combines two experiences:
 
 ## Highlights
 
-- Five clock faces, light and dark themes, configurable accents and numeral
-  sizes.
+- Thirteen built-in clock-face projects, plus web Clock Face and Loading Screen
+  Editors for project-local assets, localized text, and conditional layers.
+- Light and dark themes, configurable accents and numeral sizes.
 - Three weekly alarms, a countdown timer, hourly or quarter-hour chimes, and
   selectable MP3 sounds.
 - Scheduled dimming or screen-off night mode.
@@ -37,6 +38,9 @@ It combines two experiences:
 - Verified firmware and filesystem updates over HTTPS.
 - A Macintosh Plus emulator with persistent writable disk images.
 - English, French, Spanish, German, and Italian interfaces.
+- Appearance selects the loading-screen project. A project can provide its own
+  boot sound and volume; invalid or missing selections fall back safely to the
+  first valid loading project, then to the legacy boot screen.
 
 ## Discord
 
@@ -90,7 +94,11 @@ Persistent desktop data lives at:
 
 Preferences use an atomically replaced typed file, EEPROM uses a binary image,
 and LittleFS overlays writes on the repository's read-only `data/` directory.
-`--reset-state` removes only the resolved simulator state directory.
+The control panel is available on `http://127.0.0.1:8088/` by default. The
+overlay keeps deletion markers for source files; recreating a directory clears
+its stale markers so source loading and clock-face projects are enumerated
+again. `--reset-state` removes only the resolved simulator state
+directory.
 
 The simulated Wi-Fi network is `Mac Host Network`; connection succeeds with
 any credentials. A fresh state starts connected with Paris selected for
@@ -111,11 +119,15 @@ development:
 cd web/control-panel
 npm install
 npm run dev
+npm run i18n:check
+npm run build
 ```
 
 The development server supplies sample device state. PlatformIO runs
 `scripts/build_control_panel.py` automatically when the embedded web header is
-stale; do not edit `src/control_panel_page.h` by hand.
+stale. `npm run i18n:check` verifies shared web translation coverage; `npm run
+build` runs that check, builds the Vue bundle, and regenerates
+`src/control_panel_page.h`. Do not edit the generated header by hand.
 
 ## Firmware Development
 
@@ -125,12 +137,17 @@ Prepare generated Mini vMac sources and local assets once:
 ./prepare.sh
 ```
 
-Build the firmware and LittleFS image:
+Audit project assets, then build the firmware and LittleFS image:
 
 ```sh
+node scripts/audit_littlefs_assets.mjs
 pio run -e lolin_s3
 pio run -e lolin_s3 -t buildfs
 ```
+
+The audit checks referenced static, weather, and I2C-module project assets but
+does not delete files. `data/` is the source LittleFS image; the desktop
+simulator writes instead to its state overlay.
 
 Do not upload without confirming the intended serial device. ROMs and disk
 images may contain licensed or user-modified data and must not be published

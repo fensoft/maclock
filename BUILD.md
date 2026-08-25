@@ -173,14 +173,22 @@ Firmware and filesystem uploads are separate. Uploading firmware does not
 update images, audio, ROMs, or disks. Uploading LittleFS can overwrite mutable
 Mini vMac disks and their saved data, so preserve host-side backups before
 using `uploadfs`.
+Export a configuration archive and copy any emulator disks before a filesystem
+operation; restore them only after the new filesystem is in place.
 
 ## LittleFS Contents
 
 The `data/` directory is packaged into LittleFS:
 
-- Tracked PNG and MP3 assets implement the clock interface.
-- `vMac.ROM` supplies the Macintosh Plus ROM.
-- Sequential `disk1.dsk`, `disk2.dsk`, and later images supply Mini vMac disks.
+- Built-in clock-face projects live at `/clockface/<id>/clockface.json` with
+  their project-local PNG assets and optional catalog icon.
+- Built-in loading projects live at `/loading/<id>/loading.json` with their
+  project-local PNG assets. Root-level boot assets remain only as legacy
+  fallback assets.
+- Tracked fonts, shared UI images, weather icons, I2C plugin icons, and MP3
+  effects support the normal interface and project templates.
+- `vMac.ROM`, sequential `disk1.dsk`, `disk2.dsk`, and later images are mutable
+  Mini vMac media; downloaded user media is also mutable.
 
 The device provisions the initial ROM and first disk after Wi-Fi connects; they
 no longer need to be downloaded by `prepare.sh` or included in the initial
@@ -188,6 +196,31 @@ LittleFS upload.
 
 Mini vMac stops mounting disks at the first missing number. Keep disk names
 contiguous.
+
+Before making a filesystem image, audit all project references:
+
+```sh
+node scripts/audit_littlefs_assets.mjs
+pio run -e lolin_s3 -t buildfs
+```
+
+The audit expands dynamic weather and I2C plugin templates and reports missing
+or unexpected project assets. It never removes files.
+
+## Build Validation
+
+Run the relevant checks before release or filesystem validation:
+
+```sh
+cd web/control-panel && npm run i18n:check && npm run build
+pio run -e lolin_s3
+pio run -e lolin_s3 -t buildfs
+cmake --build --preset macos-debug
+```
+
+The web build validates translation coverage and regenerates the embedded
+control-panel header. The desktop simulator uses a writable overlay rather than
+modifying source `data/`.
 
 ## First Power-On Checks
 

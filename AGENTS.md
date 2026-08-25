@@ -7,8 +7,8 @@ Operational notes for future Codex sessions in this repository.
 Maclock is ESP32-S3 firmware for replacing a Maclock's original screen with a
 320x240 IPS display. It has two mutually exclusive runtime modes:
 
-- A normal LVGL clock interface with startup animation, MP3 effects, RTC and
-  weather data, touch calibration, and persistent brightness/boot settings.
+- A normal LVGL clock interface with project-driven loading screen, clock-face
+  projects, MP3 effects, RTC/weather data, touch calibration, and settings.
 - A Mini vMac emulator that can launch from Boot Options or directly at
   power-on when the saved default selects the emulator.
 
@@ -56,8 +56,8 @@ LittleFS, and boot lifecycle.
 - `src/main.cpp`: the under-50-line Arduino adapter.
 - `include/maclock_app.h`, `src/maclock_app.cpp`: composition root, owned
   services, typed state, event sink, and private UI callback context.
-- `src/ui/*.cpp`: focused Boot Options, clock-face, shared-shell, asset, and
-  state-machine implementation units. They are included into
+- `src/ui/*.cpp`: focused Boot Options, clock-face, shared-shell, asset,
+  loading-view, and state-machine implementation units. They are included into
   `maclock_app.cpp` under `MACLOCK_COMBINED_SOURCE` and intentionally compile
   empty when PlatformIO discovers them separately.
 - `include/*_service.h`, matching `src/*.cpp`: settings, I2C, RTC, weather,
@@ -87,7 +87,12 @@ LittleFS, and boot lifecycle.
   settings, including the Macintosh Plus model and 304x224 monochrome screen.
 - `patches/`: reproducible changes applied to the generated upstream tree.
 - `data/`: LittleFS image contents—tracked UI/audio assets plus ignored local
-  ROM and `disk*.dsk` files.
+  ROM and `disk*.dsk` files. Built-in projects are under
+  `clockface/<id>/clockface.json` and `loading/<id>/loading.json`; their PNG
+  assets are project-local.
+- `scripts/audit_littlefs_assets.mjs`: validates built-in clock-face/loading
+  asset references, including dynamic weather and I2C module assets; it never
+  deletes media.
 - `docs/ARCHITECTURE.md`: deeper system overview.
 
 ## Generated And Binary Inputs
@@ -166,6 +171,17 @@ defining a replacement ownership model.
   preserve their existing storage formats.
 - EEPROM stores FT6336 calibration with the `TOUC` magic value.
 - LittleFS paths use `/name` through Arduino and `S:/name` through LVGL.
+- `loading_screen` persists the Appearance-selected loading project. Runtime
+  tries it, then the first valid `/loading` project, then the legacy boot view.
+- Loading projects use `maclock-loading-screen` v1 at 304x224. Supported static
+  layers are rectangle, circle, line, text, and image. `module` must use
+  `plugin_{i2c}.png` with `next_module_x/y`; assets stay project-local and
+  missing probed modules are red. Project sound path/volume belong to the
+  loading project.
+- Configuration archives include loading projects/assets and `loading_screen`.
+- Custom-face `{tr.*}` text and localized `{weather}` follow the five UI
+  languages. Rebuild the active custom face after 12/24-hour or Show Seconds
+  changes so conditional layers are recreated.
 - Mini vMac expects `/vMac.ROM` and sequential `/disk1.dsk`,
   `/disk2.dsk`, and so on, stopping at the first missing disk number.
 - The normal boot diagnostic expects the codec, touch controller, one detected
@@ -186,9 +202,16 @@ Prepare a fresh checkout before the first build:
 Use PlatformIO for builds:
 
 ```bash
+node scripts/audit_littlefs_assets.mjs
 pio run -e lolin_s3
 pio run -e lolin_s3 -t buildfs
 ```
+
+For web changes, run `cd web/control-panel && npm run i18n:check && npm run
+build`; the build regenerates `src/control_panel_page.h`. Before release or
+filesystem validation, asset audit must pass. The desktop LittleFS overlay uses
+deletion markers; `mkdir` clears markers for recreated directories and ancestors
+so source project enumeration recovers.
 
 If `pio` is not on `PATH`, use `~/.platformio/penv/bin/pio`.
 

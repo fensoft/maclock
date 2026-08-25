@@ -61,6 +61,10 @@ Unter **Allgemein > Sprache** English, Français, Español, Deutsch oder Italian
 wählen. **Allgemein > Regional** bestimmt Datumsreihenfolge, 12/24 Stunden und
 Celsius/Fahrenheit.
 
+Die fünf Sprachen gelten für das Gerät, das Web-Bedienfeld, eingebaute
+Zifferblätter, Ladebildschirme, Wetterbezeichnungen und die `{tr.*}`-Einträge
+eigener Projekte. Produktnamen bleiben unverändert.
+
 | Sprache | Region |
 | --- | --- |
 | ![](img/manual/de/language.png) | ![](img/manual/de/regional.png) |
@@ -86,6 +90,11 @@ Analog, Flip, Kilometerzähler und Mac OS 8 bereit.
 
 Akzentfarbe, Zifferngröße, Wetteranzeige und Flip-Geschwindigkeit sind ebenfalls
 einstellbar.
+
+Eigene Zifferblattprojekte können lokalisierte Inhalte enthalten. Im
+Zifferblatt-Editor lassen sich bedingte Elemente für einen aktiven Alarm und
+für die Option **Sekunden anzeigen** festlegen. Die Editorvorschau zeigt das
+Projekt mit seinen Einstellungen, ohne die Auswahl auf dem Gerät zu ändern.
 
 ## 6. Bildschirmschoner
 
@@ -191,13 +200,30 @@ Alarme, Nachtmodus, Glockenschlag, Klänge, Updates, Sicherungen und
 Emulatordateien. Beim Schließen ungespeicherter Änderungen kann man weiter
 bearbeiten oder verwerfen.
 
+Mit **Zifferblatt-Editor** und **Ladebildschirm-Editor** lassen sich Projekte
+erstellen, speichern, umbenennen, duplizieren, schützen oder löschen. Projekte
+können als JSON oder ZIP importiert und exportiert werden; benötigte PNG-Dateien
+werden zum jeweiligen Projekt hochgeladen. Die Vorschau des Ladebildschirm-
+Editors kann angeschlossene I2C-Module darstellen. Unter **Darstellung** wird
+der gewünschte Ladebildschirm gewählt und als Vorschau angezeigt; dort gehören
+auch projektspezifischer Klang und Lautstärke dazu.
+
 Im **Sound-Manager** MP3 ablegen/auswählen, von einer URL importieren, MyInstants
 durchsuchen, vorhören und eigene Klänge löschen. Eingebaute Klänge bleiben.
 
 ![Sound-Manager](img/manual/sound-manager-web.png)
 
-**Konfigurationssicherung** exportiert und importiert Einstellungen. **MQTT**
-ermöglicht optional die Verbindung mit kompatibler Hausautomation.
+**Konfigurationssicherung** exportiert und importiert Einstellungen einschließlich
+Ladebildschirmprojekten, deren Dateien und der ausgewählten Ladeanzeige. Disketten
+des Emulators und vom Benutzer heruntergeladene Medien sind nicht Teil dieses
+Archivs und müssen separat gesichert werden. **MQTT** ermöglicht optional die
+Verbindung mit kompatibler Hausautomation.
+
+Fehlen Projekte oder deren Bilder nach einem Zurücksetzen des Desktop-Simulators,
+die Sicherung wieder importieren oder das LittleFS mit den eingebauten Projekten
+erneut hochladen. Ein LittleFS-Upload aktualisiert eingebaute Zifferblatt- und
+Ladebildschirmprojekte, kann aber Emulator-Disketten und eigene heruntergeladene
+Medien überschreiben. Diese vorher separat sichern.
 
 ## 13. Softwareaktualisierungen
 
