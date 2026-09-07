@@ -92,6 +92,16 @@ simulator and restart it with `--reset-state` to remove only its Preferences,
 EEPROM, and LittleFS overlay state. Recreated directories also clear stale
 markers automatically, so built-in projects are enumerated again.
 
+On Windows, run the executable and all CMake commands from the MSYS2 UCRT64
+shell. The plain MSYS shell selects the wrong compiler/runtime. Simulator state
+is under `%LOCALAPPDATA%\Fensoft\Maclock Simulator`; `--reset-state` refuses
+profile, drive, temporary, source-data, and junction roots.
+
+If Windows has no audio endpoint, the simulator reports muted local output and
+continues with timed silent playback. This is expected on headless CI systems.
+Run `windows-ucrt64-release` for normal use. The Debug target is intentionally
+unoptimized and may make the interface slow enough to underrun audio.
+
 ## Localized custom-face text is clipped or shows a bad degree unit
 
 Check each custom project's `{tr.*}` entry for the active language and leave an

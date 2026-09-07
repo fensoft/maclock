@@ -1,18 +1,114 @@
 #include "local_mqtt_client.h"
 
-#include <arpa/inet.h>
 #include <cerrno>
+#include <climits>
 #include <cstring>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 #include <algorithm>
 
 namespace
 {
 constexpr size_t kMaximumPacketSize = 1024 * 1024;
+
+#ifdef _WIN32
+using NativeSocket = SOCKET;
+
+bool initializeSockets()
+{
+    static const bool initialized = []()
+    {
+        WSADATA data{};
+        return WSAStartup(MAKEWORD(2, 2), &data) == 0;
+    }();
+    return initialized;
+}
+
+NativeSocket nativeSocket(LocalSocketHandle socket)
+{
+    return static_cast<NativeSocket>(socket);
+}
+
+LocalSocketHandle localSocket(NativeSocket socket)
+{
+    return socket == INVALID_SOCKET
+               ? kInvalidLocalSocket
+               : static_cast<LocalSocketHandle>(socket);
+}
+
+int socketError()
+{
+    return WSAGetLastError();
+}
+
+bool connectPending(int error)
+{
+    return error == WSAEWOULDBLOCK ||
+           error == WSAEINPROGRESS || error == WSAEALREADY;
+}
+
+bool wouldBlock(int error)
+{
+    return error == WSAEWOULDBLOCK;
+}
+
+bool setNonblocking(NativeSocket socket)
+{
+    u_long enabled = 1;
+    return ioctlsocket(socket, FIONBIO, &enabled) == 0;
+}
+
+void closeNativeSocket(NativeSocket socket)
+{
+    closesocket(socket);
+}
+int selectNfds(NativeSocket) { return 0; }
+#else
+using NativeSocket = int;
+
+bool initializeSockets() { return true; }
+NativeSocket nativeSocket(LocalSocketHandle socket)
+{
+    return static_cast<NativeSocket>(socket);
+}
+LocalSocketHandle localSocket(NativeSocket socket)
+{
+    return socket < 0 ? kInvalidLocalSocket
+                      : static_cast<LocalSocketHandle>(socket);
+}
+int socketError() { return errno; }
+bool connectPending(int error)
+{
+    return error == EINPROGRESS || error == EALREADY;
+}
+bool wouldBlock(int error)
+{
+    return error == EAGAIN || error == EWOULDBLOCK;
+}
+bool setNonblocking(NativeSocket socket)
+{
+    const int flags = fcntl(socket, F_GETFL, 0);
+    return flags >= 0 &&
+           fcntl(socket, F_SETFL, flags | O_NONBLOCK) == 0;
+}
+void closeNativeSocket(NativeSocket socket) { close(socket); }
+int selectNfds(NativeSocket socket) { return socket + 1; }
+#endif
+
+int socketLength(size_t length)
+{
+    return static_cast<int>(std::min(
+        length, static_cast<size_t>(INT_MAX)));
+}
 
 void appendString(std::vector<unsigned char> &data, const std::string &value)
 {
@@ -73,6 +169,11 @@ bool LocalMqttClient::connect(const char *client_id, const char *username, const
     username_ = username ? username : "";
     password_ = password ? password : "";
     error_.clear();
+    if (!initializeSockets())
+    {
+        fail("Unable to initialize sockets");
+        return false;
+    }
 
     addrinfo hints{};
     hints.ai_family = AF_UNSPEC;
@@ -86,22 +187,25 @@ bool LocalMqttClient::connect(const char *client_id, const char *username, const
     }
     for (addrinfo *address = addresses; address; address = address->ai_next)
     {
-        socket_ = socket(address->ai_family, address->ai_socktype, address->ai_protocol);
-        if (socket_ < 0)
+        const NativeSocket candidate = socket(
+            address->ai_family, address->ai_socktype,
+            address->ai_protocol);
+        socket_ = localSocket(candidate);
+        if (socket_ == kInvalidLocalSocket)
             continue;
-        const int flags = fcntl(socket_, F_GETFL, 0);
-        if (flags < 0 || fcntl(socket_, F_SETFL, flags | O_NONBLOCK) < 0)
+        if (!setNonblocking(candidate))
         {
             closeSocket();
             continue;
         }
-        if (::connect(socket_, address->ai_addr, address->ai_addrlen) == 0)
+        if (::connect(candidate, address->ai_addr,
+                static_cast<int>(address->ai_addrlen)) == 0)
         {
             state_ = ConnectionState::AwaitingConnack;
             freeaddrinfo(addresses);
             return sendConnect();
         }
-        if (errno == EINPROGRESS)
+        if (connectPending(socketError()))
         {
             state_ = ConnectionState::TcpConnecting;
             freeaddrinfo(addresses);
@@ -147,10 +251,12 @@ bool LocalMqttClient::loop()
     {
         fd_set writable;
         FD_ZERO(&writable);
-        FD_SET(socket_, &writable);
+        const NativeSocket socket = nativeSocket(socket_);
+        FD_SET(socket, &writable);
         timeval timeout{};
         const int ready = select(
-            socket_ + 1, nullptr, &writable, nullptr, &timeout);
+            selectNfds(socket), nullptr,
+            &writable, nullptr, &timeout);
         if (ready == 0)
             return true;
         if (ready < 0)
@@ -159,13 +265,20 @@ bool LocalMqttClient::loop()
             return false;
         }
         int socket_error = 0;
+#ifdef _WIN32
+        int size = sizeof(socket_error);
+        char *error_value = reinterpret_cast<char *>(&socket_error);
+#else
         socklen_t size = sizeof(socket_error);
-        if (getsockopt(socket_, SOL_SOCKET, SO_ERROR, &socket_error, &size) != 0)
+        void *error_value = &socket_error;
+#endif
+        if (getsockopt(socket, SOL_SOCKET, SO_ERROR,
+                error_value, &size) != 0)
         {
             fail("Unable to inspect broker connection");
             return false;
         }
-        if (socket_error == EINPROGRESS || socket_error == EALREADY)
+        if (connectPending(socket_error))
             return true;
         if (socket_error != 0)
         {
@@ -227,14 +340,18 @@ bool LocalMqttClient::flushOutput()
 {
     while (output_offset_ < output_.size())
     {
-        const ssize_t sent = send(socket_, output_.data() + output_offset_, output_.size() - output_offset_, 0);
+        const int sent = send(
+            nativeSocket(socket_),
+            reinterpret_cast<const char *>(
+                output_.data() + output_offset_),
+            socketLength(output_.size() - output_offset_), 0);
         if (sent > 0)
         {
             output_offset_ += static_cast<size_t>(sent);
             last_activity_ = std::chrono::steady_clock::now();
             continue;
         }
-        if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+        if (sent < 0 && wouldBlock(socketError()))
             return true;
         fail("Broker write failed");
         return false;
@@ -249,7 +366,9 @@ bool LocalMqttClient::receiveInput()
     unsigned char buffer[4096];
     for (;;)
     {
-        const ssize_t received = recv(socket_, buffer, sizeof(buffer), 0);
+        const int received = recv(
+            nativeSocket(socket_),
+            reinterpret_cast<char *>(buffer), sizeof(buffer), 0);
         if (received > 0)
         {
             input_.insert(input_.end(), buffer, buffer + received);
@@ -266,7 +385,7 @@ bool LocalMqttClient::receiveInput()
             fail("Broker closed the connection");
             return false;
         }
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
+        if (wouldBlock(socketError()))
             return true;
         fail("Broker read failed");
         return false;
@@ -384,10 +503,10 @@ void LocalMqttClient::fail(const char *message)
 
 void LocalMqttClient::closeSocket()
 {
-    if (socket_ >= 0)
+    if (socket_ != kInvalidLocalSocket)
     {
-        close(socket_);
-        socket_ = -1;
+        closeNativeSocket(nativeSocket(socket_));
+        socket_ = kInvalidLocalSocket;
     }
 }
 

@@ -2,10 +2,16 @@
 
 #include <functional>
 #include <chrono>
+#include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
 #include <Arduino.h>
+
+using LocalSocketHandle = std::uintptr_t;
+constexpr LocalSocketHandle kInvalidLocalSocket =
+    std::numeric_limits<LocalSocketHandle>::max();
 
 // Small MQTT 3.1.1 client for the local simulator. All socket progress occurs
 // from loop(), so the simulator's UI thread is never blocked on broker I/O.
@@ -47,7 +53,7 @@ private:
     void closeSocket();
     unsigned short nextPacketId();
 
-    int socket_ = -1;
+    LocalSocketHandle socket_ = kInvalidLocalSocket;
     ConnectionState state_ = ConnectionState::Disconnected;
     std::string host_;
     int port_ = 1883;

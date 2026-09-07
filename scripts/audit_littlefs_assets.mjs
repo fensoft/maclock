@@ -1,7 +1,8 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("../data/", import.meta.url);
+const root = fileURLToPath(new URL("../data/", import.meta.url));
 const dynamicAssets = {
   "{weather_asset}.png": ["sunny.png", "cloudy.png", "rainy.png"],
   "macos8_{weather_asset}.png": ["macos8_sunny.png", "macos8_cloudy.png", "macos8_rainy.png"],
@@ -54,10 +55,10 @@ async function walk(directory) {
 
 let failed = false;
 for (const [collection, configName] of [["clockface", "clockface.json"], ["loading", "loading.json"]]) {
-  const directory = new URL(`${collection}/`, root);
+  const directory = join(root, collection);
   for (const entry of await entries(directory)) {
     if (!entry.isDirectory()) continue;
-    const projectDirectory = join(directory.pathname, entry.name);
+    const projectDirectory = join(directory, entry.name);
     const result = await auditProject(projectDirectory, configName);
     for (const asset of result.missing) {
       console.error(`Missing ${collection}/${entry.name}/${asset}`);
@@ -70,12 +71,12 @@ for (const [collection, configName] of [["clockface", "clockface.json"], ["loadi
   }
 }
 
-const files = await walk(root.pathname);
+const files = await walk(root);
 const sizes = await Promise.all(files.map(async (file) => ({ file, bytes: (await stat(file)).size })));
 sizes.sort((a, b) => b.bytes - a.bytes);
 const total = sizes.reduce((sum, entry) => sum + entry.bytes, 0);
 console.log(`LittleFS assets: ${(total / 1024).toFixed(1)} KiB across ${sizes.length} files`);
 for (const entry of sizes.slice(0, 10))
-  console.log(`${(entry.bytes / 1024).toFixed(1).padStart(7)} KiB  ${relative(root.pathname, entry.file)}`);
+  console.log(`${(entry.bytes / 1024).toFixed(1).padStart(7)} KiB  ${relative(root, entry.file)}`);
 
 if (failed) process.exit(1);

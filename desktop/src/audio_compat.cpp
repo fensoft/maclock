@@ -122,12 +122,30 @@ void AudioOutputI2S::SetBuffers(int, int)
 
 void AudioOutputI2S::SetRate(int sample_rate)
 {
-    sample_rate_ = std::max(8000, sample_rate);
+    const int new_rate = std::max(8000, sample_rate);
+    if (sample_rate_ == new_rate)
+        return;
+    sample_rate_ = new_rate;
+    if (i2sOn)
+    {
+        maclock_hal().audio().begin(
+            static_cast<uint32_t>(sample_rate_),
+            static_cast<uint8_t>(channels_));
+    }
 }
 
 void AudioOutputI2S::SetChannels(int channels)
 {
-    channels_ = std::clamp(channels, 1, 2);
+    const int new_channels = std::clamp(channels, 1, 2);
+    if (channels_ == new_channels)
+        return;
+    channels_ = new_channels;
+    if (i2sOn)
+    {
+        maclock_hal().audio().begin(
+            static_cast<uint32_t>(sample_rate_),
+            static_cast<uint8_t>(channels_));
+    }
 }
 
 void AudioOutputI2S::SetGain(float gain)
@@ -199,7 +217,7 @@ bool AudioGeneratorMP3::begin(
     state_->source = source;
     state_->output = output;
     ma_decoder_config config =
-        ma_decoder_config_init(ma_format_s16, 2, 44100);
+        ma_decoder_config_init(ma_format_s16, 2, 0);
     if (ma_decoder_init(
             State::read, State::seek,
             state_.get(), &config,
@@ -207,6 +225,19 @@ bool AudioGeneratorMP3::begin(
     {
         return false;
     }
+    ma_format format = ma_format_unknown;
+    ma_uint32 channels = 0;
+    ma_uint32 sample_rate = 0;
+    if (ma_decoder_get_data_format(
+            &state_->decoder, &format, &channels,
+            &sample_rate, nullptr, 0) != MA_SUCCESS ||
+        format != ma_format_s16 || channels != 2 || !sample_rate)
+    {
+        ma_decoder_uninit(&state_->decoder);
+        return false;
+    }
+    output->SetRate(static_cast<int>(sample_rate));
+    output->SetChannels(2);
     state_->initialized = true;
     state_->running = output->begin();
     return state_->running;

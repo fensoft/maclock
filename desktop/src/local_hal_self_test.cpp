@@ -10,6 +10,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include <Wire.h>
+#include <esp_heap_caps.h>
 
 #include "maclock_hal.h"
 #include "local_maclock_hal.h"
@@ -111,7 +112,27 @@ bool writePersistence()
     if (!require(LittleFS.begin(), "LittleFS mount failed") ||
         !require(
             LittleFS.exists("/startup.mp3"),
-            "LittleFS base layer is unavailable"))
+            "LittleFS base layer is unavailable") ||
+        !require(
+            static_cast<bool>(LittleFS.open("/")),
+            "LittleFS root is unavailable") ||
+        !require(
+            !LittleFS.exists("/../startup.mp3") &&
+                !LittleFS.open("/../../escape.bin", "w") &&
+                !LittleFS.open("//server/share", "w") &&
+                !LittleFS.open("C:/escape.bin", "w") &&
+                !LittleFS.open("/bad\\name", "w") &&
+                !LittleFS.open("/stream:name", "w") &&
+                !LittleFS.open("/trailing.", "w"),
+            "LittleFS accepted an unsafe virtual path")
+#ifdef _WIN32
+        || !require(
+            !LittleFS.open("/NUL", "w") &&
+                !LittleFS.exists("/STARTUP.MP3") &&
+                !LittleFS.open("/STARTUP.MP3", "w"),
+            "LittleFS accepted a Windows name or case alias")
+#endif
+    )
     {
         return false;
     }
@@ -201,6 +222,15 @@ bool verifyPersistence()
 
 bool testDisplayAndAudio()
 {
+    void *aligned = heap_caps_aligned_alloc(
+        64, 257, MALLOC_CAP_DEFAULT);
+    if (!require(
+            aligned &&
+                reinterpret_cast<uintptr_t>(aligned) % 64 == 0,
+            "aligned heap allocation failed"))
+        return false;
+    heap_caps_free(aligned);
+
     TFT_eSPI display;
     display.init();
     display.fillScreen(TFT_BLACK);

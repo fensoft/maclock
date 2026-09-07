@@ -15,6 +15,7 @@
 #include <condition_variable>
 #include <cstring>
 #include <deque>
+#include <iostream>
 #include <map>
 #include <mutex>
 #include <thread>
@@ -136,7 +137,10 @@ bool WiFiClass::softAPdisconnect(bool wifi_off)
 
 HTTPClient::HTTPClient()
 {
-    curl_global_init(CURL_GLOBAL_DEFAULT);
+    static std::once_flag curl_initialized;
+    std::call_once(
+        curl_initialized,
+        []() { curl_global_init(CURL_GLOBAL_DEFAULT); });
 }
 
 HTTPClient::~HTTPClient()
@@ -509,8 +513,12 @@ void WebServer::begin()
     state_->thread = std::thread(
         [this]()
         {
-            state_->server->listen(
-                "127.0.0.1", state_->actual_port);
+            if (!state_->server->listen(
+                    "127.0.0.1", state_->actual_port))
+            {
+                std::cerr << "Could not listen on 127.0.0.1:"
+                          << state_->actual_port << "\n";
+            }
         });
 }
 

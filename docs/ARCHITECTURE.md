@@ -27,7 +27,9 @@ I²C, SPI, display, audio, storage, and networking interfaces.
   remains unchanged and its existing Arduino bridge compiles against those
   shims.
 
-The desktop target is a separate CMake-built macOS application. PlatformIO's
+The desktop target is a separate CMake-built macOS or Windows 10/11 x64
+application. Windows uses the MSYS2 UCRT64 GCC toolchain and Schannel/Winsock;
+macOS uses its existing native services. PlatformIO's
 `lolin_s3` environment does not include any SDL, ImGui, miniaudio, host
 filesystem, or host networking source.
 
@@ -81,6 +83,10 @@ both layers. Deleting a source file creates an overlay deletion marker;
 recreating a directory clears markers for that directory and its ancestors,
 preventing stale markers from hiding restored source projects. This prevents
 emulator disk writes or application changes from modifying repository assets.
+Windows virtual paths are parsed as LittleFS paths before native path creation;
+drive, UNC, traversal, reserved-name, alternate-stream, and case-alias paths are
+rejected. Windows state defaults to
+`%LOCALAPPDATA%\Fensoft\Maclock Simulator`.
 
 Simulated Wi-Fi scanning returns `Mac Host Network`; association is
 credential-independent and IP/RSSI data is deterministic. When the local
@@ -587,6 +593,9 @@ Validate the embedded web panel and desktop target when they are affected:
 ```bash
 cd web/control-panel && npm run i18n:check && npm run build
 cmake --build --preset macos-debug
+# MSYS2 UCRT64 on Windows
+cmake --build --preset windows-ucrt64-debug
+ctest --preset windows-ucrt64-debug
 ```
 
 PlatformIO may be available as `~/.platformio/penv/bin/pio` when it is not on

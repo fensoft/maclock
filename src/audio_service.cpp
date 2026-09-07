@@ -238,7 +238,15 @@ void AudioService::runTask()
         }
         if (lock_)
             xSemaphoreGive(lock_);
+#ifdef MACLOCK_LOCAL
+        // LocalAudioOutput blocks when its ring is full, so active desktop
+        // decoding needs no timer wait. Even a nominal zero-duration Windows
+        // wait can yield long enough to starve the WASAPI callback.
+        if (!is_running)
+            vTaskDelay(pdMS_TO_TICKS(10));
+#else
         vTaskDelay(pdMS_TO_TICKS(is_running ? 1 : 10));
+#endif
     }
 }
 

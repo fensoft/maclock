@@ -1,4 +1,5 @@
 #include "local_maclock_hal.h"
+#include "host_compat.h"
 #include "local_audio_output.h"
 #include "local_simulator_ui.h"
 
@@ -267,12 +268,8 @@ uint32_t local_wall_epoch()
 {
     const std::time_t now = std::time(nullptr);
     std::tm local{};
-    localtime_r(&now, &local);
-#if defined(__APPLE__) || defined(__linux__)
-    return static_cast<uint32_t>(timegm(&local));
-#else
-    return static_cast<uint32_t>(std::mktime(&local));
-#endif
+    maclock_localtime(now, local);
+    return static_cast<uint32_t>(maclock_timegm(local));
 }
 
 uint16_t apply_backlight(
@@ -292,28 +289,29 @@ uint16_t apply_backlight(
         (red << 11) | (green << 5) | blue);
 }
 
-std::string default_state_directory()
-{
-    const char *home = std::getenv("HOME");
-    if (!home)
-        return ".maclock-simulator";
-#ifdef __APPLE__
-    return std::string(home) +
-           "/Library/Application Support/Maclock Simulator";
-#else
-    return std::string(home) +
-           "/.local/share/maclock-simulator";
-#endif
-}
-
 bool safe_reset_directory(
     const std::filesystem::path &requested,
     const std::filesystem::path &data_directory)
 {
     if (requested.empty())
         return false;
-    const auto path =
+    const auto requested_path =
         std::filesystem::absolute(requested).lexically_normal();
+    std::error_code canonical_error;
+    for (auto component = requested_path;
+         !component.empty() && component != component.root_path();
+         component = component.parent_path())
+    {
+        if (std::filesystem::is_symlink(
+                std::filesystem::symlink_status(
+                    component, canonical_error)))
+            return false;
+        canonical_error.clear();
+    }
+    const auto path = std::filesystem::weakly_canonical(
+        requested_path, canonical_error);
+    if (canonical_error)
+        return false;
     const auto root = path.root_path();
     const auto temporary =
         std::filesystem::temp_directory_path().lexically_normal();
@@ -328,9 +326,14 @@ bool safe_reset_directory(
     {
         return false;
     }
-    const char *home = std::getenv("HOME");
-    return !home ||
-           path != std::filesystem::path(home).lexically_normal();
+    for (const auto &user_root : maclock_user_roots())
+    {
+        if (path == std::filesystem::weakly_canonical(
+                        user_root, canonical_error))
+            return false;
+        canonical_error.clear();
+    }
+    return true;
 }
 } // namespace
 
@@ -348,7 +351,7 @@ struct LocalMaclockHal::Impl
         if (options.data_directory.empty())
             options.data_directory = MACLOCK_DATA_DIR;
         if (options.state_directory.empty())
-            options.state_directory = default_state_directory();
+            options.state_directory = maclock_default_state_directory();
 
         pins[GPIO_CHARGING] = LOW;
         floppy = options.floppy_inserted;
@@ -424,7 +427,7 @@ struct LocalMaclockHal::Impl
 
     std::filesystem::path hardwareStatePath() const
     {
-        return std::filesystem::path(options.state_directory) /
+        return maclock_host_path(options.state_directory) /
                "local-hardware-state.txt";
     }
 
@@ -460,8 +463,8 @@ struct LocalMaclockHal::Impl
     {
         const std::filesystem::path destination =
             hardwareStatePath();
-        const std::filesystem::path temporary =
-            destination.string() + ".tmp";
+        std::filesystem::path temporary = destination;
+        temporary += ".tmp";
         std::ofstream output(temporary, std::ios::trunc);
         output << 1 << ' ' << (touchscreen_present ? 1 : 0) << ' '
                << static_cast<unsigned>(weather_kind) << ' '
@@ -472,14 +475,7 @@ struct LocalMaclockHal::Impl
                << (rtc_present ? 1 : 0) << ' '
                << (floppy ? 1 : 0) << '\n';
         output.close();
-        std::error_code error;
-        std::filesystem::rename(temporary, destination, error);
-        if (error)
-        {
-            std::filesystem::remove(destination, error);
-            error.clear();
-            std::filesystem::rename(temporary, destination, error);
-        }
+        maclock_replace_file(temporary, destination);
     }
 
     bool i2cPresent(uint8_t address) const
@@ -803,8 +799,8 @@ bool LocalMaclockHal::begin()
     if (impl_->options.reset_state)
     {
         if (!safe_reset_directory(
-                impl_->options.state_directory,
-                impl_->options.data_directory))
+                maclock_host_path(impl_->options.state_directory),
+                maclock_host_path(impl_->options.data_directory)))
         {
             Serial.println(
                 "Refusing to reset an unsafe simulator state path");
@@ -812,13 +808,13 @@ bool LocalMaclockHal::begin()
         }
         std::error_code error;
         std::filesystem::remove_all(
-            impl_->options.state_directory, error);
+            maclock_host_path(impl_->options.state_directory), error);
         if (error)
             return false;
     }
     std::error_code directory_error;
     std::filesystem::create_directories(
-        impl_->options.state_directory, directory_error);
+        maclock_host_path(impl_->options.state_directory), directory_error);
     if (directory_error)
         return false;
     impl_->loadHardwareState();
@@ -834,8 +830,7 @@ bool LocalMaclockHal::begin()
     if (!impl_->options.headless)
     {
         if (!SDL_Init(
-                SDL_INIT_VIDEO | SDL_INIT_AUDIO |
-                SDL_INIT_EVENTS))
+                SDL_INIT_VIDEO | SDL_INIT_EVENTS))
         {
             return false;
         }
@@ -887,13 +882,12 @@ bool LocalMaclockHal::begin()
         ImGuiIO &io = ImGui::GetIO();
         ImFont *font = nullptr;
         const std::filesystem::path font_path =
-            std::filesystem::path(
-                impl_->options.data_directory) /
+            maclock_host_path(impl_->options.data_directory) /
             "Chicago.ttf";
         if (std::filesystem::exists(font_path))
         {
             font = io.Fonts->AddFontFromFileTTF(
-                font_path.string().c_str(), 18.0f);
+                maclock_host_path_utf8(font_path).c_str(), 18.0f);
         }
         if (!font)
         {
@@ -1401,7 +1395,8 @@ bool LocalMaclockHal::saveFramebuffer(
     const std::string &path) const
 {
     std::ofstream output(
-        path, std::ios::binary | std::ios::trunc);
+        maclock_host_path(path),
+        std::ios::binary | std::ios::trunc);
     if (!output)
         return false;
     output << "P6\n" << kDisplayWidth << " "

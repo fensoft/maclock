@@ -10,7 +10,6 @@
 #include <cstring>
 #include <deque>
 #include <mutex>
-#include <pthread.h>
 #include <thread>
 #include <vector>
 
@@ -53,6 +52,12 @@ thread_local LocalTask *current_task = nullptr;
 std::atomic<bool> shutting_down{false};
 std::mutex tasks_mutex;
 std::vector<LocalTask *> tasks;
+std::vector<LocalEventGroup *> event_groups;
+std::vector<LocalStreamBuffer *> stream_buffers;
+
+struct TaskExit
+{
+};
 }
 
 BaseType_t xTaskCreatePinnedToCore(
@@ -75,7 +80,13 @@ BaseType_t xTaskCreatePinnedToCore(
         [task, function, parameter]()
         {
             current_task = task;
-            function(parameter);
+            try
+            {
+                function(parameter);
+            }
+            catch (const TaskExit &)
+            {
+            }
             task->finished = true;
             task->condition.notify_all();
             current_task = nullptr;
@@ -89,8 +100,6 @@ BaseType_t xTaskCreatePinnedToCore(
 
 void vTaskDelay(TickType_t ticks)
 {
-    if (shutting_down)
-        pthread_exit(nullptr);
     if (current_task)
     {
         std::unique_lock<std::mutex> lock(current_task->mutex);
@@ -98,19 +107,30 @@ void vTaskDelay(TickType_t ticks)
             lock,
             [=]()
             {
-                return !current_task->suspended.load();
+                return shutting_down ||
+                       !current_task->suspended.load();
             });
+        if (shutting_down)
+            throw TaskExit{};
+        current_task->condition.wait_for(
+            lock, std::chrono::milliseconds(ticks),
+            []() { return shutting_down.load(); });
     }
-    std::this_thread::sleep_for(
-        std::chrono::milliseconds(ticks));
+    else
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(ticks));
     if (shutting_down)
-        pthread_exit(nullptr);
+        throw TaskExit{};
 }
 
 void vTaskDelete(TaskHandle_t task)
 {
     if (!task)
+    {
+        if (current_task)
+            throw TaskExit{};
         return;
+    }
     task->suspended = false;
     task->condition.notify_all();
     if (task->thread.joinable())
@@ -145,6 +165,10 @@ void maclock_local_freertos_shutdown()
     {
         std::lock_guard<std::mutex> lock(tasks_mutex);
         snapshot = tasks;
+        for (LocalEventGroup *group : event_groups)
+            group->condition.notify_all();
+        for (LocalStreamBuffer *stream : stream_buffers)
+            stream->condition.notify_all();
     }
     for (LocalTask *task : snapshot)
     {
@@ -199,7 +223,10 @@ void vSemaphoreDelete(SemaphoreHandle_t semaphore)
 
 EventGroupHandle_t xEventGroupCreate()
 {
-    return new LocalEventGroup();
+    auto *group = new LocalEventGroup();
+    std::lock_guard<std::mutex> lock(tasks_mutex);
+    event_groups.push_back(group);
+    return group;
 }
 
 EventBits_t xEventGroupSetBits(
@@ -224,9 +251,9 @@ EventBits_t xEventGroupWaitBits(
         return 0;
     auto ready = [=]()
     {
-        return wait_for_all
+        return shutting_down || (wait_for_all
                    ? (group->bits & bits) == bits
-                   : (group->bits & bits) != 0;
+                   : (group->bits & bits) != 0);
     };
     std::unique_lock<std::mutex> lock(group->mutex);
     if (timeout == portMAX_DELAY)
@@ -242,6 +269,10 @@ EventBits_t xEventGroupWaitBits(
 
 void vEventGroupDelete(EventGroupHandle_t group)
 {
+    std::lock_guard<std::mutex> lock(tasks_mutex);
+    event_groups.erase(
+        std::remove(event_groups.begin(), event_groups.end(), group),
+        event_groups.end());
     delete group;
 }
 
@@ -254,7 +285,11 @@ StreamBufferHandle_t xStreamBufferCreateStatic(
     if (!control)
         return nullptr;
     if (!control->instance)
+    {
         control->instance = new LocalStreamBuffer(capacity);
+        std::lock_guard<std::mutex> lock(tasks_mutex);
+        stream_buffers.push_back(control->instance);
+    }
     return control->instance;
 }
 
@@ -274,7 +309,8 @@ size_t xStreamBufferSend(
             lock, std::chrono::milliseconds(timeout),
             [=]()
             {
-                return stream->bytes.size() < stream->capacity;
+                return shutting_down ||
+                       stream->bytes.size() < stream->capacity;
             });
     }
     const size_t writable = std::min(
@@ -301,13 +337,21 @@ size_t xStreamBufferReceive(
         {
             stream->condition.wait(
                 lock,
-                [=]() { return !stream->bytes.empty(); });
+                    [=]()
+                    {
+                        return shutting_down ||
+                               !stream->bytes.empty();
+                    });
         }
         else
         {
             stream->condition.wait_for(
                 lock, std::chrono::milliseconds(timeout),
-                [=]() { return !stream->bytes.empty(); });
+                [=]()
+                {
+                    return shutting_down ||
+                           !stream->bytes.empty();
+                });
         }
     }
     const size_t readable =

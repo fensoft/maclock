@@ -2,6 +2,7 @@
 #include <Adafruit_HTU21DF.h>
 #include <RTClib.h>
 
+#include "host_compat.h"
 #include "maclock_local_bridge.h"
 
 #include <algorithm>
@@ -20,11 +21,7 @@ std::time_t make_epoch(
     value.tm_hour = hour;
     value.tm_min = minute;
     value.tm_sec = second;
-#if defined(__APPLE__) || defined(__linux__)
-    return timegm(&value);
-#else
-    return std::mktime(&value);
-#endif
+    return maclock_timegm(value);
 }
 } // namespace
 
@@ -34,7 +31,7 @@ DateTime::DateTime(uint32_t epoch)
 {
     const std::time_t value = epoch;
     std::tm parts{};
-    gmtime_r(&value, &parts);
+    maclock_gmtime(value, parts);
     year_ = static_cast<uint16_t>(parts.tm_year + 1900);
     month_ = static_cast<uint8_t>(parts.tm_mon + 1);
     day_ = static_cast<uint8_t>(parts.tm_mday);
@@ -59,7 +56,7 @@ uint8_t DateTime::dayOfTheWeek() const
 {
     const std::time_t epoch = unixtime();
     std::tm parts{};
-    gmtime_r(&epoch, &parts);
+    maclock_gmtime(epoch, parts);
     return static_cast<uint8_t>(parts.tm_wday);
 }
 
@@ -82,7 +79,7 @@ bool DateTime::isValid() const
     }
     const std::time_t epoch = unixtime();
     std::tm parts{};
-    gmtime_r(&epoch, &parts);
+    maclock_gmtime(epoch, parts);
     return parts.tm_year + 1900 == year_ &&
            parts.tm_mon + 1 == month_ &&
            parts.tm_mday == day_;

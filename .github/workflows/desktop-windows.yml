@@ -1,0 +1,66 @@
+name: Build Windows desktop simulator
+
+on:
+  push:
+    paths:
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "desktop/**"
+      - "include/**"
+      - "src/**"
+      - "patches/**"
+      - "prepare.sh"
+      - ".github/workflows/desktop-windows.yml"
+  pull_request:
+    paths:
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "desktop/**"
+      - "include/**"
+      - "src/**"
+      - "patches/**"
+      - "prepare.sh"
+      - ".github/workflows/desktop-windows.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ucrt64:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install MSYS2 UCRT64 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            make
+            patch
+            tar
+            wget
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-zlib
+
+      - name: Prepare Mini vMac source
+        run: ./prepare.sh
+
+      - name: Configure simulator
+        run: cmake --preset windows-ucrt64-debug
+
+      - name: Build simulator
+        run: cmake --build --preset windows-ucrt64-debug
+
+      - name: Run simulator tests
+        run: ctest --preset windows-ucrt64-debug

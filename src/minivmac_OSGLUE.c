@@ -68,11 +68,7 @@ GLOBALOSGLUPROC MyMoveBytes(anyp srcPtr, anyp destPtr, si5b byteCount)
 
 LOCALVAR char *d_arg = NULL;
 
-#ifdef _WIN32
-#define MyPathSep '\\'
-#else
 #define MyPathSep '/'
-#endif
 
 LOCALFUNC tMacErr ChildPath(char *x, char *y, char **r)
 {

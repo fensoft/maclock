@@ -1,5 +1,10 @@
 #pragma once
 
+#ifdef _WIN32
+// Parse Windows' INPUT type before Arduino defines its INPUT pin-mode macro.
+#include <windows.h>
+#endif
+
 #include <algorithm>
 #include <cctype>
 #include <cstdarg>
@@ -228,6 +233,7 @@ inline uint8_t highByte(uint16_t value)
 }
 
 size_t strlcpy(char *destination, const char *source, size_t size);
+size_t strlcat(char *destination, const char *source, size_t size);
 
 template <typename T>
 constexpr const T &min(const T &a, const T &b)

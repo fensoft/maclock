@@ -46,17 +46,41 @@ It combines two experiences:
 
 Join the community on the [Discord server](https://discord.gg/89etSPMFym).
 
-## macOS Desktop Simulator
+## Desktop Simulator
 
-The `maclock-local` CMake target runs the complete application on macOS:
+The `maclock-local` CMake target runs the complete application on macOS and
+Windows 10/11 x64:
 the real LVGL configuration and clock screens, both web portals, audio, and
 Mini vMac all use the same application code as the ESP32 firmware. SDL3 stores
 the complete 320×240 RGB565 framebuffer but presents only Maclock's active
 304×224 viewport. A Dear ImGui side panel simulates the attached hardware.
 
 The first configure downloads pinned host-only dependencies, so it requires an
-Internet connection. Xcode Command Line Tools and CMake 3.24 or newer are
-required.
+Internet connection. Xcode Command Line Tools and CMake 3.25 or newer are
+required. Windows builds use the MSYS2 UCRT64 environment; install the
+prerequisites from an MSYS2 shell with:
+
+```sh
+pacman -S --needed git make patch tar wget \
+  mingw-w64-ucrt-x86_64-gcc \
+  mingw-w64-ucrt-x86_64-cmake \
+  mingw-w64-ucrt-x86_64-ninja \
+  mingw-w64-ucrt-x86_64-zlib
+```
+
+Then open the **MSYS2 UCRT64** shell, not the plain MSYS shell:
+
+```sh
+./prepare.sh
+cmake --preset windows-ucrt64-release
+cmake --build --preset windows-ucrt64-release
+"./build/windows-ucrt64-release/Maclock Simulator.exe"
+ctest --preset windows-ucrt64-release
+```
+
+The Windows simulator is a console application so diagnostics remain visible.
+Use `windows-ucrt64-debug` only for debugging; its unoptimized LVGL and Mini
+vMac code is substantially slower and can cause audio underruns.
 
 ```sh
 cmake --preset macos-debug
@@ -90,6 +114,12 @@ Persistent desktop data lives at:
 
 ```text
 ~/Library/Application Support/Maclock Simulator
+```
+
+On Windows it lives at:
+
+```text
+%LOCALAPPDATA%\Fensoft\Maclock Simulator
 ```
 
 Preferences use an atomically replaced typed file, EEPROM uses a binary image,

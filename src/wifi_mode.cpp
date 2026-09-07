@@ -10,6 +10,9 @@
 
 #include "localization.h"
 #include "maclock_hal.h"
+#ifdef MACLOCK_LOCAL
+#include "host_compat.h"
+#endif
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -885,8 +888,13 @@ static int32_t local_utc_offset_seconds()
     struct tm local_time = {};
     struct tm utc_time = {};
     if (now == static_cast<time_t>(-1) ||
+#ifdef MACLOCK_LOCAL
+        !maclock_localtime(now, local_time) ||
+        !maclock_gmtime(now, utc_time))
+#else
         !localtime_r(&now, &local_time) ||
         !gmtime_r(&now, &utc_time))
+#endif
     {
         return 0;
     }

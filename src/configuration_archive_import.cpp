@@ -1,3 +1,7 @@
+#ifdef MACLOCK_LOCAL
+#include "host_compat.h"
+#endif
+
 #ifdef MACLOCK_CONFIGURATION_ARCHIVE_COMBINED_SOURCE
 struct ConfigurationArchive::State
 {
@@ -46,7 +50,11 @@ void ConfigurationArchive::sendExport(WebServer &server)
     char timestamp[24] = {};
     const time_t now = time(nullptr);
     struct tm local_time = {};
+#ifdef MACLOCK_LOCAL
+    if (maclock_localtime(now, local_time))
+#else
     if (localtime_r(&now, &local_time))
+#endif
     {
         strftime(
             timestamp, sizeof(timestamp),

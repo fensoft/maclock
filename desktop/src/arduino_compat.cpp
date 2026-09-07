@@ -8,12 +8,19 @@
 #include <esp_timer.h>
 
 #include "es8311.h"
+#include "host_compat.h"
 #include "local_maclock_hal.h"
 #include "maclock_local_bridge.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <cstdio>
+#include <cstring>
 #include <thread>
+#ifdef _WIN32
+#include <malloc.h>
+#endif
 
 HardwareSerial Serial;
 TwoWire Wire;
@@ -218,7 +225,7 @@ bool getLocalTime(struct tm *time_info, uint32_t)
     if (!time_info)
         return false;
     const std::time_t now = std::time(nullptr);
-    return localtime_r(&now, time_info) != nullptr;
+    return maclock_localtime(now, *time_info);
 }
 
 size_t strlcpy(
@@ -232,6 +239,26 @@ size_t strlcpy(
         destination[copied] = '\0';
     }
     return length;
+}
+
+size_t strlcat(
+    char *destination, const char *source, size_t size)
+{
+    const size_t destination_length =
+        destination ? strnlen(destination, size) : 0;
+    const size_t source_length = source ? std::strlen(source) : 0;
+    if (!destination || !source || destination_length == size)
+        return size + source_length;
+    const size_t available = size - destination_length;
+    if (available > 1)
+    {
+        const size_t copied = std::min(
+            source_length, available - 1);
+        std::memcpy(
+            destination + destination_length, source, copied);
+        destination[destination_length + copied] = '\0';
+    }
+    return destination_length + source_length;
 }
 
 bool TwoWire::begin(int sda, int scl)
@@ -444,27 +471,49 @@ void ESP32Encoder::localAdd(int64_t delta)
 
 void *heap_caps_malloc(size_t size, unsigned)
 {
+#ifdef _WIN32
+    return _aligned_malloc(size, alignof(std::max_align_t));
+#else
     return std::malloc(size);
+#endif
 }
 
 void *heap_caps_calloc(
     size_t count, size_t size, unsigned)
 {
+#ifdef _WIN32
+    if (size != 0 && count > SIZE_MAX / size)
+        return nullptr;
+    const size_t bytes = count * size;
+    void *result = _aligned_malloc(bytes, alignof(std::max_align_t));
+    if (result)
+        std::memset(result, 0, bytes);
+    return result;
+#else
     return std::calloc(count, size);
+#endif
 }
 
 void *heap_caps_aligned_alloc(
     size_t alignment, size_t size, unsigned)
 {
+#ifdef _WIN32
+    return _aligned_malloc(size, alignment);
+#else
     void *result = nullptr;
     return posix_memalign(&result, alignment, size) == 0
                ? result
                : nullptr;
+#endif
 }
 
 void heap_caps_free(void *memory)
 {
+#ifdef _WIN32
+    _aligned_free(memory);
+#else
     std::free(memory);
+#endif
 }
 
 void heap_caps_malloc_extmem_enable(size_t)

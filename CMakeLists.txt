@@ -1,10 +1,10 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.25)
 
 project(maclock-local LANGUAGES C CXX)
 
-if(NOT APPLE)
+if(NOT APPLE AND NOT (WIN32 AND MINGW))
     message(FATAL_ERROR
-        "The LocalMaclockHal application currently supports macOS only")
+        "The desktop simulator supports macOS and Windows through MSYS2 UCRT64")
 endif()
 
 set(CMAKE_C_STANDARD 11)
@@ -74,7 +74,11 @@ set(CURL_BROTLI OFF CACHE BOOL "" FORCE)
 set(CURL_USE_GSSAPI OFF CACHE BOOL "" FORCE)
 set(CURL_USE_LIBPSL OFF CACHE BOOL "" FORCE)
 set(CURL_USE_LIBSSH2 OFF CACHE BOOL "" FORCE)
-set(CURL_USE_SECTRANSP ON CACHE BOOL "" FORCE)
+if(APPLE)
+    set(CURL_USE_SECTRANSP ON CACHE BOOL "" FORCE)
+elseif(WIN32)
+    set(CURL_USE_SCHANNEL ON CACHE BOOL "" FORCE)
+endif()
 set(CURL_ZLIB OFF CACHE BOOL "" FORCE)
 set(CURL_ZSTD OFF CACHE BOOL "" FORCE)
 set(HTTP_ONLY ON CACHE BOOL "" FORCE)
@@ -206,6 +210,7 @@ set(MACLOCK_DESKTOP_SOURCES
     desktop/src/audio_compat.cpp
     desktop/src/device_compat.cpp
     desktop/src/freertos_compat.cpp
+    desktop/src/host_compat.cpp
     desktop/src/local_audio_output.cpp
     desktop/src/local_hal_self_test.cpp
     desktop/src/local_maclock_hal.cpp
@@ -214,7 +219,12 @@ set(MACLOCK_DESKTOP_SOURCES
     desktop/src/network_compat.cpp
     desktop/src/storage_compat.cpp)
 
-add_executable(maclock-local MACOSX_BUNDLE
+set(MACLOCK_EXECUTABLE_OPTIONS)
+if(APPLE)
+    list(APPEND MACLOCK_EXECUTABLE_OPTIONS MACOSX_BUNDLE)
+endif()
+
+add_executable(maclock-local ${MACLOCK_EXECUTABLE_OPTIONS}
     desktop/src/main.cpp
     ${MACLOCK_APPLICATION_SOURCES}
     ${MINIVMAC_CORE_SOURCES}
@@ -270,17 +280,26 @@ target_link_libraries(maclock-local PRIVATE
     ZLIB::ZLIB
     Threads::Threads)
 
-set_target_properties(maclock-local PROPERTIES
-    OUTPUT_NAME "Maclock Simulator"
-    MACOSX_BUNDLE_BUNDLE_NAME "Maclock Simulator"
-    MACOSX_BUNDLE_GUI_IDENTIFIER "com.fensoft.maclock-simulator"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
-    MACOSX_BUNDLE_BUNDLE_VERSION "1")
-
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+if(WIN32)
     target_compile_definitions(maclock-local PRIVATE
-        MACLOCK_LOCAL_DEBUG=1)
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX)
+    target_link_libraries(maclock-local PRIVATE
+        ws2_32 kernel32 shell32)
 endif()
+
+set_target_properties(maclock-local PROPERTIES
+    OUTPUT_NAME "Maclock Simulator")
+if(APPLE)
+    set_target_properties(maclock-local PROPERTIES
+        MACOSX_BUNDLE_BUNDLE_NAME "Maclock Simulator"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.fensoft.maclock-simulator"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+        MACOSX_BUNDLE_BUNDLE_VERSION "1")
+endif()
+
+target_compile_definitions(maclock-local PRIVATE
+    $<$<CONFIG:Debug>:MACLOCK_LOCAL_DEBUG=1>)
 
 include(CTest)
 if(BUILD_TESTING)

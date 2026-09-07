@@ -2,7 +2,7 @@
   "version": 6,
   "cmakeMinimumRequired": {
     "major": 3,
-    "minor": 24,
+    "minor": 25,
     "patch": 0
   },
   "configurePresets": [
@@ -35,6 +35,29 @@
         "CMAKE_CXX_FLAGS": "-fsanitize=address -fno-omit-frame-pointer",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address"
       }
+    },
+    {
+      "name": "windows-ucrt64-debug",
+      "displayName": "Maclock Simulator - Windows UCRT64 Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/windows-ucrt64-debug",
+      "condition": {
+        "type": "equals",
+        "lhs": "$env{MSYSTEM}",
+        "rhs": "UCRT64"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-ucrt64-release",
+      "displayName": "Maclock Simulator - Windows UCRT64 Release",
+      "inherits": "windows-ucrt64-debug",
+      "binaryDir": "${sourceDir}/build/windows-ucrt64-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [
@@ -52,6 +75,33 @@
       "name": "macos-asan",
       "configurePreset": "macos-asan",
       "jobs": 8
+    },
+    {
+      "name": "windows-ucrt64-debug",
+      "configurePreset": "windows-ucrt64-debug",
+      "jobs": 8
+    },
+    {
+      "name": "windows-ucrt64-release",
+      "configurePreset": "windows-ucrt64-release",
+      "jobs": 8
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "macos-debug",
+      "configurePreset": "macos-debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-ucrt64-debug",
+      "configurePreset": "windows-ucrt64-debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-ucrt64-release",
+      "configurePreset": "windows-ucrt64-release",
+      "output": { "outputOnFailure": true }
     }
   ]
 }

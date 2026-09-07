@@ -4,12 +4,16 @@
 #include <Preferences.h>
 
 #include "maclock_hal.h"
+#include "host_compat.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -43,7 +47,7 @@ std::vector<uint8_t> eeprom;
 
 std::filesystem::path state_path(const char *name)
 {
-    return std::filesystem::path(
+    return maclock_host_path(
                maclock_hal().storage().stateDirectory()) /
            name;
 }
@@ -104,7 +108,8 @@ bool save_preferences()
 {
     const auto path = state_path("preferences.bin");
     std::filesystem::create_directories(path.parent_path());
-    const auto temporary = path.string() + ".tmp";
+    auto temporary = path;
+    temporary += ".tmp";
     std::ofstream output(
         temporary, std::ios::binary | std::ios::trunc);
     const char magic[8] = "MLPREF2";
@@ -137,15 +142,7 @@ bool save_preferences()
     output.close();
     if (!output)
         return false;
-    std::error_code error;
-    std::filesystem::rename(temporary, path, error);
-    if (error)
-    {
-        std::filesystem::remove(path, error);
-        error.clear();
-        std::filesystem::rename(temporary, path, error);
-    }
-    return !error;
+    return maclock_replace_file(temporary, path);
 }
 
 std::string preference_key(
@@ -206,28 +203,191 @@ size_t put_number(
         &value, sizeof(value));
 }
 
-std::filesystem::path normalize_relative(const char *path)
+bool windows_reserved_name(const std::string &component)
 {
-    std::filesystem::path relative(path ? path : "");
-    if (relative.is_absolute())
-        relative = relative.relative_path();
-    relative = relative.lexically_normal();
-    for (const auto &component : relative)
+#ifdef _WIN32
+    std::string base = component.substr(0, component.find('.'));
+    std::transform(
+        base.begin(), base.end(), base.begin(),
+        [](unsigned char value)
+        { return static_cast<char>(std::toupper(value)); });
+    if (base == "CON" || base == "PRN" || base == "AUX" ||
+        base == "NUL")
+        return true;
+    return base.size() == 4 &&
+           (base.compare(0, 3, "COM") == 0 ||
+            base.compare(0, 3, "LPT") == 0) &&
+           base[3] >= '1' && base[3] <= '9';
+#else
+    (void)component;
+    return false;
+#endif
+}
+
+std::optional<std::filesystem::path> normalize_relative(
+    const char *path)
+{
+    const std::string value = path ? path : "";
+    if (value.empty())
+        return std::nullopt;
+    if (value == "/")
+        return std::filesystem::path{};
+    size_t offset = value.front() == '/' ? 1 : 0;
+    if (offset < value.size() && value[offset] == '/')
+        return std::nullopt;
+
+    std::filesystem::path relative;
+    while (offset < value.size())
     {
-        if (component == "..")
-            return {};
+        const size_t separator = value.find('/', offset);
+        const std::string component = value.substr(
+            offset, separator == std::string::npos
+                        ? std::string::npos
+                        : separator - offset);
+        if (component.empty() || component == "." ||
+            component == ".." ||
+            component.find('\\') != std::string::npos ||
+            component.find(':') != std::string::npos ||
+            component.back() == ' ' || component.back() == '.' ||
+            windows_reserved_name(component))
+        {
+            return std::nullopt;
+        }
+        relative /= maclock_host_path(component);
+        if (separator == std::string::npos)
+            break;
+        offset = separator + 1;
     }
     return relative;
 }
 
 std::filesystem::path source_root()
 {
-    return maclock_hal().storage().dataDirectory();
+    return maclock_host_path(
+        maclock_hal().storage().dataDirectory());
 }
 
 std::filesystem::path overlay_root()
 {
     return state_path("littlefs");
+}
+
+#ifdef _WIN32
+std::wstring folded_component(const std::filesystem::path &value)
+{
+    std::wstring folded = value.filename().native();
+    std::transform(
+        folded.begin(), folded.end(), folded.begin(),
+        [](wchar_t character)
+        { return static_cast<wchar_t>(std::towlower(character)); });
+    return folded;
+}
+#endif
+
+bool exact_path_exists(
+    const std::filesystem::path &root,
+    const std::filesystem::path &relative)
+{
+    std::filesystem::path current = root;
+    if (relative.empty())
+        return std::filesystem::is_directory(current);
+#ifdef _WIN32
+    for (const auto &component : relative)
+    {
+        std::error_code error;
+        bool found = false;
+        for (const auto &entry :
+             std::filesystem::directory_iterator(current, error))
+        {
+            if (entry.path().filename().native() == component.native())
+            {
+                current = entry.path();
+                found = true;
+                break;
+            }
+        }
+        if (error || !found)
+            return false;
+    }
+    return true;
+#else
+    return std::filesystem::exists(current / relative);
+#endif
+}
+
+bool has_case_conflict(
+    const std::filesystem::path &root,
+    const std::filesystem::path &relative)
+{
+#ifdef _WIN32
+    std::filesystem::path current = root;
+    for (const auto &component : relative)
+    {
+        std::error_code error;
+        if (!std::filesystem::is_directory(current, error))
+            return false;
+        bool exact = false;
+        for (const auto &entry :
+             std::filesystem::directory_iterator(current, error))
+        {
+            const auto filename = entry.path().filename();
+            if (filename.native() == component.native())
+            {
+                current = entry.path();
+                exact = true;
+                break;
+            }
+            if (folded_component(filename) == folded_component(component))
+                return true;
+        }
+        if (error || !exact)
+            return false;
+    }
+#else
+    (void)root;
+    (void)relative;
+#endif
+    return false;
+}
+
+std::string case_key(const std::filesystem::path &relative)
+{
+#ifdef _WIN32
+    std::filesystem::path folded;
+    for (const auto &component : relative)
+    {
+        std::wstring value = component.native();
+        std::transform(
+            value.begin(), value.end(), value.begin(),
+            [](wchar_t character)
+            { return static_cast<wchar_t>(std::towlower(character)); });
+        folded /= value;
+    }
+    return maclock_host_path_utf8(folded);
+#else
+    return relative.generic_string();
+#endif
+}
+
+void merge_path(
+    std::map<std::string, std::filesystem::path> &paths,
+    std::set<std::string> &ambiguous,
+    const std::filesystem::path &relative)
+{
+    const std::string key = case_key(relative);
+    if (ambiguous.count(key))
+        return;
+    const auto found = paths.find(key);
+    if (found == paths.end())
+    {
+        paths.emplace(key, relative);
+        return;
+    }
+    if (found->second.native() != relative.native())
+    {
+        paths.erase(found);
+        ambiguous.insert(key);
+    }
 }
 
 std::filesystem::path deletion_marker(
@@ -240,8 +400,8 @@ bool is_deleted(const std::filesystem::path &relative)
 {
     if (relative.empty() || relative == ".")
         return false;
-    return std::filesystem::exists(
-        deletion_marker(relative));
+    return exact_path_exists(
+        overlay_root() / ".deleted", relative);
 }
 
 void clear_deletion_markers(const std::filesystem::path &relative)
@@ -262,18 +422,26 @@ std::filesystem::path resolve_read(
     if (is_deleted(relative))
         return {};
     const auto overlay = overlay_root() / relative;
-    if (std::filesystem::exists(overlay))
+    if (exact_path_exists(overlay_root(), relative))
         return overlay;
-    return source_root() / relative;
+    return exact_path_exists(source_root(), relative)
+               ? source_root() / relative
+               : std::filesystem::path{};
 }
 
 std::string virtual_path(
     const std::filesystem::path &relative)
 {
-    const std::string value = relative.generic_string();
-    return value.empty() || value == "."
-               ? "/"
-               : "/" + value;
+    if (relative.empty())
+        return "/";
+    std::string value;
+    for (const auto &component : relative)
+    {
+        if (!value.empty())
+            value += '/';
+        value += maclock_host_path_utf8(component);
+    }
+    return "/" + value;
 }
 
 std::ios::openmode file_mode(const char *mode)
@@ -674,7 +842,8 @@ size_t LittleFSFS::totalBytes() const
 
 size_t LittleFSFS::usedBytes() const
 {
-    std::set<std::filesystem::path> files;
+    std::map<std::string, std::filesystem::path> files;
+    std::set<std::string> ambiguous;
     for (const auto &root : {source_root(), overlay_root()})
     {
         std::error_code error;
@@ -695,13 +864,14 @@ size_t LittleFSFS::usedBytes() const
             {
                 continue;
             }
-            files.insert(relative);
+            merge_path(files, ambiguous, relative);
         }
     }
 
     size_t total = 0;
-    for (const auto &relative : files)
+    for (const auto &[key, relative] : files)
     {
+        (void)key;
         std::error_code error;
         const auto size = std::filesystem::file_size(
             resolve_read(relative), error);
@@ -714,43 +884,51 @@ size_t LittleFSFS::usedBytes() const
 bool LittleFSFS::exists(const char *path) const
 {
     const auto relative = normalize_relative(path);
-    return !relative.empty() && !is_deleted(relative) &&
-           std::filesystem::exists(resolve_read(relative));
+    return relative && !is_deleted(*relative) &&
+           !resolve_read(*relative).empty();
 }
 
 fs::File LittleFSFS::open(
     const char *path, const char *mode)
 {
     const auto relative = normalize_relative(path);
-    if (relative.empty() && std::string(path ? path : "") != "/")
+    if (!relative)
         return {};
     const std::string mode_text = mode ? mode : "r";
     const bool writing =
         mode_text.find('w') != std::string::npos ||
         mode_text.find('a') != std::string::npos ||
         mode_text.find('+') != std::string::npos;
+    if (writing &&
+        (has_case_conflict(source_root(), *relative) ||
+         has_case_conflict(overlay_root(), *relative)))
+    {
+        return {};
+    }
     if (writing)
     {
         std::error_code marker_error;
         std::filesystem::remove(
-            deletion_marker(relative), marker_error);
+            deletion_marker(*relative), marker_error);
     }
 
     auto state = std::make_shared<fs::File::State>();
-    state->virtual_name = virtual_path(relative);
+    state->virtual_name = virtual_path(*relative);
     state->readable =
         mode_text.find('r') != std::string::npos ||
         mode_text.find('+') != std::string::npos;
     state->writable = writing;
 
-    const auto selected = resolve_read(relative);
-    if (!writing && std::filesystem::is_directory(selected))
+    const auto selected = resolve_read(*relative);
+    if (!writing && !selected.empty() &&
+        std::filesystem::is_directory(selected))
     {
         state->directory = true;
-        std::set<std::filesystem::path> entries;
+        std::map<std::string, std::filesystem::path> entries;
+        std::set<std::string> ambiguous;
         for (const auto &root : {source_root(), overlay_root()})
         {
-            const auto directory = root / relative;
+            const auto directory = root / *relative;
             std::error_code error;
             if (!std::filesystem::is_directory(directory, error))
                 continue;
@@ -759,31 +937,35 @@ fs::File LittleFSFS::open(
                      directory, error))
             {
                 const auto child =
-                    relative / entry.path().filename();
+                    *relative / entry.path().filename();
                 if (child == ".deleted" ||
                     is_deleted(child))
                 {
                     continue;
                 }
-                entries.insert(child);
+                merge_path(entries, ambiguous, child);
             }
         }
-        state->entries.assign(entries.begin(), entries.end());
+        for (const auto &[key, entry] : entries)
+        {
+            (void)key;
+            state->entries.push_back(entry);
+        }
         return fs::File(state);
     }
 
     std::filesystem::path real_path = selected;
     if (writing)
     {
-        real_path = overlay_root() / relative;
+        real_path = overlay_root() / *relative;
         std::filesystem::create_directories(
             real_path.parent_path());
         if (!std::filesystem::exists(real_path) &&
-            std::filesystem::exists(source_root() / relative) &&
+            exact_path_exists(source_root(), *relative) &&
             mode_text.find('w') == std::string::npos)
         {
             std::filesystem::copy_file(
-                source_root() / relative, real_path);
+                source_root() / *relative, real_path);
         }
     }
     state->real_path = real_path;
@@ -796,18 +978,20 @@ fs::File LittleFSFS::open(
 bool LittleFSFS::remove(const char *path)
 {
     const auto relative = normalize_relative(path);
-    if (relative.empty())
+    if (!relative || relative->empty())
         return false;
 
     std::error_code error;
-    const bool overlay_removed = std::filesystem::remove(
-        overlay_root() / relative, error);
+    const bool overlay_removed =
+        exact_path_exists(overlay_root(), *relative) &&
+        std::filesystem::remove(
+            overlay_root() / *relative, error);
     const bool source_exists =
-        std::filesystem::exists(source_root() / relative);
+        exact_path_exists(source_root(), *relative);
     if (!source_exists)
         return overlay_removed;
 
-    const auto marker = deletion_marker(relative);
+    const auto marker = deletion_marker(*relative);
     std::filesystem::create_directories(
         marker.parent_path(), error);
     error.clear();
@@ -821,14 +1005,19 @@ bool LittleFSFS::rename(const char *from, const char *to)
 {
     const auto source = normalize_relative(from);
     const auto destination = normalize_relative(to);
-    if (source.empty() || destination.empty())
+    if (!source || !destination || source->empty() ||
+        destination->empty() ||
+        has_case_conflict(source_root(), *destination) ||
+        has_case_conflict(overlay_root(), *destination))
         return false;
 
-    const auto source_path = overlay_root() / source;
-    const auto destination_path = overlay_root() / destination;
+    const auto source_path = overlay_root() / *source;
+    const auto destination_path = overlay_root() / *destination;
     std::error_code error;
+    if (!exact_path_exists(overlay_root(), *source))
+        return false;
     std::filesystem::remove(
-        deletion_marker(destination), error);
+        deletion_marker(*destination), error);
     error.clear();
     std::filesystem::create_directories(
         destination_path.parent_path(), error);
@@ -841,23 +1030,26 @@ bool LittleFSFS::rename(const char *from, const char *to)
 bool LittleFSFS::mkdir(const char *path)
 {
     const auto relative = normalize_relative(path);
-    if (relative.empty())
+    if (!relative || relative->empty() ||
+        has_case_conflict(source_root(), *relative) ||
+        has_case_conflict(overlay_root(), *relative))
         return false;
-    clear_deletion_markers(relative);
+    clear_deletion_markers(*relative);
     std::error_code error;
     return std::filesystem::create_directories(
-               overlay_root() / relative, error) ||
+               overlay_root() / *relative, error) ||
            (!error &&
             std::filesystem::is_directory(
-                overlay_root() / relative));
+                 overlay_root() / *relative));
 }
 
 bool LittleFSFS::rmdir(const char *path)
 {
     const auto relative = normalize_relative(path);
-    if (relative.empty())
+    if (!relative || relative->empty())
         return false;
     std::error_code error;
-    return std::filesystem::remove(
-        overlay_root() / relative, error);
+    return exact_path_exists(overlay_root(), *relative) &&
+           std::filesystem::remove(
+               overlay_root() / *relative, error);
 }

@@ -216,6 +216,9 @@ cd web/control-panel && npm run i18n:check && npm run build
 pio run -e lolin_s3
 pio run -e lolin_s3 -t buildfs
 cmake --build --preset macos-debug
+# From an MSYS2 UCRT64 shell on Windows:
+cmake --build --preset windows-ucrt64-release
+ctest --preset windows-ucrt64-release
 ```
 
 The web build validates translation coverage and regenerates the embedded

@@ -1,6 +1,7 @@
 #include "local_maclock_hal.h"
 #include "local_hal_self_test.h"
 #include "maclock_app.h"
+#include "host_compat.h"
 
 #include <Arduino.h>
 
@@ -10,7 +11,6 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include <unistd.h>
 
 namespace
 {
@@ -185,11 +185,22 @@ bool parse_options(
 
 int main(int argc, char **argv)
 {
+    std::vector<std::string> process_arguments =
+        maclock_process_arguments(argc, argv);
+    if (process_arguments.empty())
+        return 2;
+    std::vector<char *> native_arguments;
+    native_arguments.reserve(process_arguments.size());
+    for (std::string &argument : process_arguments)
+        native_arguments.push_back(argument.data());
+
     LocalMaclockOptions options;
     SelfTestMode self_test = SelfTestMode::None;
-    if (!parse_options(argc, argv, options, self_test))
+    if (!parse_options(
+            static_cast<int>(native_arguments.size()),
+            native_arguments.data(), options, self_test))
     {
-        print_usage(argv[0]);
+        print_usage(native_arguments[0]);
         return 2;
     }
 
@@ -230,10 +241,10 @@ int main(int argc, char **argv)
     if (hal.restartRequested())
     {
         std::vector<std::string> arguments;
-        arguments.emplace_back(argv[0]);
-        for (int i = 1; i < argc; ++i)
+        arguments.emplace_back(process_arguments[0]);
+        for (size_t i = 1; i < process_arguments.size(); ++i)
         {
-            const std::string value = argv[i];
+            const std::string &value = process_arguments[i];
             if (value == "--startup")
             {
                 ++i;
@@ -259,11 +270,7 @@ int main(int argc, char **argv)
         }
         if (!hal.touchscreenPresent())
             arguments.emplace_back("--touch-disconnected");
-        std::vector<char *> native;
-        for (std::string &value : arguments)
-            native.push_back(value.data());
-        native.push_back(nullptr);
-        execv(native[0], native.data());
+        maclock_restart_process(std::move(arguments));
         std::perror("Could not reset Maclock");
         return 1;
     }
