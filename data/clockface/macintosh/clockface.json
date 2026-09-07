@@ -34,6 +34,13 @@
       "es": "Hoy",
       "de": "Heute",
       "it": "Oggi"
+    },
+    "clock_title": {
+      "en": "Clock",
+      "fr": "Horloge",
+      "es": "Reloj",
+      "de": "Uhr",
+      "it": "Orologio"
     }
   },
   "objects": [
@@ -84,6 +91,34 @@
       "height": 138,
       "keep_ratio": true,
       "visible_if": ""
+    },
+    {
+      "id": "clock_title_background",
+      "type": "rectangle",
+      "x": 108,
+      "y": 45,
+      "width": 66,
+      "height": 12,
+      "fill": "#ffffff",
+      "stroke": "#ffffff",
+      "stroke_width": 0,
+      "border_radius": 0,
+      "visible_if": ""
+    },
+    {
+      "id": "clock_title",
+      "type": "text",
+      "x": 110,
+      "y": 43,
+      "width": 62,
+      "height": 10,
+      "stroke": "#000000",
+      "template": "{tr.clock_title}",
+      "font_family": "lv_font_chicago_8",
+      "font_size": 8,
+      "align": "center",
+      "visible_if": "",
+      "random": []
     },
     {
       "id": "time",

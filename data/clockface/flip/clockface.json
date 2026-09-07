@@ -6,9 +6,11 @@
   "height": 224,
   "background": "#ffffff",
   "random_interval_seconds": 60,
-  "translations": {},
+  "translations": {
+    "clock": { "en": "CLOCK", "fr": "HORLOGE", "es": "RELOJ", "de": "UHR", "it": "OROLOGIO" }
+  },
   "objects": [
-    { "id": "title", "type": "text", "x": 12, "y": 13, "width": 280, "height": 12, "stroke": "#000000", "template": "CLOCK", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "center", "visible_if": "", "random": [] },
+    { "id": "title", "type": "text", "x": 12, "y": 13, "width": 280, "height": 12, "stroke": "#000000", "template": "{tr.clock}", "font_family": "lv_font_chicago_8", "font_size": 8, "align": "center", "visible_if": "", "random": [] },
     { "id": "flip_bg", "type": "flip_background", "x": 6, "y": 38, "width": 292, "height": 62, "stroke": "#000000", "fill": "#ececec", "stroke_width": 2, "visible_if": "" },
     { "id": "hour_tens", "type": "flip", "x": 20, "y": 43, "width": 36, "height": 52, "stroke": "#000000", "fill": "#181818", "stroke_width": 1, "template": "{hour_tens}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },
     { "id": "hour_ones", "type": "flip", "x": 60, "y": 43, "width": 36, "height": 52, "stroke": "#000000", "fill": "#181818", "stroke_width": 1, "template": "{hour_ones}", "font_family": "lv_font_chicago_48", "font_size": 48, "align": "center", "visible_if": "rtc_available" },
