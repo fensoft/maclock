@@ -287,6 +287,17 @@ bool testNetworkServer()
     }
 
     WebServer server(80);
+    static constexpr char compressed_body[] = {
+        static_cast<char>(0x1f), static_cast<char>(0x8b),
+        static_cast<char>(0x08), static_cast<char>(0x00),
+        static_cast<char>(0x00), static_cast<char>(0x00),
+        static_cast<char>(0x00), static_cast<char>(0x00),
+        static_cast<char>(0x00), static_cast<char>(0x03),
+        static_cast<char>(0x03), static_cast<char>(0x00),
+        static_cast<char>(0x00), static_cast<char>(0x00),
+        static_cast<char>(0x00), static_cast<char>(0x00),
+        static_cast<char>(0x00), static_cast<char>(0x00),
+        static_cast<char>(0x00), static_cast<char>(0x00)};
     server.on(
         "/hal-self-test", HTTP_GET,
         [&server]()
@@ -298,6 +309,15 @@ bool testNetworkServer()
         [&server]()
         {
             server.send(409, "text/plain", "Protected");
+        });
+    server.on(
+        "/hal-precompressed", HTTP_GET,
+        [&server]()
+        {
+            server.sendHeader("Content-Encoding", "gzip");
+            server.send_P(
+                200, "text/html", compressed_body,
+                sizeof(compressed_body));
         });
     server.begin();
 
@@ -313,11 +333,21 @@ bool testNetworkServer()
             const auto response = http.Get("/hal-self-test");
             const auto client_error =
                 http.Get("/hal-client-error");
+            httplib::Client raw_http("127.0.0.1", port);
+            raw_http.set_connection_timeout(2);
+            raw_http.set_decompress(false);
+            httplib::Headers gzip_headers = {
+                {"Accept-Encoding", "gzip"}};
+            const auto precompressed = raw_http.Get(
+                "/hal-precompressed", gzip_headers);
             response_ok =
                 response && response->status == 200 &&
                 response->body == "Maclock" &&
                 client_error && client_error->status == 409 &&
-                client_error->body == "Protected";
+                client_error->body == "Protected" &&
+                precompressed && precompressed->status == 200 &&
+                !precompressed->has_header("Content-Encoding") &&
+                precompressed->body.empty();
             finished = true;
         });
     const uint32_t started = millis();

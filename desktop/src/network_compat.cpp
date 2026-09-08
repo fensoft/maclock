@@ -8,6 +8,7 @@
 
 #include <curl/curl.h>
 #include <httplib.h>
+#include <zlib.h>
 
 #include <algorithm>
 #include <atomic>
@@ -21,6 +22,49 @@
 #include <thread>
 #include <utility>
 #include <vector>
+
+namespace
+{
+bool header_name_equals(
+    const std::string &left, const char *right)
+{
+    const size_t length = std::strlen(right);
+    return left.size() == length &&
+           std::equal(
+               left.begin(), left.end(), right,
+               [](unsigned char a, unsigned char b)
+               { return std::tolower(a) == std::tolower(b); });
+}
+
+bool decompress_gzip(
+    const std::string &compressed, std::string &plain)
+{
+    z_stream stream{};
+    stream.next_in = reinterpret_cast<Bytef *>(
+        const_cast<char *>(compressed.data()));
+    stream.avail_in = static_cast<uInt>(compressed.size());
+    if (inflateInit2(&stream, MAX_WBITS + 16) != Z_OK)
+        return false;
+
+    char buffer[16384];
+    int result = Z_OK;
+    plain.clear();
+    while (result == Z_OK)
+    {
+        stream.next_out = reinterpret_cast<Bytef *>(buffer);
+        stream.avail_out = sizeof(buffer);
+        result = inflate(&stream, Z_NO_FLUSH);
+        plain.append(buffer, sizeof(buffer) - stream.avail_out);
+    }
+    inflateEnd(&stream);
+    if (result != Z_STREAM_END)
+    {
+        plain.clear();
+        return false;
+    }
+    return true;
+}
+} // namespace
 
 WiFiClass WiFi;
 MDNSResponder MDNS;
@@ -389,11 +433,31 @@ struct WebServer::State
         std::unique_lock<std::mutex> lock(pending->mutex);
         pending->condition.wait(
             lock, [&]() { return pending->completed; });
+        std::string body = pending->body;
+        bool decompressed = false;
+        for (const auto &[name, value] : pending->headers)
+        {
+            if (header_name_equals(name, "Content-Encoding") &&
+                value == "gzip")
+            {
+                std::string plain;
+                if (decompress_gzip(body, plain))
+                {
+                    body = std::move(plain);
+                    decompressed = true;
+                }
+                break;
+            }
+        }
         response.status = pending->status;
         response.set_content(
-            pending->body, pending->content_type);
+            body, pending->content_type);
         for (const auto &[name, value] : pending->headers)
-            response.set_header(name, value);
+        {
+            if (!decompressed ||
+                !header_name_equals(name, "Content-Encoding"))
+                response.set_header(name, value);
+        }
     }
 };
 
