@@ -1,6 +1,7 @@
 Import("env")
 
 import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -9,7 +10,7 @@ from pathlib import Path
 
 project_dir = Path(env.subst("$PROJECT_DIR"))
 web_dir = project_dir / "web" / "control-panel"
-header_path = project_dir / "src" / "control_panel_page.h"
+header_path = Path(env.subst("$BUILD_DIR")) / "generated" / "control_panel_page.h"
 fingerprint_pattern = re.compile(
     r"Web source SHA-256: ([0-9a-f]{64})"
 )
@@ -75,6 +76,10 @@ if generated_fingerprint() != fingerprint:
     subprocess.run(
         [npm, "run", "build"],
         cwd=web_dir,
+        env={
+            **os.environ,
+            "CONTROL_PANEL_HEADER_PATH": str(header_path),
+        },
         check=True,
     )
 
@@ -87,3 +92,4 @@ env.Depends(
     env.subst("$BUILD_DIR/${PROGNAME}.elf"),
     str(header_path),
 )
+env.Append(CPPPATH=[str(header_path.parent)])

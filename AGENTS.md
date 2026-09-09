@@ -67,8 +67,8 @@ LittleFS, and boot lifecycle.
   captive Wi-Fi setup portal in `wifi_mode.cpp`.
 - `web/control-panel/`: responsive Vue source for the classic Macintosh web
   control panel. `scripts/build_control_panel.py` runs as a PlatformIO prebuild
-  hook and regenerates the gzip-compressed `src/control_panel_page.h` whenever
-  the web-source fingerprint changes. Never hand-edit the generated header.
+  hook and regenerates the gzip-compressed header in PlatformIO build output
+  whenever the web-source fingerprint changes. The header is not tracked.
 - `src/init.cpp`: `DisplayService`, including TFT/LVGL, LittleFS LVGL driver,
   ES8311/I2S ownership, and the narrow Mini vMac hardware bridge.
 - `src/datetime_ui.cpp`: state-owning date/time editor; it reports RTC changes
@@ -208,8 +208,8 @@ pio run -e lolin_s3 -t buildfs
 ```
 
 For web changes, run `cd web/control-panel && npm run i18n:check && npm run
-build`; the build regenerates `src/control_panel_page.h`. Before release or
-filesystem validation, asset audit must pass. The desktop LittleFS overlay uses
+build`; the build regenerates `.pio/generated/control_panel_page.h`. Before
+release or filesystem validation, asset audit must pass. The desktop LittleFS overlay uses
 deletion markers; `mkdir` clears markers for recreated directories and ancestors
 so source project enumeration recovers.
 

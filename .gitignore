@@ -1,4 +1,5 @@
 .pio
+src/control_panel_page.h
 build/
 dist/
 .dummy/

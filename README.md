@@ -157,7 +157,7 @@ The development server supplies sample device state. PlatformIO runs
 `scripts/build_control_panel.py` automatically when the embedded web header is
 stale. `npm run i18n:check` verifies shared web translation coverage; `npm run
 build` runs that check, builds the Vue bundle, and regenerates
-`src/control_panel_page.h`. Do not edit the generated header by hand.
+`.pio/generated/control_panel_page.h`. The generated header is not tracked.
 
 ## Firmware Development
 

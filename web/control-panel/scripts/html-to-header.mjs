@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -8,7 +14,10 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const webDirectory = resolve(scriptDirectory, "..");
 const projectDirectory = resolve(webDirectory, "..", "..");
 const htmlPath = join(webDirectory, "dist", "index.html");
-const headerPath = join(projectDirectory, "src", "control_panel_page.h");
+const headerPath = resolve(
+  process.env.CONTROL_PANEL_HEADER_PATH ??
+    join(projectDirectory, ".pio", "generated", "control_panel_page.h"),
+);
 
 function collectFiles(directory) {
   const files = [];
@@ -63,6 +72,9 @@ ${lines.join("\n")}
 static constexpr size_t kControlPanelPageGzipLength =
     sizeof(kControlPanelPageGzip);
 `;
+
+if (!existsSync(headerPath) || readFileSync(headerPath, "utf8") !== header)
+  mkdirSync(dirname(headerPath), { recursive: true });
 
 if (!existsSync(headerPath) || readFileSync(headerPath, "utf8") !== header)
   writeFileSync(headerPath, header);
