@@ -48,6 +48,7 @@ jobs:
 
       - name: Install control-panel dependencies
         working-directory: web/control-panel
+        shell: pwsh
         run: npm ci
 
       - name: Install MSYS2 UCRT64 toolchain
