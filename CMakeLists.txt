@@ -106,6 +106,13 @@ if(WIN32)
 else()
     find_program(NPM_EXECUTABLE npm REQUIRED)
 endif()
+get_filename_component(NPM_DIRECTORY "${NPM_EXECUTABLE}" DIRECTORY)
+if(WIN32)
+    set(NPM_PATH_SEPARATOR ";")
+else()
+    set(NPM_PATH_SEPARATOR ":")
+endif()
+set(NPM_ENV_PATH "PATH=${NPM_DIRECTORY}${NPM_PATH_SEPARATOR}$ENV{PATH}")
 
 set(CONTROL_PANEL_HEADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(CONTROL_PANEL_HEADER "${CONTROL_PANEL_HEADER_DIR}/control_panel_page.h")
@@ -113,6 +120,7 @@ add_custom_target(maclock-control-panel
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CONTROL_PANEL_HEADER_DIR}"
     COMMAND ${CMAKE_COMMAND} -E env
         "CONTROL_PANEL_HEADER_PATH=${CONTROL_PANEL_HEADER}"
+        "${NPM_ENV_PATH}"
         "${NPM_EXECUTABLE}" run build
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/web/control-panel"
     BYPRODUCTS "${CONTROL_PANEL_HEADER}"
