@@ -97,6 +97,18 @@ FetchContent_MakeAvailable(
 
 find_package(Threads REQUIRED)
 find_package(ZLIB REQUIRED)
+find_program(NPM_EXECUTABLE npm REQUIRED)
+
+set(CONTROL_PANEL_HEADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(CONTROL_PANEL_HEADER "${CONTROL_PANEL_HEADER_DIR}/control_panel_page.h")
+add_custom_target(maclock-control-panel
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CONTROL_PANEL_HEADER_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E env
+        "CONTROL_PANEL_HEADER_PATH=${CONTROL_PANEL_HEADER}"
+        "${NPM_EXECUTABLE}" run build
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/web/control-panel"
+    BYPRODUCTS "${CONTROL_PANEL_HEADER}"
+    COMMENT "Building embedded control panel")
 
 add_library(maclock-imgui STATIC
     "${imgui_SOURCE_DIR}/imgui.cpp"
@@ -231,8 +243,10 @@ add_executable(maclock-local ${MACLOCK_EXECUTABLE_OPTIONS}
     ${MACLOCK_APPLICATION_SOURCES}
     ${MINIVMAC_CORE_SOURCES}
     ${MACLOCK_DESKTOP_SOURCES})
+add_dependencies(maclock-local maclock-control-panel)
 
 target_include_directories(maclock-local PRIVATE
+    "${CONTROL_PANEL_HEADER_DIR}"
     desktop/compat/include
     desktop/include
     include

@@ -10,6 +10,7 @@ on:
       - "src/**"
       - "patches/**"
       - "prepare.sh"
+      - "web/control-panel/**"
       - ".github/workflows/desktop-windows.yml"
   pull_request:
     paths:
@@ -20,6 +21,7 @@ on:
       - "src/**"
       - "patches/**"
       - "prepare.sh"
+      - "web/control-panel/**"
       - ".github/workflows/desktop-windows.yml"
 
 permissions:
@@ -36,6 +38,17 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/control-panel/package-lock.json
+
+      - name: Install control-panel dependencies
+        working-directory: web/control-panel
+        run: npm ci
 
       - name: Install MSYS2 UCRT64 toolchain
         uses: msys2/setup-msys2@v2
