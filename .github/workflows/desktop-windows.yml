@@ -54,7 +54,7 @@ jobs:
             mingw-w64-ucrt-x86_64-zlib
 
       - name: Prepare Mini vMac source
-        run: ./prepare.sh
+        run: bash ./prepare.sh
 
       - name: Configure simulator
         run: cmake --preset windows-ucrt64-debug

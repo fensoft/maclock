@@ -1,0 +1,50 @@
+name: Build macOS desktop simulator
+
+on:
+  push:
+    paths:
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "desktop/**"
+      - "include/**"
+      - "src/**"
+      - "patches/**"
+      - "prepare.sh"
+      - ".github/workflows/desktop-mac.yml"
+  pull_request:
+    paths:
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "desktop/**"
+      - "include/**"
+      - "src/**"
+      - "patches/**"
+      - "prepare.sh"
+      - ".github/workflows/desktop-mac.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  macos-debug:
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install preparation tools
+        run: brew install wget
+
+      - name: Prepare Mini vMac source
+        run: bash ./prepare.sh
+
+      - name: Configure simulator
+        run: cmake --preset macos-debug
+
+      - name: Build simulator
+        run: cmake --build --preset macos-debug
+
+      - name: Run simulator tests
+        run: ctest --preset macos-debug
