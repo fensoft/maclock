@@ -62,6 +62,11 @@ jobs:
           cache: npm
           cache-dependency-path: web/control-panel/package-lock.json
 
+      - name: Locate Windows npm
+        shell: pwsh
+        run: |
+          "MACLOCK_NPM_EXECUTABLE=$((Get-Command npm.cmd).Source)" >> $env:GITHUB_ENV
+
       - name: Install control-panel dependencies
         working-directory: web/control-panel
         shell: pwsh
