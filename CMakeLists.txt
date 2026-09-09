@@ -97,7 +97,11 @@ FetchContent_MakeAvailable(
 
 find_package(Threads REQUIRED)
 find_package(ZLIB REQUIRED)
-find_program(NPM_EXECUTABLE npm REQUIRED)
+if(WIN32)
+    find_program(NPM_EXECUTABLE npm.cmd REQUIRED)
+else()
+    find_program(NPM_EXECUTABLE npm REQUIRED)
+endif()
 
 set(CONTROL_PANEL_HEADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(CONTROL_PANEL_HEADER "${CONTROL_PANEL_HEADER_DIR}/control_panel_page.h")
