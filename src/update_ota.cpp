@@ -181,7 +181,7 @@ bool perform_install(UpdateService::State &state)
     }
     if (!install_assets(
             state, manifest["assets"].as<JsonObjectConst>(),
-            error))
+            state.assets_url, true, error))
     {
         set_error(state, error);
         return false;
@@ -219,6 +219,74 @@ bool perform_install(UpdateService::State &state)
         state.snapshot.message,
         sizeof(state.snapshot.message),
         "Update installed; reboot to finish");
+    portEXIT_CRITICAL(&state.mux);
+    return true;
+}
+
+bool perform_asset_refresh(UpdateService::State &state)
+{
+    portENTER_CRITICAL(&state.mux);
+    state.snapshot.assets_only = true;
+    portEXIT_CRITICAL(&state.mux);
+
+    if (!perform_check(state))
+        return false;
+
+    String manifest_url;
+    String assets_url;
+    char target_version[32] = {};
+    portENTER_CRITICAL(&state.mux);
+    manifest_url = state.manifest_url;
+    assets_url = state.assets_url;
+    strlcpy(target_version, state.snapshot.latest_version,
+        sizeof(target_version));
+    portEXIT_CRITICAL(&state.mux);
+    if (!manifest_url.length() || !assets_url.length() || !target_version[0])
+    {
+        set_error(state, "The latest release has no refreshable assets");
+        return false;
+    }
+
+    set_stage(state, UpdateStage::DownloadingAssets,
+        "Reading the latest asset manifest");
+    String payload;
+    String error;
+    if (!fetch_text(manifest_url, payload, error))
+    {
+        set_error(state, error);
+        return false;
+    }
+    JsonDocument manifest;
+    if (deserializeJson(manifest, payload))
+    {
+        set_error(state, "The update manifest is invalid");
+        return false;
+    }
+    if (!validate_manifest(manifest, target_version, error))
+    {
+        set_error(state, error);
+        return false;
+    }
+    if (!install_assets(state,
+            manifest["assets"].as<JsonObjectConst>(),
+            assets_url, false, error))
+    {
+        set_error(state, error);
+        return false;
+    }
+
+    if (state.preferences)
+        state.preferences->putString("assetVer", target_version);
+    portENTER_CRITICAL(&state.mux);
+    copy_text(state.snapshot.asset_version,
+        sizeof(state.snapshot.asset_version), target_version);
+    state.snapshot.stage = UpdateStage::ReadyToReboot;
+    state.snapshot.busy = false;
+    state.snapshot.progress = 100;
+    state.snapshot.reboot_required = true;
+    copy_text(state.snapshot.message,
+        sizeof(state.snapshot.message),
+        "Assets refreshed; reboot to load them");
     portEXIT_CRITICAL(&state.mux);
     return true;
 }

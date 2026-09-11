@@ -605,6 +605,25 @@ bool MaclockApp::requestControlUpdateInstall()
     return requested;
 }
 
+bool MaclockApp::requestAssetRefresh()
+{
+    audio_service.stop();
+    control_preview_pending_ = false;
+    const bool started_guard = !update_network_guard_active_;
+    if (started_guard)
+    {
+        beginControlPanelNetworkTransfer();
+        update_network_guard_active_ = true;
+    }
+    const bool requested = update_service.requestAssetRefresh();
+    if (!requested && started_guard)
+    {
+        endControlPanelNetworkTransfer();
+        update_network_guard_active_ = false;
+    }
+    return requested;
+}
+
 void MaclockApp::dismissControlUpdate(bool ignore_version)
 {
     update_service.dismiss(ignore_version);

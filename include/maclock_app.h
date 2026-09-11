@@ -86,6 +86,7 @@ public:
     void hideControlPanelDownload() override;
     bool requestControlUpdateCheck() override;
     bool requestControlUpdateInstall() override;
+    bool requestAssetRefresh();
     void dismissControlUpdate(bool ignore_version) override;
     bool beginControlFirmwareUpload(
         const char *filename) override;

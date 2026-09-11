@@ -191,9 +191,18 @@ void MaclockApp::tick()
     const bool update_network_check_allowed =
         (update_prompt_allowed || update_page_active) &&
         !control_panel_service.backgroundNetworkActive();
+    if (update_network_check_allowed &&
+        update_service.needsAssetRefresh(service_wifi))
+        requestAssetRefresh();
     update_service.tick(
         service_wifi, update_prompt_allowed,
         update_network_check_allowed);
+    if (update_network_guard_active_ &&
+        !update_service.networkOperationActive())
+    {
+        endControlPanelNetworkTransfer();
+        update_network_guard_active_ = false;
+    }
     const bool update_network_active =
         update_service.networkOperationActive() ||
         update_service.needsNetworkCheck(service_wifi);

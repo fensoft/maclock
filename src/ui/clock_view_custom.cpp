@@ -3,6 +3,32 @@ namespace
 {
 constexpr size_t kCustomFaceMaxObjects = 64;
 constexpr size_t kCustomFaceMaxJsonBytes = 32768;
+constexpr size_t kCustomFaceMaxDynamicTexts = 32;
+constexpr size_t kCustomFaceMaxDynamicImages = 8;
+
+static bool ensure_custom_face_storage(ClockView &view)
+{
+    if (view.custom_texts && view.custom_images && view.custom_visibility)
+        return true;
+    view.custom_texts = static_cast<CustomFaceDynamicText *>(
+        heap_caps_calloc(kCustomFaceMaxDynamicTexts,
+            sizeof(CustomFaceDynamicText), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    view.custom_images = static_cast<CustomFaceDynamicImage *>(
+        heap_caps_calloc(kCustomFaceMaxDynamicImages,
+            sizeof(CustomFaceDynamicImage), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    view.custom_visibility = static_cast<CustomFaceVisibility *>(
+        heap_caps_calloc(kCustomFaceMaxObjects,
+            sizeof(CustomFaceVisibility), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (view.custom_texts && view.custom_images && view.custom_visibility)
+        return true;
+    heap_caps_free(view.custom_texts);
+    heap_caps_free(view.custom_images);
+    heap_caps_free(view.custom_visibility);
+    view.custom_texts = nullptr;
+    view.custom_images = nullptr;
+    view.custom_visibility = nullptr;
+    return false;
+}
 
 static void flip_scale_y_animation(void *object, int32_t scale)
 {
@@ -780,6 +806,13 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
         custom_face = create_clock_face_root(lv_screen_active(), lv_color_black());
         custom_loaded_name[0] = '\0';
     }
+    if (!ensure_custom_face_storage(*this))
+    {
+        custom_face_error(*this, "Not enough memory");
+        lv_obj_clear_flag(custom_face, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(custom_face);
+        return true;
+    }
     if (strcmp(custom_loaded_name, name))
     {
         lv_obj_clean(custom_face);
@@ -929,7 +962,7 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
                     else if (!strcmp(type, "text"))
                     {
                         if (custom_text_count >=
-                            sizeof(custom_texts) / sizeof(custom_texts[0]))
+                            kCustomFaceMaxDynamicTexts)
                         { valid = false; break; }
                         const lv_font_t *font = custom_face_font(item["font_family"] | "lv_font_chicago_8");
                         if (!font) { valid = false; break; }
@@ -1002,7 +1035,7 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
                         if (strchr(image_template, '{'))
                         {
                             if (custom_image_count >=
-                                sizeof(custom_images) / sizeof(custom_images[0]))
+                                kCustomFaceMaxDynamicImages)
                             { valid = false; break; }
                             CustomFaceDynamicImage &image =
                                 custom_images[custom_image_count++];
@@ -1011,8 +1044,6 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
                             image.path_index = object_index;
                             strlcpy(image.template_text, image_template,
                                 sizeof(image.template_text));
-                            strlcpy(image.visible_if, visible_if,
-                                sizeof(image.visible_if));
                         }
                     }
                     else if (!strcmp(type, "flip") || !strcmp(type, "odometer"))
@@ -1109,7 +1140,7 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
                     else if (object && visible_if[0])
                     {
                         if (custom_visibility_count >=
-                            sizeof(custom_visibility) / sizeof(custom_visibility[0]))
+                            kCustomFaceMaxObjects)
                         { valid = false; break; }
                         CustomFaceVisibility &visibility =
                             custom_visibility[custom_visibility_count++];

@@ -920,6 +920,19 @@ void BootOptionsView::init(lv_obj_t *screen)
         boot_options_view.update_progress,
         LV_OBJ_FLAG_HIDDEN);
 
+    boot_options_view.update_refresh_assets =
+        create_action_button(
+            update_page, tr("Refresh Assets"),
+            boot_update_refresh_assets_event);
+    boot_options_view.update_refresh_assets_label =
+        lv_obj_get_child(
+            boot_options_view.update_refresh_assets, 0);
+    lv_obj_set_size(
+        boot_options_view.update_refresh_assets, 164, 26);
+    lv_obj_align(
+        boot_options_view.update_refresh_assets,
+        LV_ALIGN_TOP_MID, 0, 56);
+
     boot_options_view.update_primary =
         create_action_button(
             update_page, tr("Check Now"),

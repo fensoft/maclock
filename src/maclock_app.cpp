@@ -304,6 +304,8 @@ public:
     lv_obj_t *rtc_status;
     lv_obj_t *update_status;
     lv_obj_t *update_progress;
+    lv_obj_t *update_refresh_assets;
+    lv_obj_t *update_refresh_assets_label;
     lv_obj_t *update_primary;
     lv_obj_t *update_primary_label;
     lv_obj_t *update_later;
@@ -425,7 +427,6 @@ struct CustomFaceDynamicImage
 {
     lv_obj_t *object = nullptr;
     char template_text[128] = {};
-    char visible_if[64] = {};
     uint8_t path_index = 0;
 };
 
@@ -491,11 +492,11 @@ public:
     size_t custom_widget_count = 0;
     CustomFaceDynamicLine custom_lines[32];
     size_t custom_line_count = 0;
-    CustomFaceDynamicText custom_texts[32];
+    CustomFaceDynamicText *custom_texts = nullptr;
     size_t custom_text_count = 0;
-    CustomFaceDynamicImage custom_images[8];
+    CustomFaceDynamicImage *custom_images = nullptr;
     size_t custom_image_count = 0;
-    CustomFaceVisibility custom_visibility[64];
+    CustomFaceVisibility *custom_visibility = nullptr;
     size_t custom_visibility_count = 0;
     uint32_t custom_random_interval_seconds = 0;
     uint32_t custom_random_bucket = 0;

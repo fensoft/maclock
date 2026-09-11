@@ -27,6 +27,7 @@ struct UpdateSnapshot
     UpdateStage stage = UpdateStage::Idle;
     bool supported = true;
     bool busy = false;
+    bool assets_only = false;
     bool update_available = false;
     bool prompt_pending = false;
     bool reboot_required = false;
@@ -52,11 +53,14 @@ public:
         bool allow_network_check);
     bool needsNetworkCheck(
         const WifiModeSnapshot &wifi) const;
+    bool needsAssetRefresh(
+        const WifiModeSnapshot &wifi) const;
     bool networkOperationActive() const;
     UpdateSnapshot snapshot() const;
 
     bool requestCheck();
     bool requestInstall();
+    bool requestAssetRefresh();
     void dismiss(bool ignore_version);
     bool consumePrompt();
 

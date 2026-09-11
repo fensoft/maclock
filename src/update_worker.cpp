@@ -21,6 +21,16 @@ void update_worker(void *context)
         perform_install(*state);
 #endif
     }
+    else if (action == WorkerAction::RefreshAssets)
+    {
+#ifdef MACLOCK_LOCAL
+        set_error(
+            *state,
+            "Asset refresh is unavailable in the simulator");
+#else
+        perform_asset_refresh(*state);
+#endif
+    }
 
     portENTER_CRITICAL(&state->mux);
     state->worker = nullptr;

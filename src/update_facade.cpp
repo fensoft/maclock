@@ -18,7 +18,7 @@ void UpdateService::begin(Preferences &preferences)
         sizeof(state_->snapshot.current_version),
         MACLOCK_VERSION);
     const String asset_version =
-        preferences.getString("assetVer", MACLOCK_VERSION);
+        preferences.getString("assetVer", "");
     copy_text(
         state_->snapshot.asset_version,
         sizeof(state_->snapshot.asset_version),
@@ -29,6 +29,8 @@ void UpdateService::begin(Preferences &preferences)
         preferences.getString("otaEtag", "");
     state_->install_requested =
         preferences.getBool("assetWork", false);
+    state_->asset_refresh_requested =
+        !LittleFS.exists(kAssetProbePath);
     if (state_->install_requested)
     {
         state_->snapshot.stage = UpdateStage::InstallingAssets;
@@ -127,9 +129,25 @@ bool UpdateService::needsNetworkCheck(
     portENTER_CRITICAL(&state_->mux);
     const bool needed =
         !state_->worker && !state_->snapshot.busy &&
+        !state_->snapshot.reboot_required &&
         (state_->check_requested ||
          !state_->first_check_complete ||
          now - state_->last_check_ms >= kCheckIntervalMs);
+    portEXIT_CRITICAL(&state_->mux);
+    return needed;
+}
+
+bool UpdateService::needsAssetRefresh(
+    const WifiModeSnapshot &wifi) const
+{
+    if (!state_ || !wifi.enabled || !wifi.connected ||
+        wifi.portal_active)
+        return false;
+    portENTER_CRITICAL(&state_->mux);
+    const bool needed = state_->snapshot.supported &&
+        state_->asset_refresh_requested &&
+        !state_->worker && !state_->snapshot.busy &&
+        !state_->snapshot.reboot_required;
     portEXIT_CRITICAL(&state_->mux);
     return needed;
 }
@@ -161,7 +179,10 @@ bool UpdateService::requestCheck()
 {
     if (!state_)
         return false;
+    portENTER_CRITICAL(&state_->mux);
+    state_->snapshot.assets_only = false;
     state_->check_requested = true;
+    portEXIT_CRITICAL(&state_->mux);
     return true;
 }
 
@@ -170,6 +191,7 @@ bool UpdateService::requestInstall()
     if (!state_)
         return false;
     portENTER_CRITICAL(&state_->mux);
+    state_->snapshot.assets_only = false;
     const bool available =
         state_->snapshot.update_available &&
         state_->manifest_url.length() &&
@@ -178,6 +200,32 @@ bool UpdateService::requestInstall()
     portEXIT_CRITICAL(&state_->mux);
     return available &&
            start_worker(*state_, WorkerAction::Install);
+}
+
+bool UpdateService::requestAssetRefresh()
+{
+    if (!state_)
+        return false;
+    portENTER_CRITICAL(&state_->mux);
+    const bool available = state_->snapshot.supported &&
+        !state_->worker && !state_->snapshot.busy &&
+        !state_->snapshot.reboot_required;
+    if (available)
+        state_->snapshot.assets_only = true;
+    portEXIT_CRITICAL(&state_->mux);
+    if (!available)
+        return false;
+    if (!start_worker(*state_, WorkerAction::RefreshAssets))
+    {
+        portENTER_CRITICAL(&state_->mux);
+        state_->snapshot.assets_only = false;
+        portEXIT_CRITICAL(&state_->mux);
+        return false;
+    }
+    portENTER_CRITICAL(&state_->mux);
+    state_->asset_refresh_requested = false;
+    portEXIT_CRITICAL(&state_->mux);
+    return true;
 }
 
 void UpdateService::dismiss(bool ignore_version)

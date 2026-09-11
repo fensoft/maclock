@@ -1,7 +1,8 @@
 #ifdef MACLOCK_UPDATE_INSTALL_FRAGMENT
 bool install_assets(
     UpdateService::State &state,
-    JsonObjectConst assets, String &error)
+    JsonObjectConst assets, const String &assets_url,
+    bool prune_obsolete, String &error)
 {
     JsonArrayConst files = assets["files"].as<JsonArrayConst>();
     size_t largest_temporary_file = 0;
@@ -38,7 +39,7 @@ bool install_assets(
 
     String download_url;
     if (!resolve_download_url(
-            state.assets_url, download_url, error))
+            assets_url, download_url, error))
         return false;
     GithubNetworkClientSecure client;
     client.useSystemCertificateBundle();
@@ -372,22 +373,25 @@ bool install_assets(
         return false;
     }
 
-    std::vector<String> installed;
-    std::vector<String> directories;
-    collect_files("/", installed, directories);
-    for (const String &path : installed)
+    if (prune_obsolete)
     {
-        if (!manifest_contains(files, path.c_str()) &&
-            !protected_user_path(path.c_str()))
+        std::vector<String> installed;
+        std::vector<String> directories;
+        collect_files("/", installed, directories);
+        for (const String &path : installed)
         {
-            LittleFS.remove(path.c_str());
+            if (!manifest_contains(files, path.c_str()) &&
+                !protected_user_path(path.c_str()))
+            {
+                LittleFS.remove(path.c_str());
+            }
         }
-    }
-    for (auto item = directories.rbegin();
-         item != directories.rend(); ++item)
-    {
-        if (!protected_user_path(item->c_str()))
-            LittleFS.rmdir(item->c_str());
+        for (auto item = directories.rbegin();
+             item != directories.rend(); ++item)
+        {
+            if (!protected_user_path(item->c_str()))
+                LittleFS.rmdir(item->c_str());
+        }
     }
 
     set_progress(

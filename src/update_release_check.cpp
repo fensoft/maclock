@@ -55,6 +55,8 @@ static constexpr char kDownloadedPrefix[] = "/downloaded/";
 static constexpr char kScreensaverPrefix[] = "/screensaver/";
 static constexpr char kAssetTemporaryPath[] =
     "/.maclock-asset.tmp";
+static constexpr char kAssetProbePath[] =
+    "/clockface/macintosh/clockface.json";
 static constexpr uint32_t kCheckIntervalMs =
     24UL * 60UL * 60UL * 1000UL;
 static constexpr uint32_t kLaterIntervalMs =
@@ -90,7 +92,8 @@ enum class WorkerAction : uint8_t
 {
     None,
     Check,
-    Install
+    Install,
+    RefreshAssets
 };
 
 struct SemanticVersion
@@ -813,6 +816,7 @@ struct UpdateService::State
     bool action_pending = false;
     bool check_requested = true;
     bool install_requested = false;
+    bool asset_refresh_requested = false;
     bool first_check_complete = false;
     bool pending_verify = false;
     uint32_t validation_started_ms = 0;

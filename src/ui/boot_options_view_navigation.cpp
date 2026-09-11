@@ -103,6 +103,16 @@ static void boot_update_primary_event(lv_event_t *event)
     boot_options_view.refreshUpdate();
 }
 
+static void boot_update_refresh_assets_event(lv_event_t *event)
+{
+    (void)event;
+    const UpdateSnapshot update = update_service.snapshot();
+    if (update.busy || update.reboot_required)
+        return;
+    active_app->requestAssetRefresh();
+    boot_options_view.refreshUpdate();
+}
+
 static void boot_update_later_event(lv_event_t *event)
 {
     (void)event;

@@ -11,8 +11,9 @@ void BootOptionsView::refreshUpdate()
         update.stage == UpdateStage::DownloadingFirmware ||
         update.stage == UpdateStage::UploadingFirmware;
     uint8_t overall_progress = update.progress;
-    if (update.stage == UpdateStage::DownloadingAssets ||
-        update.stage == UpdateStage::InstallingAssets)
+    if (!update.assets_only &&
+        (update.stage == UpdateStage::DownloadingAssets ||
+         update.stage == UpdateStage::InstallingAssets))
     {
         overall_progress =
             static_cast<uint8_t>(update.progress / 2);
@@ -63,18 +64,27 @@ void BootOptionsView::refreshUpdate()
     case UpdateStage::UploadingFirmware:
         snprintf(
             status, sizeof(status),
-            "%s", tr("Installing update..."));
+            "%s", tr(update.assets_only
+                ? "Refreshing assets..."
+                : "Installing update..."));
         break;
     case UpdateStage::ReadyToReboot:
-        snprintf(
-            status, sizeof(status), "%s\n%s",
-            tr("Update is ready."),
-            latest_version);
+        if (update.assets_only)
+            snprintf(
+                status, sizeof(status), "%s\n%s",
+                tr("Assets refreshed."),
+                tr("Reboot to load them."));
+        else
+            snprintf(
+                status, sizeof(status), "%s\n%s",
+                tr("Update is ready."), latest_version);
         break;
     case UpdateStage::Error:
         snprintf(
             status, sizeof(status), "%s\n%s\n%s",
-            tr("Update failed."), current_version,
+            tr(update.assets_only
+                ? "Asset refresh failed."
+                : "Update failed."), current_version,
             update.message);
         break;
     case UpdateStage::Unsupported:
@@ -120,6 +130,9 @@ void BootOptionsView::refreshUpdate()
     lv_label_set_text(
         boot_options_view.update_ignore_label,
         tr("Ignore"));
+    lv_label_set_text(
+        boot_options_view.update_refresh_assets_label,
+        tr("Refresh Assets"));
 
     if (busy)
         lv_obj_add_state(
@@ -129,6 +142,15 @@ void BootOptionsView::refreshUpdate()
         lv_obj_remove_state(
             boot_options_view.update_primary,
             LV_STATE_DISABLED);
+
+    if (busy || ready || !update.supported)
+        lv_obj_add_flag(
+            boot_options_view.update_refresh_assets,
+            LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_clear_flag(
+            boot_options_view.update_refresh_assets,
+            LV_OBJ_FLAG_HIDDEN);
 
     if (available)
     {
