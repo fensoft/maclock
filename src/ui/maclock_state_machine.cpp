@@ -621,9 +621,9 @@ void MaclockApp::tick()
             if (ui_shell.icon)
                 lv_obj_add_flag(ui_shell.icon, LV_OBJ_FLAG_HIDDEN);
             clock_view.update(make_clock_snapshot(now));
-            lv_timer_handler();
             clock_view.last_update_ms = now;
         }
+        lv_timer_handler();
 
         const bool clock_button_down = digitalRead(GPIO_CLOCK) == LOW;
         const bool alarm_button_down = digitalRead(GPIO_ALARM) == LOW;

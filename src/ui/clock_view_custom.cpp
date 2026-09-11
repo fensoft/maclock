@@ -66,6 +66,127 @@ static int16_t custom_text_width(const lv_font_t *font, const char *text)
     return width;
 }
 
+static bool custom_face_localize_template(
+    const char *source, JsonObjectConst translations,
+    char *destination, size_t destination_size)
+{
+    if (!source || !destination || !destination_size)
+        return false;
+    const char *value = source;
+    size_t length = 0;
+    while (*value && length + 1 < destination_size)
+    {
+        if (strncmp(value, "{tr.", 4))
+        {
+            destination[length++] = *value++;
+            continue;
+        }
+        const char *end = strchr(value, '}');
+        if (!end)
+            return false;
+        const size_t key_length = static_cast<size_t>(end - value - 4);
+        char key[48] = {};
+        if (!key_length || key_length >= sizeof(key))
+            return false;
+        memcpy(key, value + 4, key_length);
+        JsonObjectConst translated = translations[key];
+        const char *language = "en";
+        switch (app_settings.language)
+        {
+        case UI_LANGUAGE_FRENCH: language = "fr"; break;
+        case UI_LANGUAGE_SPANISH: language = "es"; break;
+        case UI_LANGUAGE_GERMAN: language = "de"; break;
+        case UI_LANGUAGE_ITALIAN: language = "it"; break;
+        default: break;
+        }
+        const char *replacement = translated[language] | translated["en"] | "";
+        const size_t replacement_length = strlen(replacement);
+        if (length + replacement_length >= destination_size)
+            return false;
+        memcpy(destination + length, replacement, replacement_length);
+        length += replacement_length;
+        value = end + 1;
+    }
+    destination[length] = '\0';
+    return !*value;
+}
+
+static bool render_custom_text(
+    lv_obj_t *parent, CustomFaceDynamicText &state,
+    const char *text, const ClockRenderSnapshot &snapshot)
+{
+    const bool initialized = state.part_count != 0;
+    uint8_t colon_count = 0;
+    for (const char *cursor = text; *cursor; ++cursor)
+        if (*cursor == ':') ++colon_count;
+    if (state.blink_colons && colon_count > 2)
+        return false;
+    const uint8_t required_parts = state.blink_colons
+        ? static_cast<uint8_t>(1 + 2 * colon_count) : 1;
+    if (required_parts > sizeof(state.parts) / sizeof(state.parts[0]))
+        return false;
+    while (state.part_count < required_parts)
+    {
+        lv_obj_t *part = create_clock_face_label(parent, state.font, state.stroke);
+        lv_label_set_long_mode(part, LV_LABEL_LONG_CLIP);
+        state.parts[state.part_count++] = part;
+    }
+
+    if (!state.blink_colons)
+    {
+        lv_obj_t *part = state.parts[0];
+        if (!initialized)
+        {
+            lv_obj_set_pos(part, state.x, state.y);
+            lv_obj_set_width(part, state.width);
+            lv_obj_set_style_text_align(part, state.align, 0);
+        }
+        if (strcmp(lv_label_get_text(part), text))
+            lv_label_set_text(part, text);
+        return true;
+    }
+
+    const int16_t total_width = custom_text_width(state.font, text);
+    int16_t cursor_x = state.align == LV_TEXT_ALIGN_RIGHT
+        ? state.width - total_width : state.align == LV_TEXT_ALIGN_CENTER
+        ? (state.width - total_width) / 2 : 0;
+    const char *segment_start = text;
+    uint8_t part_index = 0;
+    for (const char *cursor = text;; ++cursor)
+    {
+        if (*cursor != ':' && *cursor != '\0')
+            continue;
+        char segment[64] = {};
+        const size_t segment_length = min(
+            static_cast<size_t>(cursor - segment_start), sizeof(segment) - 1);
+        memcpy(segment, segment_start, segment_length);
+        const int16_t segment_width = custom_text_width(state.font, segment);
+        lv_obj_t *part = state.parts[part_index++];
+        if (strcmp(lv_label_get_text(part), segment))
+            lv_label_set_text(part, segment);
+        lv_obj_set_pos(part, state.x + cursor_x, state.y);
+        lv_obj_set_width(part, segment_width);
+        lv_obj_set_style_text_align(part, LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_set_style_opa(part, LV_OPA_COVER, 0);
+        cursor_x += segment_width;
+        if (*cursor == '\0')
+            break;
+
+        const int16_t colon_width = custom_text_width(state.font, ":");
+        lv_obj_t *colon = state.parts[part_index++];
+        if (strcmp(lv_label_get_text(colon), ":"))
+            lv_label_set_text(colon, ":");
+        lv_obj_set_pos(colon, state.x + cursor_x, state.y);
+        lv_obj_set_width(colon, colon_width);
+        lv_obj_set_style_text_align(colon, LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_set_style_opa(colon,
+            custom_colon_visible(snapshot) ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        cursor_x += colon_width;
+        segment_start = cursor + 1;
+    }
+    return true;
+}
+
 static uint32_t custom_second_refresh_interval()
 {
     return g_face_customization.continuous_seconds ? 20 : 1000;
@@ -665,6 +786,11 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
         custom_loaded = false;
         custom_widget_count = 0;
         custom_line_count = 0;
+        custom_text_count = 0;
+        custom_image_count = 0;
+        custom_visibility_count = 0;
+        custom_random_interval_seconds = 0;
+        custom_random_bucket = 0;
         custom_loaded_name[0] = '\0';
         const String path = String("/clockface/") + name + "/clockface.json";
         File file = LittleFS.open(path.c_str(), "r");
@@ -694,10 +820,11 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
                 lv_obj_set_style_bg_color(custom_face, background, 0);
                 bool valid = true;
                 size_t object_index = 0;
+                const uint32_t random_interval =
+                    document["random_interval_seconds"] | 60;
                 for (JsonObjectConst item : objects)
                 {
-                    if (!custom_face_visible(item["visible_if"] | "", snapshot))
-                        continue;
+                    const char *visible_if = item["visible_if"] | "";
                     const char *type = item["type"] | "";
                     const int16_t x = item["x"] | 0;
                     const int16_t y = item["y"] | 0;
@@ -801,92 +928,65 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
                     }
                     else if (!strcmp(type, "text"))
                     {
+                        if (custom_text_count >=
+                            sizeof(custom_texts) / sizeof(custom_texts[0]))
+                        { valid = false; break; }
                         const lv_font_t *font = custom_face_font(item["font_family"] | "lv_font_chicago_8");
                         if (!font) { valid = false; break; }
-                        object = create_clock_face_label(custom_face, font, stroke);
-                        lv_obj_set_pos(object, x, y);
-                        lv_obj_set_width(object, width);
-                        lv_label_set_long_mode(object, LV_LABEL_LONG_CLIP);
                         const char *align = item["align"] | "left";
-                        lv_obj_set_style_text_align(object, !strcmp(align, "right") ? LV_TEXT_ALIGN_RIGHT : !strcmp(align, "center") ? LV_TEXT_ALIGN_CENTER : LV_TEXT_ALIGN_LEFT, 0);
-                        char text[192];
+                        CustomFaceDynamicText &dynamic_text =
+                            custom_texts[custom_text_count++];
+                        dynamic_text = {};
+                        dynamic_text.font = font;
+                        dynamic_text.stroke = stroke;
+                        dynamic_text.x = x;
+                        dynamic_text.y = y;
+                        dynamic_text.width = width;
+                        dynamic_text.align = !strcmp(align, "right")
+                            ? LV_TEXT_ALIGN_RIGHT : !strcmp(align, "center")
+                            ? LV_TEXT_ALIGN_CENTER : LV_TEXT_ALIGN_LEFT;
+                        strlcpy(dynamic_text.visible_if, visible_if,
+                            sizeof(dynamic_text.visible_if));
                         const JsonArrayConst random = item["random"];
                         const char *template_text = item["template"] | "";
                         if (!random.isNull() && random.size())
                         {
-                            const uint32_t interval = document["random_interval_seconds"] | 60;
-                            template_text = random[(snapshot.current.unixtime() / (interval ? interval : 1)) % random.size()] | template_text;
+                            const uint32_t interval = random_interval ? random_interval : 1;
+                            custom_random_interval_seconds = interval;
+                            custom_random_bucket = snapshot.current.unixtime() / interval;
+                            template_text = random[custom_random_bucket % random.size()] | template_text;
                         }
-                        if (!custom_face_expand(template_text, snapshot, translations, text, sizeof(text)))
+                        if (!custom_face_localize_template(template_text, translations,
+                                dynamic_text.template_text,
+                                sizeof(dynamic_text.template_text)))
                         { valid = false; break; }
                         const char *face_name = document["name"] | "";
-                        if (g_face_customization.colon_blink != ColonBlinkInterval::None &&
+                        dynamic_text.blink_colons =
+                            g_face_customization.colon_blink != ColonBlinkInterval::None &&
                             strcmp(face_name, "Departure Board") &&
-                            (strstr(template_text, "{hour}") ||
-                             strstr(template_text, "{time}") ||
-                             strstr(template_text, "{time_min}") ||
-                             strstr(template_text, "{time_seconds}")) &&
-                            strchr(text, ':'))
-                        {
-                            lv_obj_delete(object);
-                            object = nullptr;
-                            const int16_t total_width = custom_text_width(font, text);
-                            int16_t cursor_x = !strcmp(align, "right")
-                                ? width - total_width : !strcmp(align, "center")
-                                ? (width - total_width) / 2 : 0;
-                            const char *segment_start = text;
-                            for (const char *cursor = text;; ++cursor)
-                            {
-                                if (*cursor != ':' && *cursor != '\0') continue;
-                                char segment[64] = {};
-                                const size_t segment_length = min(
-                                    static_cast<size_t>(cursor - segment_start),
-                                    sizeof(segment) - 1);
-                                memcpy(segment, segment_start, segment_length);
-                                const int16_t segment_width =
-                                    custom_text_width(font, segment);
-                                if (segment_length)
-                                {
-                                    lv_obj_t *part = create_clock_face_label(
-                                        custom_face, font, stroke);
-                                    lv_label_set_text(part, segment);
-                                    lv_obj_set_pos(part, x + cursor_x, y);
-                                    lv_obj_set_width(part, segment_width);
-                                    lv_obj_set_style_text_align(part,
-                                        LV_TEXT_ALIGN_LEFT, 0);
-                                    if (!object) object = part;
-                                    cursor_x += segment_width;
-                                }
-                                if (*cursor == ':')
-                                {
-                                    const int16_t colon_width =
-                                        custom_text_width(font, ":");
-                                    if (custom_colon_visible(snapshot))
-                                    {
-                                        lv_obj_t *colon = create_clock_face_label(
-                                            custom_face, font, stroke);
-                                        lv_label_set_text(colon, ":");
-                                        lv_obj_set_pos(colon, x + cursor_x, y);
-                                        lv_obj_set_width(colon, colon_width);
-                                        lv_obj_set_style_text_align(colon,
-                                            LV_TEXT_ALIGN_LEFT, 0);
-                                        if (!object) object = colon;
-                                    }
-                                    cursor_x += colon_width;
-                                    segment_start = cursor + 1;
-                                }
-                                else break;
-                            }
-                            if (!object)
-                                object = lv_obj_create(custom_face);
-                        }
-                        else
-                            lv_label_set_text(object, text);
+                            (strstr(dynamic_text.template_text, "{hour}") ||
+                             strstr(dynamic_text.template_text, "{time}") ||
+                             strstr(dynamic_text.template_text, "{time_min}") ||
+                             strstr(dynamic_text.template_text, "{time_seconds}"));
+                        char text[192];
+                        if (!custom_face_expand(dynamic_text.template_text,
+                                snapshot, {}, text, sizeof(text)) ||
+                            !render_custom_text(custom_face, dynamic_text,
+                                text, snapshot))
+                        { valid = false; break; }
+                        object = dynamic_text.parts[0];
                     }
                     else if (!strcmp(type, "image"))
                     {
+                        char image_template[128];
+                        if (!custom_face_localize_template(
+                                item["template"] | item["source"] | "",
+                                translations, image_template,
+                                sizeof(image_template)))
+                        { valid = false; break; }
                         char asset[128];
-                        if (!custom_face_expand(item["template"] | item["source"] | "", snapshot, translations, asset, sizeof(asset)) || !asset[0] || strchr(asset, '/'))
+                        if (!custom_face_expand(image_template, snapshot, {},
+                                asset, sizeof(asset)) || !asset[0] || strchr(asset, '/'))
                         { valid = false; break; }
                         const String asset_path = String("/clockface/") + name + "/" + asset;
                         if (!LittleFS.exists(asset_path.c_str())) { valid = false; break; }
@@ -899,6 +999,21 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
                             "S:%s", asset_path.c_str());
                         lv_image_set_src(
                             object, custom_image_paths[object_index]);
+                        if (strchr(image_template, '{'))
+                        {
+                            if (custom_image_count >=
+                                sizeof(custom_images) / sizeof(custom_images[0]))
+                            { valid = false; break; }
+                            CustomFaceDynamicImage &image =
+                                custom_images[custom_image_count++];
+                            image = {};
+                            image.object = object;
+                            image.path_index = object_index;
+                            strlcpy(image.template_text, image_template,
+                                sizeof(image.template_text));
+                            strlcpy(image.visible_if, visible_if,
+                                sizeof(image.visible_if));
+                        }
                     }
                     else if (!strcmp(type, "flip") || !strcmp(type, "odometer"))
                     {
@@ -914,9 +1029,11 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
                         widget.type = !strcmp(type, "flip")
                             ? CustomFaceWidgetType::Flip
                             : CustomFaceWidgetType::Odometer;
-                        strlcpy(widget.template_text,
-                            item["template"] | "",
-                            sizeof(widget.template_text));
+                        if (!custom_face_localize_template(
+                                item["template"] | "", translations,
+                                widget.template_text,
+                                sizeof(widget.template_text)))
+                        { valid = false; break; }
                         widget.width = width;
                         widget.height = height;
                         widget.root = lv_obj_create(custom_face);
@@ -945,6 +1062,7 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
                         if (!custom_face_expand(widget.template_text, snapshot, translations, text, sizeof(text)))
                         { valid = false; break; }
                         custom_widget_set_text(widget, text, true);
+                        object = widget.root;
                     }
                     else if (!strcmp(type, "colon"))
                     {
@@ -971,9 +1089,38 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
                             lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
                             lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
                         }
+                        object = widget.root;
                     }
                     else
                     { valid = false; break; }
+                    const bool visible = custom_face_visible(visible_if, snapshot);
+                    if (!strcmp(type, "text"))
+                    {
+                        CustomFaceDynamicText &dynamic_text =
+                            custom_texts[custom_text_count - 1];
+                        for (size_t i = 0; i < dynamic_text.part_count; ++i)
+                        {
+                            if (visible)
+                                lv_obj_clear_flag(dynamic_text.parts[i], LV_OBJ_FLAG_HIDDEN);
+                            else
+                                lv_obj_add_flag(dynamic_text.parts[i], LV_OBJ_FLAG_HIDDEN);
+                        }
+                    }
+                    else if (object && visible_if[0])
+                    {
+                        if (custom_visibility_count >=
+                            sizeof(custom_visibility) / sizeof(custom_visibility[0]))
+                        { valid = false; break; }
+                        CustomFaceVisibility &visibility =
+                            custom_visibility[custom_visibility_count++];
+                        visibility.object = object;
+                        strlcpy(visibility.expression, visible_if,
+                            sizeof(visibility.expression));
+                        if (visible)
+                            lv_obj_clear_flag(object, LV_OBJ_FLAG_HIDDEN);
+                        else
+                            lv_obj_add_flag(object, LV_OBJ_FLAG_HIDDEN);
+                    }
                     ++object_index;
                 }
                 if (!valid)
@@ -982,6 +1129,7 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
                 {
                     strlcpy(custom_loaded_name, name, sizeof(custom_loaded_name));
                     custom_loaded = true;
+                    custom_last_refresh_ms = millis();
                 }
             }
         }
@@ -993,25 +1141,78 @@ bool ClockView::showCustomFace(const ClockRenderSnapshot &snapshot)
 
 void ClockView::updateCustomFace(const ClockRenderSnapshot &snapshot)
 {
-    if (custom_widget_count)
-    {
-        refreshCustomFaceWidgets(snapshot);
+    if (!custom_loaded)
         return;
-    }
-    if (custom_line_count)
+
+    if (custom_random_interval_seconds)
     {
-        refreshCustomFaceLines(snapshot);
-        return;
-    }
-    if (custom_loaded)
-    {
-        const uint32_t now = millis();
-        if (custom_last_refresh_ms &&
-            now - custom_last_refresh_ms < custom_face_refresh_interval())
+        const uint32_t bucket = snapshot.current.unixtime() /
+            custom_random_interval_seconds;
+        if (bucket != custom_random_bucket)
+        {
+            custom_loaded_name[0] = '\0';
+            showCustomFace(snapshot);
             return;
-        custom_last_refresh_ms = now;
-        custom_loaded_name[0] = '\0';
-        showCustomFace(snapshot);
+        }
+    }
+
+    if (custom_line_count)
+        refreshCustomFaceLines(snapshot);
+    if (custom_widget_count)
+        refreshCustomFaceWidgets(snapshot);
+
+    for (size_t i = 0; i < custom_visibility_count; ++i)
+    {
+        CustomFaceVisibility &visibility = custom_visibility[i];
+        if (custom_face_visible(visibility.expression, snapshot))
+            lv_obj_clear_flag(visibility.object, LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_add_flag(visibility.object, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    const uint32_t now = millis();
+    if (custom_last_refresh_ms &&
+        now - custom_last_refresh_ms < custom_face_refresh_interval())
+        return;
+    custom_last_refresh_ms = now;
+
+    for (size_t i = 0; i < custom_text_count; ++i)
+    {
+        CustomFaceDynamicText &text_state = custom_texts[i];
+        char text[192];
+        if (custom_face_expand(text_state.template_text, snapshot, {},
+                text, sizeof(text)))
+            render_custom_text(custom_face, text_state, text, snapshot);
+        const bool visible = custom_face_visible(text_state.visible_if, snapshot);
+        for (size_t part = 0; part < text_state.part_count; ++part)
+        {
+            if (visible)
+                lv_obj_clear_flag(text_state.parts[part], LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_add_flag(text_state.parts[part], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    for (size_t i = 0; i < custom_image_count; ++i)
+    {
+        CustomFaceDynamicImage &image = custom_images[i];
+        char asset[128];
+        if (!custom_face_expand(image.template_text, snapshot, {},
+                asset, sizeof(asset)) || !asset[0] || strchr(asset, '/'))
+            continue;
+        const String asset_path = String("/clockface/") +
+            custom_loaded_name + "/" + asset;
+        if (!LittleFS.exists(asset_path.c_str()))
+            continue;
+        char path[96];
+        snprintf(path, sizeof(path), "S:%s", asset_path.c_str());
+        char *stored_path = custom_image_paths[image.path_index];
+        if (strcmp(stored_path, path))
+        {
+            strlcpy(stored_path, path,
+                sizeof(custom_image_paths[image.path_index]));
+            lv_image_set_src(image.object, stored_path);
+        }
     }
 }
 

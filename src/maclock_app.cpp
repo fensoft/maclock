@@ -406,6 +406,35 @@ struct CustomFaceDynamicLine
     int16_t length = 0;
 };
 
+struct CustomFaceDynamicText
+{
+    lv_obj_t *parts[5] = {};
+    const lv_font_t *font = nullptr;
+    lv_color_t stroke = {};
+    char template_text[192] = {};
+    char visible_if[64] = {};
+    int16_t x = 0;
+    int16_t y = 0;
+    int16_t width = 0;
+    lv_text_align_t align = LV_TEXT_ALIGN_LEFT;
+    uint8_t part_count = 0;
+    bool blink_colons = false;
+};
+
+struct CustomFaceDynamicImage
+{
+    lv_obj_t *object = nullptr;
+    char template_text[128] = {};
+    char visible_if[64] = {};
+    uint8_t path_index = 0;
+};
+
+struct CustomFaceVisibility
+{
+    lv_obj_t *object = nullptr;
+    char expression[64] = {};
+};
+
 struct ClockRenderSnapshot
 {
     DateTime current;
@@ -462,6 +491,14 @@ public:
     size_t custom_widget_count = 0;
     CustomFaceDynamicLine custom_lines[32];
     size_t custom_line_count = 0;
+    CustomFaceDynamicText custom_texts[32];
+    size_t custom_text_count = 0;
+    CustomFaceDynamicImage custom_images[8];
+    size_t custom_image_count = 0;
+    CustomFaceVisibility custom_visibility[64];
+    size_t custom_visibility_count = 0;
+    uint32_t custom_random_interval_seconds = 0;
+    uint32_t custom_random_bucket = 0;
     bool custom_loaded = false;
     uint32_t custom_last_refresh_ms = 0;
     lv_obj_t *screensaver;

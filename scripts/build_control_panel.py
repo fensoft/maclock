@@ -17,7 +17,10 @@ fingerprint_pattern = re.compile(
 
 
 def source_files():
-    for path in sorted(web_dir.rglob("*")):
+    for path in sorted(
+        web_dir.rglob("*"),
+        key=lambda item: item.relative_to(web_dir).as_posix().casefold(),
+    ):
         if not path.is_file():
             continue
         if "node_modules" in path.parts or "dist" in path.parts:

@@ -6,7 +6,7 @@ import {
   readdirSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
@@ -35,8 +35,12 @@ function collectFiles(directory) {
 
 function sourceFingerprint() {
   const hash = createHash("sha256");
-  for (const path of collectFiles(webDirectory).sort()) {
-    hash.update(relative(webDirectory, path));
+  const relativePath = (path) => relative(webDirectory, path).split(sep).join("/");
+  const paths = collectFiles(webDirectory).sort((left, right) =>
+    relativePath(left).toLowerCase().localeCompare(relativePath(right).toLowerCase()),
+  );
+  for (const path of paths) {
+    hash.update(relativePath(path));
     hash.update("\0");
     hash.update(readFileSync(path));
     hash.update("\0");
